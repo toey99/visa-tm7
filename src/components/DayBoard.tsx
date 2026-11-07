@@ -1071,7 +1071,7 @@ function PersonCard({
               {[f.lastName, f.firstName].filter(Boolean).join(" ") || <span className="text-slate-400">ยังไม่มีชื่อ</span>}
               {f.chineseName && <span className="ml-2 text-slate-600">{f.chineseName}</span>}
               {isRun && car && <span className="ml-2 rounded px-2 py-0.5 text-xs font-semibold text-white" style={{ background: car.accent }}>🚗 {car.id} {car.plate}</span>}
-              {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">+30 วัน</span>}
+              {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">🐰 +30 วัน</span>}
               {isRun && f.cambodia && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">🐻 กัมพูชา</span>}
               {p.cancelled && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">❌ ไม่มา / ยกเลิก</span>}
               {p.movedTo && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">➡️ เลื่อนไป {p.movedTo}</span>}
@@ -1114,7 +1114,7 @@ function PersonCard({
       {isRun && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-indigo-50 p-2 ring-1 ring-indigo-200">
           <span className="text-xs font-semibold text-indigo-900">วีซ่ารัน:</span>
-          {([["RUN", "🛂 รันปกติ"], ["RUN30", "🛂+📄 ไปต่อ 30 วัน"]] as const).map(([k, label]) => (
+          {([["RUN", "🛂 รันปกติ"], ["RUN30", "🐰 ไปต่อ 30 วัน"]] as const).map(([k, label]) => (
             <button key={k} type="button" onClick={() => set("run", k)} className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${(f.run || "RUN") === k ? "bg-indigo-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>{label}</button>
           ))}
           <span className="ml-2 text-xs font-semibold text-indigo-900">รถ:</span>
