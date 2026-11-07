@@ -1127,45 +1127,80 @@ const pill = (bg: string, fg: string, size = 12): React.CSSProperties => ({
   fontSize: size, fontWeight: 600, background: bg, color: fg, whiteSpace: "nowrap", boxSizing: "border-box",
 });
 const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta }>(function SummarySheet({ people, meta }, ref) {
+  const o = OFFICES[meta.office];
   const [dd, mm, yy] = meta.date.split("/");
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const dateEn = dd && mm && yy ? `${dd} ${months[Number(mm) - 1] ?? mm} ${yy}` : meta.date;
-  const dateCn = dd && mm && yy ? `${yy}年 ${Number(mm)}月 ${Number(dd)}日` : "";
+  const thDays = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+  const cnDays = ["日", "一", "二", "三", "四", "五", "六"];
+  const dateObj = dd && mm && yy ? new Date(Number(yy), Number(mm) - 1, Number(dd)) : null;
+  const dateEn = dateObj ? `${dd} ${months[Number(mm) - 1] ?? mm} ${yy}` : meta.date;
+  const dateTh = dateObj ? `วัน${thDays[dateObj.getDay()]}ที่ ${Number(dd)}` : "";
+  const dateCn = dateObj ? `${yy}年${Number(mm)}月${Number(dd)}日 · 星期${cnDays[dateObj.getDay()]}` : "";
   const collect = people.filter((p) => p.fields.pay === "collect");
   const sum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
+  const overstays = people.filter((p) => (overstayInfo(p.fields.arrivalDate, p.fields.admittedUntil, p.fields.visaType, meta.date)?.days ?? 0) > 0).length;
+  const accent = o.summaryAccent;
+  const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
+  const cols = people.length <= 6 ? 6 : 8;
   return (
-    <div ref={ref} style={{ width: 900, padding: 24, background: OFFICES[meta.office].summaryBg, fontFamily: "system-ui, 'Noto Sans Thai', 'Noto Sans SC', sans-serif" }}>
-      <div style={{ background: "#fff", borderRadius: 10, padding: 18, minHeight: 360 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "14px 8px" }}>
-          {people.map((p) => {
+    <div ref={ref} style={{ width: 900, padding: 22, background: o.summaryBg, fontFamily: font, position: "relative" }}>
+      {/* soft decorative circles */}
+      <div style={{ position: "absolute", right: -60, top: -60, width: 220, height: 220, borderRadius: "50%", background: accent, opacity: 0.08 }} />
+      <div style={{ position: "absolute", left: -40, bottom: -70, width: 180, height: 180, borderRadius: "50%", background: accent, opacity: 0.06 }} />
+
+      {/* header band */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: accent, color: "#fff", borderRadius: 14, padding: "12px 18px", boxShadow: "0 4px 14px rgba(0,0,0,.15)", position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 34, lineHeight: 1 }}>{o.emoji}</div>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.1 }}>{o.summaryTitle}</div>
+            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 3 }}>{o.subtitle} · ต่อวีซ่า {meta.extensionDays} วัน</div>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>📅 ISSUE DATE</div>
+          <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>{dateEn}</div>
+          <div style={{ fontSize: 12, opacity: 0.95 }}>{dateTh} · {dateCn}</div>
+        </div>
+      </div>
+
+      {/* people */}
+      <div style={{ background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, boxShadow: "0 2px 10px rgba(0,0,0,.06)", position: "relative" }}>
+        {people.length === 0 && <div style={{ textAlign: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "16px 10px" }}>
+          {people.map((p, i) => {
             const f = p.fields;
             const amt = f.amount ? ` ${Number(f.amount).toLocaleString()}` : "";
             const who = f.agent ? `${f.agent} ` : "";
-            const tag = f.pay === "collect" ? { bg: "#ffe66d", fg: "#4a3b00", t: `${who}เก็บ${amt}`.trim() }
-              : f.pay === "paid" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `${who}จ่ายแล้ว` } : { bg: "#cfe9ff", fg: "#0b3d6b", t: `${who}ไม่เก็บ` };
+            const tag = f.pay === "collect" ? { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() }
+              : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
+            const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
             return (
-              <div key={p.id} style={{ textAlign: "center" }}>
-                <SummaryPhoto person={p} />
-                <div style={{ fontSize: 10, fontWeight: 600, marginTop: 5, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
-                <div style={{ fontSize: 15, lineHeight: 1.2 }}>{f.chineseName || "\u00a0"}</div>
-                <div style={{ marginTop: 4 }}><span style={pill(tag.bg, tag.fg)}>{tag.t}</span></div>
-                {f.note && <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>{f.note}</div>}
+              <div key={p.id} style={{ textAlign: "center", position: "relative" }}>
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <SummaryPhoto person={p} />
+                  <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
+                  {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
+                <div style={{ fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || "\u00a0"}</div>
+                <div style={{ marginTop: 5 }}><span style={pill(tag.bg, tag.fg, 11)}>{tag.t}</span></div>
+                {f.note && <div style={{ fontSize: 10, color: "#666", marginTop: 3 }}>📝 {f.note}</div>}
               </div>
             );
           })}
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 18 }}>
-          <div>
-            <span style={{ ...pill(OFFICES[meta.office].summaryAccent, "#fff", 20), height: 40, padding: "0 16px", borderRadius: 8, fontWeight: 700 }}>{OFFICES[meta.office].summaryTitle}</span>
-            <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>{people.length} คน</div>
-          </div>
-          <div style={{ textAlign: "right", fontSize: 13, color: "#333" }}>
-            <div style={{ fontSize: 12, letterSpacing: 1, color: "#555" }}>ISSUE DATE</div>
-            <div style={{ marginTop: 3 }}><span style={pill("#ffe66d", "#4a3b00", 13)}>{dateEn}</span></div>
-            <div style={{ marginTop: 4 }}><span style={pill("#ffe66d", "#4a3b00", 13)}>{dateCn}</span></div>
-            <div style={{ marginTop: 4 }}>{collect.length ? `ต้องเก็บ ${collect.length} คน รวม ${sum.toLocaleString()} บาท` : "ไม่มีรายการเก็บเงิน"}</div>
-          </div>
+      </div>
+
+      {/* footer */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333", position: "relative" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={pill("#fff", accent, 13)}>👥 {people.length} คน</span>
+          {collect.length > 0 && <span style={pill("#ffe66d", "#4a3b00", 13)}>💰 เก็บ {collect.length} คน รวม {sum.toLocaleString()} บาท</span>}
+          {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
+          {overstays > 0 && <span style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</span>}
         </div>
+        <div style={{ fontSize: 11, color: "#666" }}>✨ ขอให้ทุกเคสผ่านฉลุย · tm7.toyka.net</div>
       </div>
     </div>
   );
