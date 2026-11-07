@@ -66,6 +66,7 @@ export type Person = {
   cloth?: string;               // clothing used in passport mode
   photoExtra?: string;          // per-person extra instruction for the image model
   collectImage?: Blob;          // passport page stamped with the amount to collect
+  cancelled?: boolean;          // no-show: kept for the record, excluded from everything
   createdAt: number;
 };
 

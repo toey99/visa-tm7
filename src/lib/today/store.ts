@@ -55,20 +55,20 @@ async function downloadBlob(path: string): Promise<Blob | null> {
 // Paths already uploaded, keyed by object identity (a Blob is re-uploaded only if it's a new object).
 const uploaded = new WeakMap<Blob, string>();
 
-async function ensureUploaded(day: string, personId: string, name: string, blob: Blob | undefined): Promise<string | undefined> {
+async function ensureUploaded(day: string, personId: string, name: string, blob: Blob | undefined, force = false): Promise<string | undefined> {
   if (!blob) return undefined;
   const known = uploaded.get(blob);
-  if (known) return known;
+  if (known && !force && known.startsWith(`days/${day}/`)) return known;
   const path = await uploadBlob(`days/${day}/${personId}/${name}.${extOf(blob.type)}`, blob);
   uploaded.set(blob, path);
   return path;
 }
 
-async function toRef(day: string, p: Person): Promise<PersonRef> {
+async function toRef(day: string, p: Person, force = false): Promise<PersonRef> {
   const files: FileRef[] = [];
   for (const f of p.files) {
     const { blob, ...rest } = f;
-    const path = (await ensureUploaded(day, p.id, `doc-${f.id}`, blob)) ?? "";
+    const path = (await ensureUploaded(day, p.id, `doc-${f.id}`, blob, force)) ?? "";
     files.push({ ...rest, path });
   }
   const { files: _f, tm7Pdf, aiPhoto, photo, collectImage, ...rest } = p;
@@ -76,10 +76,10 @@ async function toRef(day: string, p: Person): Promise<PersonRef> {
   return {
     ...rest,
     files,
-    tm7Pdf: await ensureUploaded(day, p.id, "tm7", tm7Pdf),
-    aiPhoto: await ensureUploaded(day, p.id, "ai-photo", aiPhoto),
-    photo: await ensureUploaded(day, p.id, "photo-white", photo),
-    collectImage: await ensureUploaded(day, p.id, "collect", collectImage),
+    tm7Pdf: await ensureUploaded(day, p.id, "tm7", tm7Pdf, force),
+    aiPhoto: await ensureUploaded(day, p.id, "ai-photo", aiPhoto, force),
+    photo: await ensureUploaded(day, p.id, "photo-white", photo, force),
+    collectImage: await ensureUploaded(day, p.id, "collect", collectImage, force),
   };
 }
 
@@ -203,6 +203,23 @@ export async function listDays(): Promise<{ date: string; files: number; updated
   } catch {
     return [];
   }
+}
+
+// Move a person (with all files) into another day's folder on the server.
+export async function movePersonToDay(p: Person, targetDate: string): Promise<void> {
+  const target = dayKeyOf(targetDate);
+  if (target === currentDay) return;
+  const r = await fetch(`/api/day?date=${target}`, { cache: "no-store" });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+  const idx = (await r.json()) as Partial<DayIndex>;
+  const refs = idx.people ?? [];
+  const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
+  const ref = await toRef(target, { ...p, order, cancelled: false }, true);
+  const next: DayIndex = { meta: idx.meta, people: [...refs.filter((x) => x.id !== p.id), ref], savedAt: new Date().toISOString() };
+  const w = await fetch(`/api/day?date=${target}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+  if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+  peopleCache.delete(p.id);
+  scheduleSave();
 }
 
 export function isSaving(): boolean {

@@ -19,7 +19,7 @@ import {
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
-import { clearDay as clearDayRemote, deletePerson, flush, isLoading, isSaving, listDays, loadDay, loadProgress, saveMeta, savePerson, lastError as storeError, lastSavedAt } from "@/lib/today/store";
+import { clearDay as clearDayRemote, deletePerson, flush, isLoading, isSaving, listDays, loadDay, loadProgress, movePersonToDay, saveMeta, savePerson, lastError as storeError, lastSavedAt } from "@/lib/today/store";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
@@ -143,6 +143,27 @@ export default function TodayPage() {
   function removePerson(id: string) {
     setPeople((prev) => prev.filter((x) => x.id !== id));
     deletePerson(id);
+  }
+
+  const active = people.filter((p) => !p.cancelled);
+
+  async function moveDay(p: Person) {
+    const [dd, mm, yy] = meta.date.split("/").map(Number);
+    const d = new Date(yy, mm - 1, dd); d.setDate(d.getDate() + 1);
+    const def = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+    const target = window.prompt(`ย้าย ${personFolderName(p)} ไปวันที่ (DD/MM/YYYY)`, def);
+    if (!target || !/^\d{2}\/\d{2}\/\d{4}$/.test(target) || target === meta.date) return;
+    setWorking(true); setStatus(`กำลังย้ายไปวัน ${target}…`);
+    try {
+      await movePersonToDay(p, target);
+      setPeople((prev) => prev.filter((x) => x.id !== p.id));
+      setStatus(`ย้าย ${personFolderName(p)} ไปวัน ${target} แล้ว`);
+      listDays().then(setDays);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setWorking(false); }
+  }
+  function toggleCancelled(p: Person) {
+    patchPerson(p.id, (x) => ({ ...x, cancelled: !x.cancelled }));
   }
 
   function nextOrder(): number {
@@ -388,7 +409,7 @@ export default function TodayPage() {
   }
 
   async function tm7All() {
-    const ready = people.filter((p) => p.fields.firstName && p.fields.lastName && p.fields.passportNo);
+    const ready = active.filter((p) => p.fields.firstName && p.fields.lastName && p.fields.passportNo);
     if (!ready.length) { setError("ยังไม่มีคนที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)"); return; }
     setWorking(true); setError("");
     const blobs: Blob[] = [];
@@ -458,7 +479,7 @@ export default function TodayPage() {
   }
 
   async function photosAll() {
-    const todo = people.filter((p) => !p.photo && p.files.some((x) => x.kind === "selfie" || x.kind === "passport"));
+    const todo = active.filter((p) => !p.photo && p.files.some((x) => x.kind === "selfie" || x.kind === "passport"));
     if (!todo.length) { setStatus("ทุกคนมีรูปแล้ว"); return; }
     setWorking(true); setError("");
     let done = 0;
@@ -498,7 +519,7 @@ export default function TodayPage() {
   }
 
   async function photoSheet(): Promise<Blob | null> {
-    const photos = people.filter((p) => p.photo).map((p) => p.photo as Blob);
+    const photos = active.filter((p) => p.photo).map((p) => p.photo as Blob);
     if (!photos.length) return null;
     return buildPhotoSheetPdf(photos);
   }
@@ -544,7 +565,7 @@ export default function TodayPage() {
     return blob;
   }
   async function collectAll() {
-    const todo = people.filter((p) => p.fields.pay === "collect" && Number(p.fields.amount) > 0 && p.files.some((x) => x.kind === "passport"));
+    const todo = active.filter((p) => p.fields.pay === "collect" && Number(p.fields.amount) > 0 && p.files.some((x) => x.kind === "passport"));
     if (!todo.length) { setError("ยังไม่มีคนที่ต้องเก็บเงิน + มียอด + มีพาสปอร์ต"); return; }
     setError("");
     for (const p of todo) await collectOne(p, true);
@@ -565,11 +586,11 @@ export default function TodayPage() {
   const num = (v: string | undefined) => Number(v) || 0;
   const agentGroups = (() => {
     const m = new Map<string, Person[]>();
-    for (const p of people) { const k = p.fields.agent || "(ไม่ระบุ)"; m.set(k, [...(m.get(k) ?? []), p]); }
+    for (const p of active) { const k = p.fields.agent || "(ไม่ระบุ)"; m.set(k, [...(m.get(k) ?? []), p]); }
     return [...m.entries()];
   })();
   async function agentExcel() {
-    try { downloadBlob(await buildAgentExcel(people, meta.date, OFFICES[meta.office].label), `agents_${meta.date.replace(/\//g, "")}_${meta.jobType}.xlsx`); }
+    try { downloadBlob(await buildAgentExcel(active, meta.date, OFFICES[meta.office].label), `agents_${meta.date.replace(/\//g, "")}_${meta.jobType}.xlsx`); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
@@ -589,7 +610,7 @@ export default function TodayPage() {
   }
 
   async function excelTm30() {
-    const ready = people.filter((p) => p.fields.firstName && p.fields.passportNo);
+    const ready = active.filter((p) => p.fields.firstName && p.fields.passportNo);
     if (!ready.length) { setError("ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ต"); return; }
     try {
       const blob = await buildTm30Excel(ready, plusDaysDdmmyyyy(10));
@@ -605,7 +626,7 @@ export default function TodayPage() {
     try {
       const sheet = await photoSheet();
       const summary = summaryBlob ?? (await makeSummary().catch(() => null));
-      const blob = await buildDayZip(people, meta, { photoSheet: sheet ?? undefined, summary: summary ?? undefined });
+      const blob = await buildDayZip(active, meta, { photoSheet: sheet ?? undefined, summary: summary ?? undefined });
       downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}.zip`);
       setStatus("");
     } catch (e) {
@@ -635,7 +656,7 @@ export default function TodayPage() {
   }
 
   // ---------- render ----------
-  const collect = people.filter((p) => p.fields.pay === "collect");
+  const collect = active.filter((p) => p.fields.pay === "collect");
   const collectSum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
   const receivedSum = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
   const pendingCount = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
@@ -690,7 +711,7 @@ export default function TodayPage() {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-700">
-          <span className="font-semibold">{people.length}</span> คน
+          <span className="font-semibold">{active.length}</span> คน{people.length > active.length && <span className="text-slate-400"> (+{people.length - active.length} ไม่มา)</span>}
           {collect.length > 0 && <span className="ml-3 rounded bg-yellow-100 px-2 py-0.5 text-yellow-900">แผนเก็บ {collect.length} คน {collectSum.toLocaleString()} บาท</span>}
           {collect.length > 0 && <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-emerald-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
           {pendingCount > 0 && <span className="ml-2 rounded bg-red-100 px-2 py-0.5 text-red-900">ค้าง {pendingCount} คน</span>}
@@ -704,7 +725,7 @@ export default function TodayPage() {
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
-          <button onClick={() => openBill(people.filter((p) => p.fields.pay === "collect"))} disabled={!people.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
+          <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
           <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
           <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
@@ -749,7 +770,7 @@ export default function TodayPage() {
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-slate-500">รวมทั้งวัน: ราคาเอเจนซี่ {people.reduce((s, p) => s + num(p.fields.agentPrice), 0).toLocaleString()} · ต้นทุน {people.reduce((s, p) => s + num(p.fields.cost), 0).toLocaleString()} · กำไร {(people.reduce((s, p) => s + num(p.fields.agentPrice) - num(p.fields.cost), 0)).toLocaleString()} บาท</p>
+          <p className="mt-2 text-xs text-slate-500">รวมทั้งวัน: ราคาเอเจนซี่ {active.reduce((s, p) => s + num(p.fields.agentPrice), 0).toLocaleString()} · ต้นทุน {active.reduce((s, p) => s + num(p.fields.cost), 0).toLocaleString()} · กำไร {(active.reduce((s, p) => s + num(p.fields.agentPrice) - num(p.fields.cost), 0)).toLocaleString()} บาท</p>
         </div>
       )}
 
@@ -833,6 +854,8 @@ export default function TodayPage() {
             onBill={() => openBill([p])}
             onCrop={(crop, photo) => updateCrop(p.id, crop, photo)}
             onUseAsPhoto={(fileId) => usePhotoAsIs(p, fileId)}
+            onMoveDay={() => moveDay(p)}
+            onToggleCancelled={() => toggleCancelled(p)}
             clothes={clothesList()}
             onMoveFile={(fileId, toId) => moveFile(p.id, fileId, toId)}
             holidays={holidays}
@@ -845,7 +868,7 @@ export default function TodayPage() {
       <div className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่าง Summary</h2>
         <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-          <SummarySheet ref={summaryRef} people={people} meta={meta} />
+          <SummarySheet ref={summaryRef} people={active} meta={meta} />
         </div>
       </div>
     </div>
@@ -859,7 +882,7 @@ export default function TodayPage() {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, clothes, onMoveFile, holidays, busy,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onToggleCancelled, clothes, onMoveFile, holidays, busy,
 }: {
   person: Person;
   people: Person[];
@@ -872,6 +895,8 @@ function PersonCard({
   onBill: () => void;
   onCrop: (crop: Crop, photo: Blob) => void;
   onUseAsPhoto: (fileId: string) => void;
+  onMoveDay: () => void;
+  onToggleCancelled: () => void;
   clothes: string[];
   onMoveFile: (fileId: string, toPersonId: string) => void;
   holidays: string[];
@@ -900,7 +925,7 @@ function PersonCard({
   const hasSelfie = p.files.some((x) => x.kind === "selfie");
 
   return (
-    <section className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ${fine ? "ring-red-300" : "ring-slate-200"}`}>
+    <section className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ${p.cancelled ? "opacity-50 ring-slate-200 grayscale" : fine ? "ring-red-300" : "ring-slate-200"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="rounded-lg bg-slate-900 px-2.5 py-1 text-sm font-bold text-white">{String(p.order).padStart(2, "0")}</span>
@@ -908,6 +933,7 @@ function PersonCard({
             <div className="text-base font-semibold text-slate-900">
               {[f.lastName, f.firstName].filter(Boolean).join(" ") || <span className="text-slate-400">ยังไม่มีชื่อ</span>}
               {f.chineseName && <span className="ml-2 text-slate-600">{f.chineseName}</span>}
+              {p.cancelled && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">🚫 ไม่มา / ยกเลิก</span>}
             </div>
             <div className="text-xs text-slate-500">
               {f.passportNo || "—"} · {f.nationality || "—"}
@@ -920,6 +946,8 @@ function PersonCard({
           <button onClick={onPhoto} disabled={busy} className={btnCls}>{p.aiPhoto ? "ทำรูปใหม่" : "✦ ทำรูปพื้นขาว"}</button>
           {f.pay === "collect" && <button onClick={onCollect} disabled={busy} className={btnCls} title="รูปพาสปอร์ตพร้อมยอดที่ต้องเก็บ">฿ รูปเรียกเก็บ</button>}
           <button onClick={onBill} className={btnCls} title="เปิดโปรแกรมบิล ABC พร้อมชื่อ/พาสปอร์ต/ยอด">🧾 ออกบิล</button>
+          <button onClick={onMoveDay} disabled={busy} className={btnCls} title="ย้ายคนนี้พร้อมไฟล์ไปวันอื่น">📅 ย้ายวัน</button>
+          <button onClick={onToggleCancelled} className={btnCls} title="ลูกค้าไม่มา: คงไว้เป็นประวัติ แต่ไม่นับยอด ไม่ออกฟอร์ม">{p.cancelled ? "↩ กลับมา" : "🚫 ไม่มา"}</button>
           <button onClick={() => { if (window.confirm("ลบคนนี้?")) onRemove(); }} className={btnDangerCls}>ลบ</button>
         </div>
       </div>
