@@ -19,7 +19,7 @@ import {
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
-import { clearDay as clearDayRemote, deletePerson, flush, isSaving, listDays, loadDay, saveMeta, savePerson, lastError as storeError, lastSavedAt } from "@/lib/today/store";
+import { clearDay as clearDayRemote, deletePerson, flush, isLoading, isSaving, listDays, loadDay, loadProgress, saveMeta, savePerson, lastError as storeError, lastSavedAt } from "@/lib/today/store";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
@@ -66,7 +66,9 @@ export default function TodayPage() {
   const openDay = useCallback(async (date: string) => {
     setLoaded(false);
     setStatus("กำลังโหลดข้อมูลวัน " + date + "…");
-    const { people: p, meta: m } = await loadDay(date);
+    setPeople([]);
+    const { people: p, meta: m, stale } = await loadDay(date);
+    if (stale) return; // user switched to another day meanwhile
     setPeople(p);
     const merged = { ...DEFAULT_META, ...(m ?? {}), date };
     if (!isOfficeId(merged.office)) merged.office = DEFAULT_META.office;
@@ -83,7 +85,7 @@ export default function TodayPage() {
     void openDay(initial);
     setPhotoSettings(loadPhotoSettings());
     setHolidays(loadHolidays());
-    const t = window.setInterval(() => setSaveState(isSaving() ? "กำลังบันทึก…" : storeError ? storeError : lastSavedAt ? `บันทึกแล้ว ${new Date(lastSavedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : ""), 1000);
+    const t = window.setInterval(() => setSaveState(isLoading() ? `กำลังโหลด… ${loadProgress}` : isSaving() ? "กำลังบันทึก…" : storeError ? storeError : lastSavedAt ? `บันทึกแล้ว ${new Date(lastSavedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : ""), 1000);
     const onLeave = () => { void flush(); };
     window.addEventListener("beforeunload", onLeave);
     return () => { window.clearInterval(t); window.removeEventListener("beforeunload", onLeave); };

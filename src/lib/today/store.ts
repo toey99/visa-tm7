@@ -28,6 +28,10 @@ let saveTimer: number | undefined;
 let savingPromise: Promise<void> | null = null;
 export let lastError = "";
 export let lastSavedAt = 0;
+let loading = false;
+let loadToken = 0;
+export let loadProgress = "";
+export function isLoading() { return loading; }
 
 function extOf(mime: string) {
   return mime === "application/pdf" ? "pdf" : mime === "image/png" ? "png" : "jpg";
@@ -79,51 +83,65 @@ async function toRef(day: string, p: Person): Promise<PersonRef> {
   };
 }
 
-async function fromRef(r: PersonRef): Promise<Person> {
-  const files: DocFile[] = [];
-  for (const f of r.files) {
+async function fromRef(r: PersonRef, onOne?: () => void): Promise<Person> {
+  const files = await Promise.all(r.files.map(async (f) => {
     const blob = f.path ? await downloadBlob(f.path) : null;
+    onOne?.();
     const { path, ...rest } = f;
     const b = blob ?? new Blob([], { type: rest.mime });
     if (path) uploaded.set(b, path);
-    files.push({ ...rest, blob: b });
-  }
+    return { ...rest, blob: b } as DocFile;
+  }));
   const pick = async (path?: string) => {
     if (!path) return undefined;
     const b = await downloadBlob(path);
+    onOne?.();
     if (b) uploaded.set(b, path);
     return b ?? undefined;
   };
   const { files: _f, tm7Pdf, aiPhoto, photo, collectImage, ...rest } = r;
   void _f;
-  return { ...rest, files, tm7Pdf: await pick(tm7Pdf), aiPhoto: await pick(aiPhoto), photo: await pick(photo), collectImage: await pick(collectImage) };
+  const [a, b2, c, d] = await Promise.all([pick(tm7Pdf), pick(aiPhoto), pick(photo), pick(collectImage)]);
+  return { ...rest, files, tm7Pdf: a, aiPhoto: b2, photo: c, collectImage: d };
 }
 
 // ---------- public API (same shape the page used with IndexedDB) ----------
 
-export async function loadDay(date: string): Promise<{ people: Person[]; meta: DayMeta | null }> {
+export async function loadDay(date: string): Promise<{ people: Person[]; meta: DayMeta | null; stale?: boolean }> {
   const day = dayKeyOf(date);
+  const token = ++loadToken;
+  if (saveTimer) { window.clearTimeout(saveTimer); saveTimer = undefined; }
+  loading = true;
   currentDay = day;
   peopleCache = new Map();
   metaCache = null;
   lastError = "";
+  loadProgress = "";
   try {
     const r = await fetch(`/api/day?date=${day}`, { cache: "no-store" });
     if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
     const idx = (await r.json()) as Partial<DayIndex>;
-    const people: Person[] = [];
-    for (const ref of idx.people ?? []) people.push(await fromRef(ref));
+    const refs = idx.people ?? [];
+    const total = refs.reduce((n, p) => n + p.files.length + [p.tm7Pdf, p.aiPhoto, p.photo, p.collectImage].filter(Boolean).length, 0);
+    let done = 0;
+    const tick = () => { done++; loadProgress = `${done}/${total} ไฟล์`; };
+    const people = await Promise.all(refs.map((ref) => fromRef(ref, tick)));
+    if (token !== loadToken) return { people: [], meta: null, stale: true }; // a newer load took over
     people.sort((a, b) => a.order - b.order);
     for (const p of people) peopleCache.set(p.id, p);
     metaCache = idx.meta ?? null;
     return { people, meta: metaCache };
   } catch (e) {
+    if (token !== loadToken) return { people: [], meta: null, stale: true };
     lastError = e instanceof Error ? e.message : String(e);
     return { people: [], meta: null };
+  } finally {
+    if (token === loadToken) { loading = false; loadProgress = ""; }
   }
 }
 
 function scheduleSave() {
+  if (loading) return; // a load is in progress — saving now would write an empty day
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => { saveTimer = undefined; void flush(); }, 800);
 }
@@ -131,7 +149,7 @@ function scheduleSave() {
 export async function flush(): Promise<void> {
   if (savingPromise) await savingPromise;
   const day = currentDay;
-  if (!day) return;
+  if (!day || loading) return;
   savingPromise = (async () => {
     try {
       const refs: PersonRef[] = [];
