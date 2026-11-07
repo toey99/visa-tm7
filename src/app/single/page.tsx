@@ -209,7 +209,7 @@ export default function Page() {
       setPdfUrl("");
     }
 
-    const payload: Tm7FormData = {
+    const payload: Tm7FormData & { office: OfficeId } = {
       title: form.title,
       firstName: form.firstName,
       lastName: form.lastName,
