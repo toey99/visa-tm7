@@ -146,7 +146,6 @@ export const DEFAULT_META: DayMeta = {
   flight: "",
   landTime: "",
   returnBy: "",
-  cambodia: false,
 };
 
 // Visa-run board defaults: customers are driven to the Chiang Saen border.
