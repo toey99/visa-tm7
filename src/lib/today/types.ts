@@ -58,6 +58,8 @@ export type PersonFields = {
   landTime: string;             // HH:MM landing time when it differs from the day's
   returnBy: string;             // HH:MM "back at the airport before" when it differs from the day's
   cambodia: boolean;            // passport shows Cambodia entries/exits → 🐻 on the driver card so the Lao side is cleared correctly
+  report: boolean;              // include in the evening "visa expiry" infographic sent back to the factory / agent
+  newUntil: string;             // DD/MM/YYYY override of the computed post-run expiry (when the officer stamped something else)
 };
 
 export type Person = {
@@ -133,6 +135,8 @@ export const EMPTY_FIELDS: PersonFields = {
   landTime: "",
   returnBy: "",
   cambodia: false,
+  report: false,
+  newUntil: "",
 };
 
 export const DEFAULT_META: DayMeta = {
@@ -191,6 +195,21 @@ export function daysBetween(a: Date, b: Date): number {
 
 export const OVERSTAY_FINE_PER_DAY = 500;
 
+// After a visa run the customer re-enters on the run day and gets a fresh
+// stay from the visa type (default exemption 30 days, arrival day counts as
+// day 1); "run + 30 days" adds the extension on top of that.
+export function runExpiry(runDate: string, visaType: string, run: "RUN" | "RUN30", override = ""): Date | null {
+  const o = parseDdmmyyyy(override);
+  if (o) return o;
+  const d = parseDdmmyyyy(runDate);
+  if (!d) return null;
+  const days = allowedDaysFromVisaType(visaType) ?? 30;
+  const out = new Date(d);
+  out.setDate(out.getDate() + days - 1 + (run === "RUN30" ? 30 : 0));
+  return out;
+}
+export const fmtDdmmyyyy = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+
 // Folder name the user keeps on disk: "01 LU LIANG" (surname first).
 export function personFolderName(p: Person): string {
   const nn = String(p.order).padStart(2, "0");
@@ -243,7 +262,6 @@ export function loadHolidays(): string[] {
 export function saveHolidays(list: string[]) {
   try { localStorage.setItem(HOLIDAY_KEY, list.join("\n")); } catch {}
 }
-const fmtDdmmyyyy = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 export function isWorkingDay(d: Date, holidays: string[]): boolean {
   const dow = d.getDay();
   if (dow === 0 || dow === 6) return false;

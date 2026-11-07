@@ -18,13 +18,14 @@ import { analyzeTm30 } from "@/app/actions/analyzeTm30";
 import { compressPdf } from "@/lib/compressPdf";
 import type { Tm7FormData } from "@/lib/tm7-generator";
 import {
-  DEFAULT_META, DEFAULT_META_RUN, EMPTY_FIELDS, ddmmyyyyToIso, loadHolidays, newId, overstayInfo, saveHolidays,
+  DEFAULT_META, DEFAULT_META_RUN, EMPTY_FIELDS, ddmmyyyyToIso, fmtDdmmyyyy, runExpiry, loadHolidays, newId, overstayInfo, saveHolidays,
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
 import { daysStore, runStore } from "@/lib/today/store";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
+import ExpiryReport from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
@@ -623,6 +624,29 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     finally { setWorking(false); }
   }
 
+  // ---------- visa-run expiry report (sent back to the factory / agent in the evening) ----------
+  const reportRef = useRef<HTMLDivElement>(null);
+  const reportPeople = active.filter((p) => p.fields.report);
+  const reportCompany = (() => { const names = Array.from(new Set(reportPeople.map((p) => p.fields.agent).filter(Boolean))); return names.length === 1 ? names[0] : ""; })();
+  function tickReport(filter: (p: Person) => boolean, on: boolean) {
+    for (const p of peopleRef.current) if (!p.cancelled && !p.movedTo && filter(p)) upsertPerson({ ...p, fields: { ...p.fields, report: on } });
+  }
+  async function makeExpiryReport(): Promise<Blob | null> {
+    const el = reportRef.current;
+    if (!el || !reportPeople.length) return null;
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
+    const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
+    return hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+  }
+  async function downloadExpiryReport() {
+    setError("");
+    if (!reportPeople.length) { setError("ยังไม่ได้ติ๊ก 📅 ใส่ในสรุปหมดอายุ ให้ใครเลย"); return; }
+    try {
+      const blob = await makeExpiryReport();
+      if (blob) downloadBlob(blob, `expiry_${meta.date.replace(/\//g, "")}_${reportCompany || "report"}.png`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
   // ---------- collect-amount image + bill ----------
   async function collectOne(p: Person, download = true): Promise<Blob | null> {
     const passport = p.files.find((x) => x.kind === "passport");
@@ -697,6 +721,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       const sheet = await photoSheet();
       const summary = summaryBlob ?? (await makeSummary().catch(() => null));
       const cars = isRun ? await makeCarCards().catch(() => []) : [];
+      const report = isRun ? await makeExpiryReport().catch(() => null) : null;
+      if (report) cars.push({ name: "expiry-report.png", blob: report });
       const blob = await buildDayZip(active, meta, { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars });
       downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}.zip`);
       setStatus("");
@@ -818,6 +844,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {OFFICES[meta.office].generator !== "none" && <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>{isRun ? "⬇ TM7 คนไปต่อ 30 วัน (PDF เดียว)" : "⬇ TM7 ทุกคน (PDF เดียว)"}</button>}
           {isRun && <button onClick={() => downloadCarCards("customer")} disabled={working || !people.length} className={btnPrimaryCls} title="มีจุดนัดพบประตู 2 — ส่งให้ลูกค้า">🚗 การ์ดลูกค้า (ทุกคัน)</button>}
           {isRun && <button onClick={() => downloadCarCards("driver")} disabled={working || !people.length} className={btnPrimaryCls} title="ไม่มีจุดนัดพบ รูปหน้าใหญ่ — ส่งให้คนขับ">🧑‍✈️ การ์ดคนขับ (ทุกคัน)</button>}
+          {isRun && <button onClick={downloadExpiryReport} disabled={working || !reportPeople.length} className={btnCls} title="รูปสรุปชื่อ/พาสปอร์ต/วันเข้า/วันหมดอายุ ของคนที่ติ๊ก 📅 — ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น">📅 สรุปหมดอายุ ({reportPeople.length})</button>}
           <button onClick={photosAll} disabled={working || !people.length} className={btnPrimaryCls}>✦ ทำรูปพื้นขาวทุกคน</button>
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
@@ -994,6 +1021,23 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         </div>
       )}
 
+      {isRun && (
+        <div className="mt-8">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold text-slate-700">📅 สรุปวันหมดอายุ (ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น)</h2>
+            <span className="text-xs text-slate-500">ติ๊ก 📅 ในการ์ดคน หรือ:</span>
+            {Array.from(new Set(active.map((p) => p.fields.agent).filter(Boolean))).map((a) => (
+              <button key={a} type="button" onClick={() => tickReport((p) => p.fields.agent === a, true)} className={btnCls + " px-2 py-0.5 text-xs"}>ติ๊กทุกคนของ {a}</button>
+            ))}
+            <button type="button" onClick={() => tickReport(() => true, true)} className={btnCls + " px-2 py-0.5 text-xs"}>ติ๊กทุกคน</button>
+            <button type="button" onClick={() => tickReport(() => true, false)} className={btnCls + " px-2 py-0.5 text-xs"}>ล้าง</button>
+          </div>
+          <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
+            <ExpiryReport ref={reportRef} people={reportPeople} meta={meta} company={reportCompany} />
+          </div>
+        </div>
+      )}
+
       {/* one-page summary (rendered off-screen, exported with html-to-image) */}
       <div className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่าง Summary</h2>
@@ -1128,6 +1172,8 @@ function PersonCard({
               </button>
             );
           })}
+          <button type="button" onClick={() => set("report", !f.report)} title="ใส่คนนี้ในรูปสรุปวันหมดอายุที่ส่งกลับโรงงาน/เอเจนซี่"
+            className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.report ? "bg-amber-500 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>📅 {f.report ? "อยู่ในสรุปหมดอายุ" : "ใส่สรุปหมดอายุ"}</button>
           <button type="button" onClick={() => set("cambodia", !f.cambodia)} title="พาสปอร์ตมีประวัติเข้าออกกัมพูชา → ติด 🐻 ที่รูปในการ์ดคนขับ"
             className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.cambodia ? "bg-amber-700 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🐻 {f.cambodia ? "มีประวัติกัมพูชา" : "กัมพูชา?"}</button>
           <label className="ml-2 flex items-center gap-1 text-xs text-slate-700">✈ ไฟลท์ต่างจากวัน
@@ -1138,6 +1184,10 @@ function PersonCard({
           </label>
           <label className="flex items-center gap-1 text-xs text-slate-700">กลับก่อน
             <input value={f.returnBy ?? ""} onChange={(e) => set("returnBy", formatTimeMask(e.target.value))} className={inputCls + " w-16 text-center"} placeholder={meta.returnBy || "18:45"} />
+          </label>
+          <label className="flex items-center gap-1 text-xs text-slate-700" title="วันหมดอายุหลังรัน คำนวณจากวันนี้ + วันของวีซ่า (+30 ถ้าไปต่อ) — ใส่ทับได้ถ้าตราไม่ตรง">หมดอายุใหม่
+            <DateIn value={f.newUntil ?? ""} onChange={(v) => set("newUntil", v)} />
+            {!f.newUntil && (() => { const d = runExpiry(meta.date, f.visaType, f.run || "RUN"); return d ? <span className="text-slate-500">({fmtDdmmyyyy(d)})</span> : null; })()}
           </label>
         </div>
       )}
