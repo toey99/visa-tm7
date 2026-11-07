@@ -38,6 +38,18 @@ type FormState = {
   extensionReason: string;
 };
 
+const EXTENSION_REASONS = [
+  "TOURISM",
+  "RETIREMENT PURPOSE",
+  "EDUCATION",
+  "MEDICAL TREATMENT",
+  "THAI FAMILY (MARRIAGE)",
+  "THAI FAMILY (CHILD)",
+  "BUSINESS",
+  "VOLUNTEER",
+  "WAITING FOR FLIGHT",
+];
+
 const INITIAL: FormState = {
   title: "MR.",
   firstName: "",
@@ -564,13 +576,17 @@ export default function Page() {
               className={inputCls}
             />
           </Field>
-          <Field label="Reason for Extension" thai="เหตุผลในการขอต่อ">
+          <Field label="Reason for Extension" thai="เหตุผลในการขอต่อ (เลือกหรือพิมพ์เอง)">
             <input
               type="text"
+              list="extension-reasons"
               value={form.extensionReason}
-              onChange={(e) => set("extensionReason", e.target.value)}
+              onChange={(e) => set("extensionReason", e.target.value.toUpperCase())}
               className={inputCls}
             />
+            <datalist id="extension-reasons">
+              {EXTENSION_REASONS.map((r) => <option key={r} value={r} />)}
+            </datalist>
           </Field>
         </Section>
 
