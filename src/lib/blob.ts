@@ -68,7 +68,10 @@ export async function blobDelete(urls: string[]): Promise<void> {
 
 /** Fetch a blob's bytes by pathname (looked up via list, so no URL is stored client-side). */
 export async function blobGetByPath(pathname: string): Promise<Response | null> {
-  const found = (await blobList(pathname)).find((b) => b.pathname === pathname);
+  // Exact match first; otherwise the newest blob under that prefix (covers a
+  // store that appended a random suffix despite x-add-random-suffix: 0).
+  const all = await blobList(pathname);
+  const found = all.find((b) => b.pathname === pathname) ?? all.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0];
   if (!found) return null;
   return blobFetchUrl(found.url);
 }

@@ -19,7 +19,7 @@ import {
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
-import { clearDay as clearDayRemote, deletePerson, flush, isSaving, listDays, loadDay, saveMeta, savePerson, lastError as storeError } from "@/lib/today/store";
+import { clearDay as clearDayRemote, deletePerson, flush, isSaving, listDays, loadDay, saveMeta, savePerson, lastError as storeError, lastSavedAt } from "@/lib/today/store";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
@@ -83,7 +83,7 @@ export default function TodayPage() {
     void openDay(initial);
     setPhotoSettings(loadPhotoSettings());
     setHolidays(loadHolidays());
-    const t = window.setInterval(() => setSaveState(isSaving() ? "กำลังบันทึก…" : storeError ? "บันทึกไม่สำเร็จ: " + storeError : "บันทึกแล้ว"), 1000);
+    const t = window.setInterval(() => setSaveState(isSaving() ? "กำลังบันทึก…" : storeError ? storeError : lastSavedAt ? `บันทึกแล้ว ${new Date(lastSavedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : ""), 1000);
     const onLeave = () => { void flush(); };
     window.addEventListener("beforeunload", onLeave);
     return () => { window.clearInterval(t); window.removeEventListener("beforeunload", onLeave); };
@@ -679,6 +679,7 @@ export default function TodayPage() {
           return <button key={d.date} type="button" onClick={() => commitDate(label)} className={`rounded-full border px-2.5 py-0.5 ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>{label}</button>;
         })}
         <span className={`ml-auto ${saveState.startsWith("บันทึกไม่") ? "text-red-600" : "text-slate-400"}`}>{saveState}</span>
+        <a href="/api/day/debug" target="_blank" className="text-[10px] text-slate-300 hover:text-slate-500" title="ทดสอบที่เก็บไฟล์">ตรวจที่เก็บ</a>
       </div>
 
       <DropZone onFiles={handleFiles} disabled={working || !loaded} />

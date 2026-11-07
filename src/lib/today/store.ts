@@ -27,6 +27,7 @@ let metaCache: DayMeta | null = null;
 let saveTimer: number | undefined;
 let savingPromise: Promise<void> | null = null;
 export let lastError = "";
+export let lastSavedAt = 0;
 
 function extOf(mime: string) {
   return mime === "application/pdf" ? "pdf" : mime === "image/png" ? "png" : "jpg";
@@ -124,7 +125,7 @@ export async function loadDay(date: string): Promise<{ people: Person[]; meta: D
 
 function scheduleSave() {
   if (saveTimer) window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => { void flush(); }, 800);
+  saveTimer = window.setTimeout(() => { saveTimer = undefined; void flush(); }, 800);
 }
 
 export async function flush(): Promise<void> {
@@ -140,8 +141,9 @@ export async function flush(): Promise<void> {
       const r = await fetch(`/api/day?date=${day}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(idx) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
       lastError = "";
+      lastSavedAt = Date.now();
     } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
+      lastError = "บันทึกไม่สำเร็จ: " + (e instanceof Error ? e.message : String(e));
       console.warn("[today/store] save failed", e);
     } finally {
       savingPromise = null;
