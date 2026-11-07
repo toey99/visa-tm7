@@ -637,6 +637,8 @@ export default function TodayPage() {
   // ---------- render ----------
   const collect = people.filter((p) => p.fields.pay === "collect");
   const collectSum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
+  const receivedSum = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
+  const pendingCount = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -689,7 +691,9 @@ export default function TodayPage() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-700">
           <span className="font-semibold">{people.length}</span> คน
-          {collect.length > 0 && <span className="ml-3 rounded bg-yellow-100 px-2 py-0.5 text-yellow-900">ต้องเก็บ {collect.length} คน รวม {collectSum.toLocaleString()} บาท</span>}
+          {collect.length > 0 && <span className="ml-3 rounded bg-yellow-100 px-2 py-0.5 text-yellow-900">แผนเก็บ {collect.length} คน {collectSum.toLocaleString()} บาท</span>}
+          {collect.length > 0 && <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-emerald-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
+          {pendingCount > 0 && <span className="ml-2 rounded bg-red-100 px-2 py-0.5 text-red-900">ค้าง {pendingCount} คน</span>}
           {status && <span className="ml-3 text-slate-500">{status}</span>}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -719,12 +723,13 @@ export default function TodayPage() {
             {agentGroups.map(([agent, list]) => {
               const price = list.reduce((s, p) => s + num(p.fields.agentPrice), 0);
               const cost = list.reduce((s, p) => s + num(p.fields.cost), 0);
-              const collect = list.reduce((s, p) => s + (p.fields.pay === "collect" ? num(p.fields.amount) : 0), 0);
+              const received = list.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? num(p.fields.paidAmount || p.fields.amount) : 0), 0);
+              const invoice = Math.max(0, price - received);
               return (
                 <div key={agent} className="rounded-xl border border-slate-200 p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="font-semibold">{agent} <span className="font-normal text-slate-500">({list.length} คน)</span></span>
-                    <span className="text-xs">ราคาเอเจนซี่ <b>{price.toLocaleString()}</b> · ต้นทุน <b>{cost.toLocaleString()}</b> · กำไร <b className={price - cost < 0 ? "text-red-600" : "text-emerald-700"}>{(price - cost).toLocaleString()}</b>{collect ? <> · เก็บหน้างานแล้ว {collect.toLocaleString()}</> : null}</span>
+                    <span className="text-xs">ราคาเอเจนซี่ <b>{price.toLocaleString()}</b> − ลูกค้าจ่ายเราตรง <b>{received.toLocaleString()}</b> = <b className="rounded bg-indigo-100 px-1.5 py-0.5 text-indigo-900">เรียกเก็บเอเจนซี่ {invoice.toLocaleString()}</b> · ต้นทุน {cost.toLocaleString()} · กำไร <b className={price - cost < 0 ? "text-red-600" : "text-emerald-700"}>{(price - cost).toLocaleString()}</b></span>
                   </div>
                   <table className="mt-2 w-full text-xs">
                     <tbody>
@@ -732,6 +737,7 @@ export default function TodayPage() {
                         <tr key={p.id} className="border-t border-slate-100">
                           <td className="py-1 w-8 text-slate-400">{String(p.order).padStart(2, "0")}</td>
                           <td>{[p.fields.firstName, p.fields.lastName].filter(Boolean).join(" ")} {p.fields.chineseName}</td>
+                          <td className="text-slate-500">{({ pending: "⏳", cash: "💵 เงินสด", transfer: "📲 โอน", agent: "🏢 เอเจนซี่", none: "" } as Record<string, string>)[p.fields.paidHow ?? "none"]}</td>
                           <td className="text-right">{num(p.fields.agentPrice).toLocaleString()}</td>
                           <td className="text-right text-slate-500">−{num(p.fields.cost).toLocaleString()}</td>
                           <td className="text-slate-500">{p.fields.costNote}</td>
@@ -930,6 +936,27 @@ function PersonCard({
           )}
           {missing.length > 0 && <span className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-amber-800">ขาด: {missing.join(", ")}</span>}
           {!hasSelfie && <span className="rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-slate-600">ไม่มีเซลฟี่ → ใช้รูปจากพาสปอร์ต</span>}
+        </div>
+      )}
+
+      {/* counter: what actually happened */}
+      {f.pay === "collect" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 p-2 ring-1 ring-amber-200">
+          <span className="text-xs font-semibold text-amber-900">หน้างาน: แผนเก็บ {Number(f.amount || 0).toLocaleString()} บาท →</span>
+          {([
+            ["cash", "💵 เงินสด", "bg-emerald-600 text-white"],
+            ["transfer", "📲 โอน", "bg-sky-600 text-white"],
+            ["agent", "🏢 จ่ายที่เอเจนซี่", "bg-indigo-600 text-white"],
+            ["pending", "⏳ ยังไม่จ่าย", "bg-amber-500 text-white"],
+          ] as const).map(([k, label, active]) => (
+            <button key={k} type="button" onClick={() => onChange({ ...p, fields: { ...p.fields, paidHow: k, paidAmount: k === "cash" || k === "transfer" ? (p.fields.paidAmount || p.fields.amount) : "" } })}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${(f.paidHow ?? "pending") === k ? active : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>{label}</button>
+          ))}
+          {(f.paidHow === "cash" || f.paidHow === "transfer") && (
+            <label className="ml-1 flex items-center gap-1 text-xs text-slate-700">รับจริง
+              <input value={f.paidAmount ?? ""} onChange={(e) => set("paidAmount", e.target.value.replace(/[^\d]/g, ""))} className={inputCls + " w-24"} placeholder={f.amount} />
+            </label>
+          )}
         </div>
       )}
 
@@ -1140,6 +1167,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   const dateCn = dateObj ? `${yy}年${Number(mm)}月${Number(dd)}日 · 星期${cnDays[dateObj.getDay()]}` : "";
   const collect = people.filter((p) => p.fields.pay === "collect");
   const sum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
+  const received = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
+  const pendingN = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
   const overstays = people.filter((p) => (overstayInfo(p.fields.arrivalDate, p.fields.admittedUntil, p.fields.visaType, meta.date)?.days ?? 0) > 0).length;
   const accent = o.summaryAccent;
   const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
@@ -1174,7 +1203,12 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
             const f = p.fields;
             const amt = f.amount ? ` ${Number(f.amount).toLocaleString()}` : "";
             const who = f.agent ? `${f.agent} ` : "";
-            const tag = f.pay === "collect" ? { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() }
+            const got = f.paidAmount || f.amount ? ` ${Number(f.paidAmount || f.amount).toLocaleString()}` : "";
+            const tag = f.pay === "collect"
+              ? (f.paidHow === "cash" ? { bg: "#d2f4dd", fg: "#14532d", t: `💵 ${who}รับเงินสดแล้ว${got}` }
+                : f.paidHow === "transfer" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `📲 ${who}โอนแล้ว${got}` }
+                : f.paidHow === "agent" ? { bg: "#e0e7ff", fg: "#3730a3", t: `🏢 ${who}จ่ายที่เอเจนซี่` }
+                : { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() })
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
             const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
             return (
@@ -1198,7 +1232,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333", position: "relative" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={pill("#fff", accent, 13)}>👥 {people.length} คน</span>
-          {collect.length > 0 && <span style={pill("#ffe66d", "#4a3b00", 13)}>💰 เก็บ {collect.length} คน รวม {sum.toLocaleString()} บาท</span>}
+          {pendingN > 0 && <span style={pill("#ffe66d", "#4a3b00", 13)}>💰 ต้องเก็บ {pendingN} คน รวม {sum.toLocaleString()} บาท</span>}
+          {received > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</span>}
           {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
           {overstays > 0 && <span style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</span>}
         </div>

@@ -45,6 +45,8 @@ export type PersonFields = {
   agent: string;                // who sent the case
   pay: "collect" | "paid" | "nocollect";
   amount: string;               // THB to collect at the counter
+  paidHow: "pending" | "cash" | "transfer" | "agent" | "none";  // what actually happened at the counter
+  paidAmount: string;           // THB actually received by us (cash/transfer)
   agentPrice: string;           // THB to invoice the agent for this person
   cost: string;                 // THB actually paid out (fee, fine, VIP, embassy letter...)
   costNote: string;             // what the cost was made of
@@ -104,6 +106,8 @@ export const EMPTY_FIELDS: PersonFields = {
   agent: "",
   pay: "collect",
   amount: "",
+  paidHow: "pending",
+  paidAmount: "",
   agentPrice: "",
   cost: "",
   costNote: "",

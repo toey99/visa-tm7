@@ -259,29 +259,31 @@ export function billUrl(people: Person[], amount: number, opts: { docType?: "cas
 export async function buildAgentExcel(people: Person[], date: string, officeLabel: string): Promise<Blob> {
   const XLSX = await getXLSX();
   const n = (v: string) => Number(v) || 0;
-  const rows: (string | number | null)[][] = [["วันที่", "หน้างาน", "เอเจนซี่", "ลำดับ", "ชื่อ", "ชื่อจีน", "พาสปอร์ต", "เก็บหน้างาน", "ราคาเอเจนซี่", "ต้นทุน", "กำไร", "รายการต้นทุน", "หมายเหตุ"]];
+  const HOW: Record<string, string> = { pending: "ยังไม่จ่าย", cash: "เงินสดหน้างาน", transfer: "โอน", agent: "จ่ายที่เอเจนซี่", none: "-" };
+  const rows: (string | number | null)[][] = [["วันที่", "หน้างาน", "เอเจนซี่", "ลำดับ", "ชื่อ", "ชื่อจีน", "พาสปอร์ต", "แผนเก็บ", "วิธีจ่ายจริง", "รับเงินจริง", "ราคาเอเจนซี่", "เรียกเก็บเอเจนซี่", "ต้นทุน", "กำไร", "รายการต้นทุน", "หมายเหตุ"]];
   const sorted = [...people].sort((a, b) => (a.fields.agent || "").localeCompare(b.fields.agent || "") || a.order - b.order);
   for (const p of sorted) {
     const f = p.fields;
+    const received = f.paidHow === "cash" || f.paidHow === "transfer" ? n(f.paidAmount || f.amount) : 0;
     rows.push([date, officeLabel, f.agent || "(ไม่ระบุ)", p.order, [f.firstName, f.lastName].filter(Boolean).join(" "), f.chineseName, f.passportNo,
-      f.pay === "collect" ? n(f.amount) : 0, n(f.agentPrice), n(f.cost), n(f.agentPrice) - n(f.cost), f.costNote, f.note]);
+      f.pay === "collect" ? n(f.amount) : 0, HOW[f.paidHow ?? "none"] ?? "-", received, n(f.agentPrice), Math.max(0, n(f.agentPrice) - received), n(f.cost), n(f.agentPrice) - n(f.cost), f.costNote, f.note]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows as (string | null)[][]);
-  ws["!cols"] = [12, 12, 16, 6, 22, 10, 14, 12, 14, 10, 10, 24, 20].map((w) => ({ wch: w }));
+  ws["!cols"] = [12, 12, 16, 6, 22, 10, 14, 10, 14, 10, 12, 14, 10, 10, 24, 20].map((w) => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "รายคน");
   // per-agent totals
-  const byAgent = new Map<string, { n: number; collect: number; price: number; cost: number }>();
+  const byAgent = new Map<string, { n: number; received: number; price: number; cost: number }>();
   for (const p of people) {
     const f = p.fields, k = f.agent || "(ไม่ระบุ)";
-    const a = byAgent.get(k) ?? { n: 0, collect: 0, price: 0, cost: 0 };
-    a.n++; a.collect += f.pay === "collect" ? n(f.amount) : 0; a.price += n(f.agentPrice); a.cost += n(f.cost);
+    const a = byAgent.get(k) ?? { n: 0, received: 0, price: 0, cost: 0 };
+    a.n++; a.received += f.paidHow === "cash" || f.paidHow === "transfer" ? n(f.paidAmount || f.amount) : 0; a.price += n(f.agentPrice); a.cost += n(f.cost);
     byAgent.set(k, a);
   }
-  const sum: (string | number | null)[][] = [["เอเจนซี่", "จำนวนคน", "เก็บหน้างาน", "ราคาเอเจนซี่", "ต้นทุน", "กำไร"]];
-  for (const [k, a] of byAgent) sum.push([k, a.n, a.collect, a.price, a.cost, a.price - a.cost]);
+  const sum: (string | number | null)[][] = [["เอเจนซี่", "จำนวนคน", "ราคาเอเจนซี่รวม", "ลูกค้าจ่ายเราตรง", "เรียกเก็บเอเจนซี่", "ต้นทุน", "กำไร"]];
+  for (const [k, a] of byAgent) sum.push([k, a.n, a.price, a.received, Math.max(0, a.price - a.received), a.cost, a.price - a.cost]);
   const ws2 = XLSX.utils.aoa_to_sheet(sum as (string | null)[][]);
-  ws2["!cols"] = [18, 10, 12, 14, 10, 10].map((w) => ({ wch: w }));
+  ws2["!cols"] = [18, 10, 16, 16, 16, 10, 10].map((w) => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws2, "สรุปเอเจนซี่");
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
