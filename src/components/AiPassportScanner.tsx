@@ -138,11 +138,11 @@ export default function AiPassportScanner({
             />
           </svg>
         )}
-        {scanning ? stage : "Scan with AI"}
+        {scanning ? stage : "Scan Passport Bio"}
       </button>
       {!scanning && (
         <p className="text-xs text-slate-500">
-          Photo of the passport bio page — Gemini extracts the fields directly.
+          Photo of the passport bio page — fills name, passport no., dates.
         </p>
       )}
     </div>

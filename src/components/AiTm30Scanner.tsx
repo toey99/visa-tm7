@@ -141,7 +141,7 @@ export default function AiTm30Scanner({
             />
           </svg>
         )}
-        {scanning ? stage || "Scanning..." : "Scan TM.30 with AI"}
+        {scanning ? stage || "Scanning..." : "Scan TM.30"}
       </button>
       {!scanning && (
         <p className="text-xs text-slate-500">

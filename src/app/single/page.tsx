@@ -309,9 +309,9 @@ export default function Page() {
       </header>
 
       <section className="mb-6 rounded-2xl border border-violet-200 bg-violet-50/60 p-5">
-        <h2 className="text-sm font-semibold text-violet-900">Quick fill with AI</h2>
+        <h2 className="text-sm font-semibold text-violet-900">Quick fill</h2>
         <p className="mb-4 text-xs text-violet-700/80">
-          Upload a passport bio page or TM.30 PDF. Gemini extracts the details and fills the form for you.
+          Upload a passport bio page, entry-stamp page or TM.30 — the details are read and filled in for you.
         </p>
         <div className="space-y-4">
           <AiPassportScanner onScan={handleAiScan} onError={handleScanError} />
