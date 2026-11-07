@@ -15,16 +15,16 @@ import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
 const TEMPLATE_PATH = path.join(process.cwd(), "public", "templates", "stm9.pdf");
 
 export const STM9_FIELDS = {
-  location: { x: 415, y: 652 },   // ที่ทำการ / Location
+  location: { x: 415, y: 668 },   // ที่ทำการ / Location
   day: { x: 380, y: 623 },        // วัน
   month: { x: 432, y: 623 },      // เดือน (MMM)
   year: { x: 516, y: 623 },       // พ.ศ. (printed as A.D. year, same as the TM.7 pages)
-  lastName: { x: 240, y: 580 },   // ชื่อสกุล / Family name
+  lastName: { x: 256, y: 580 },   // ชื่อสกุล / Family name
   firstName: { x: 405, y: 580 },  // ชื่อตัว / Given name
   middleName: { x: 110, y: 540 }, // ชื่อรอง
-  age: { x: 186, y: 540 },        // อายุ
-  nationality: { x: 272, y: 540 },
-  passportNo: { x: 432, y: 540 },
+  age: { x: 186, y: 548 },        // อายุ
+  nationality: { x: 272, y: 548 },
+  passportNo: { x: 432, y: 548 },
 } as const;
 
 export type Stm9Data = {
