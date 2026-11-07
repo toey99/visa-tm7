@@ -162,6 +162,9 @@ export default function TodayPage() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
     finally { setWorking(false); }
   }
+  function toggleArrived(p: Person) {
+    patchPerson(p.id, (x) => ({ ...x, arrived: !x.arrived }));
+  }
   function toggleCancelled(p: Person) {
     patchPerson(p.id, (x) => ({ ...x, cancelled: !x.cancelled }));
   }
@@ -715,6 +718,7 @@ export default function TodayPage() {
           {collect.length > 0 && <span className="ml-3 rounded bg-yellow-100 px-2 py-0.5 text-yellow-900">แผนเก็บ {collect.length} คน {collectSum.toLocaleString()} บาท</span>}
           {collect.length > 0 && <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-emerald-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
           {pendingCount > 0 && <span className="ml-2 rounded bg-red-100 px-2 py-0.5 text-red-900">ค้าง {pendingCount} คน</span>}
+          {active.length > 0 && <span className="ml-2 rounded bg-emerald-50 px-2 py-0.5 text-emerald-900">✅ มาแล้ว {active.filter((p) => p.arrived).length}/{active.length}</span>}
           {status && <span className="ml-3 text-slate-500">{status}</span>}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -855,6 +859,7 @@ export default function TodayPage() {
             onCrop={(crop, photo) => updateCrop(p.id, crop, photo)}
             onUseAsPhoto={(fileId) => usePhotoAsIs(p, fileId)}
             onMoveDay={() => moveDay(p)}
+            onToggleArrived={() => toggleArrived(p)}
             onToggleCancelled={() => toggleCancelled(p)}
             clothes={clothesList()}
             onMoveFile={(fileId, toId) => moveFile(p.id, fileId, toId)}
@@ -882,7 +887,7 @@ export default function TodayPage() {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onToggleCancelled, clothes, onMoveFile, holidays, busy,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onToggleArrived, onToggleCancelled, clothes, onMoveFile, holidays, busy,
 }: {
   person: Person;
   people: Person[];
@@ -896,6 +901,7 @@ function PersonCard({
   onCrop: (crop: Crop, photo: Blob) => void;
   onUseAsPhoto: (fileId: string) => void;
   onMoveDay: () => void;
+  onToggleArrived: () => void;
   onToggleCancelled: () => void;
   clothes: string[];
   onMoveFile: (fileId: string, toPersonId: string) => void;
@@ -942,6 +948,7 @@ function PersonCard({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={onToggleArrived} className={p.arrived ? "rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls} title="ลูกค้ามาถึงหน้างานแล้ว (ขึ้นเครื่องหมายถูกเขียวใน summary)">{p.arrived ? "✅ มาแล้ว" : "☐ มาแล้ว?"}</button>
           <button onClick={onTm7} disabled={busy} className={btnCls}>TM7 PDF</button>
           <button onClick={onPhoto} disabled={busy} className={btnCls}>{p.aiPhoto ? "ทำรูปใหม่" : "✦ ทำรูปพื้นขาว"}</button>
           {f.pay === "collect" && <button onClick={onCollect} disabled={busy} className={btnCls} title="รูปพาสปอร์ตพร้อมยอดที่ต้องเก็บ">฿ รูปเรียกเก็บ</button>}
@@ -1235,7 +1242,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
             const tag = f.pay === "collect"
               ? (f.paidHow === "cash" ? { bg: "#d2f4dd", fg: "#14532d", t: `💵 ${who}รับเงินสดแล้ว${got}` }
                 : f.paidHow === "transfer" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `📲 ${who}โอนแล้ว${got}` }
-                : f.paidHow === "agent" ? { bg: "#e0e7ff", fg: "#3730a3", t: `🏢 ${who}จ่ายที่เอเจนซี่` }
+                : f.paidHow === "agent" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `🏢 ${who}จ่ายที่เอเจนซี่` }
                 : { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() })
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
             const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
@@ -1245,6 +1252,11 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                   <SummaryPhoto person={p} />
                   <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
                   {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
+                  {p.arrived && (
+                    <span style={{ position: "absolute", right: -8, bottom: 10, width: 34, height: 34, borderRadius: "50%", background: "#16a34a", border: "3px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
                 <div style={{ fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || "\u00a0"}</div>
@@ -1260,6 +1272,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333", position: "relative" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={pill("#fff", accent, 13)}>👥 {people.length} คน</span>
+          {people.some((p) => p.arrived) && <span style={pill("#16a34a", "#fff", 13)}>✓ มาแล้ว {people.filter((p) => p.arrived).length}/{people.length}</span>}
           {pendingN > 0 && <span style={pill("#ffe66d", "#4a3b00", 13)}>💰 ต้องเก็บ {pendingN} คน รวม {sum.toLocaleString()} บาท</span>}
           {received > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</span>}
           {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
