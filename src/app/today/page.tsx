@@ -473,10 +473,12 @@ export default function TodayPage() {
   async function makeSummary(): Promise<Blob | null> {
     const el = summaryRef.current;
     if (!el || !people.length) return null;
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
-    const h2c = (window as unknown as { html2canvas: (el: HTMLElement, o: Record<string, unknown>) => Promise<HTMLCanvasElement> }).html2canvas;
-    const canvas = await h2c(el, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+    // html-to-image renders through the browser's own layout engine (SVG
+    // foreignObject), so Thai text and pills come out exactly as on screen —
+    // html2canvas re-implements layout and sat Thai glyphs too low.
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
+    const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
+    const blob = await hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
     if (blob) setSummaryBlob(blob);
     return blob;
   }
@@ -672,7 +674,7 @@ export default function TodayPage() {
         ))}
       </div>
 
-      {/* one-page summary (rendered off-screen, exported with html2canvas) */}
+      {/* one-page summary (rendered off-screen, exported with html-to-image) */}
       <div className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่าง Summary</h2>
         <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
