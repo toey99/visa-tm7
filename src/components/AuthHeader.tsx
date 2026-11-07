@@ -23,6 +23,7 @@ export default function AuthHeader() {
           <a href="/single" className="rounded-lg px-2 py-1 font-medium text-slate-600 hover:bg-slate-50">ฟอร์มทีละคน</a>
           <a href="/today" className="rounded-lg px-2 py-1 font-medium text-indigo-700 hover:bg-indigo-50">งานวันนี้</a>
           <a href="/visarun" className="rounded-lg px-2 py-1 font-medium text-orange-700 hover:bg-orange-50">🚗 Visa Run</a>
+          <a href="/expiry" className="rounded-lg px-2 py-1 font-medium text-amber-700 hover:bg-amber-50">⏰ ใกล้หมดอายุ</a>
           <a href="/overstay" className="rounded-lg px-2 py-1 font-medium text-slate-600 hover:bg-slate-50">เช็ค Overstay</a>
         </nav>
         <button

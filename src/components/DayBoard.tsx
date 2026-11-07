@@ -18,14 +18,14 @@ import { analyzeTm30 } from "@/app/actions/analyzeTm30";
 import { compressPdf } from "@/lib/compressPdf";
 import type { Tm7FormData } from "@/lib/tm7-generator";
 import {
-  DEFAULT_META, DEFAULT_META_RUN, EMPTY_FIELDS, ddmmyyyyToIso, extensionExpiry, fmtDdmmyyyy, runExpiry, loadHolidays, newId, overstayInfo, saveHolidays,
+  DEFAULT_META, DEFAULT_META_RUN, EMPTY_FIELDS, ddmmyyyyToIso, extensionExpiry, fmtDdmmyyyy, parseDdmmyyyy, runExpiry, loadHolidays, newId, overstayInfo, saveHolidays,
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
 import { daysStore, runStore } from "@/lib/today/store";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
-import ExpiryReport from "@/components/ExpiryReport";
+import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
@@ -628,6 +628,43 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const reportRef = useRef<HTMLDivElement>(null);
   const reportPeople = active.filter((p) => p.fields.report);
   const reportCompany = (() => { const names = Array.from(new Set(reportPeople.map((p) => p.fields.agent).filter(Boolean))); return names.length === 1 ? names[0] : ""; })();
+  // entry + new expiry per person: run board = the run day / run + visa days (+30);
+  // extension board = the arrival stamp / admitted-until + extension days
+  function expiryOf(p: Person): { entry: Date | null; expiry: Date | null; kind: "run" | "run30" | "ext"; tag: string } {
+    const f = p.fields;
+    if (isRun) {
+      const kind = f.run === "RUN30" ? "run30" : "run";
+      return { entry: parseDdmmyyyy(meta.date), expiry: runExpiry(meta.date, f.visaType, f.run || "RUN", f.newUntil), kind, tag: kind === "run30" ? "วีซ่ารัน + ต่อ 30 วัน · 过境+延期30天" : "" };
+    }
+    return { entry: parseDdmmyyyy(f.arrivalDate), expiry: extensionExpiry(f.arrivalDate, f.admittedUntil, f.visaType, meta.extensionDays, f.newUntil), kind: "ext", tag: `ต่อวีซ่า ${meta.extensionDays || 30} วัน · 延期${meta.extensionDays || 30}天` };
+  }
+  const reportRows: ReportRow[] = reportPeople.map((p) => {
+    const e = expiryOf(p);
+    return { id: p.id, name: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "), cn: p.fields.chineseName, passportNo: p.fields.passportNo, entry: e.entry, expiry: e.expiry, tag: e.tag, person: p };
+  });
+  const reportDay = parseDdmmyyyy(meta.date);
+  const reportHeader = {
+    title: "สรุปวันหมดอายุวีซ่า · 签证到期日汇总",
+    subtitle: `${reportCompany ? `${reportCompany} · ` : ""}${isRun ? `วีซ่ารัน ${reportDay ? thDate(reportDay) : meta.date} · 过境日期 ${reportDay ? zhDate(reportDay) : meta.date}` : `ต่อวีซ่า ${meta.extensionDays || 30} วัน ${OFFICES[meta.office].label} ${reportDay ? thDate(reportDay) : meta.date} · 延期${meta.extensionDays || 30}天 ${reportDay ? zhDate(reportDay) : meta.date}`}`,
+    badge: isRun ? "VISA RUN REPORT" : "VISA EXTENSION REPORT",
+    count: `👥 ${reportPeople.length} คน · ${reportPeople.length} 人`,
+    note: isRun ? "วันหมดอายุคำนวณจากตราเข้าเมืองวันนี้ กรุณาตรวจกับตราในพาสปอร์ตอีกครั้ง · 到期日按今日入境章计算，请再次核对护照上的印章" : "วันหมดอายุคำนวณจากตราต่อวีซ่าวันนี้ กรุณาตรวจกับตราในพาสปอร์ตอีกครั้ง · 到期日按今日延期章计算，请再次核对护照上的印章",
+  };
+  // write the ticked people into the expiry ledger (one record per passport, latest wins) — feeds /expiry
+  const [ledgerState, setLedgerState] = useState("");
+  async function saveToLedger(list: Person[]) {
+    const records = list.map((p) => { const e = expiryOf(p); return {
+      passportNo: p.fields.passportNo, name: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "), cn: p.fields.chineseName, agent: p.fields.agent, phone: p.fields.phone,
+      kind: e.kind, office: meta.office, jobDate: meta.date, entry: e.entry ? fmtDdmmyyyy(e.entry) : "", expiry: e.expiry ? fmtDdmmyyyy(e.expiry) : "",
+    }; }).filter((r) => r.passportNo && r.expiry);
+    if (!records.length) { setLedgerState("ไม่มีคนที่มีเลขพาสปอร์ต + วันหมดอายุ"); return; }
+    setLedgerState("กำลังบันทึกทะเบียน…");
+    try {
+      const r = await fetch("/api/expiry", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ records }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+      setLedgerState(`บันทึกทะเบียนหมดอายุ ${records.length} คน ${new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`);
+    } catch (e) { setLedgerState("บันทึกทะเบียนไม่สำเร็จ: " + (e instanceof Error ? e.message : String(e))); }
+  }
   function tickReport(filter: (p: Person) => boolean, on: boolean) {
     for (const p of peopleRef.current) if (!p.cancelled && !p.movedTo && filter(p)) upsertPerson({ ...p, fields: { ...p.fields, report: on } });
   }
@@ -644,6 +681,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     try {
       const blob = await makeExpiryReport();
       if (blob) downloadBlob(blob, `expiry_${meta.date.replace(/\//g, "")}_${reportCompany || "report"}.png`);
+      void saveToLedger(reportPeople);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
@@ -1031,9 +1069,13 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
             ))}
             <button type="button" onClick={() => tickReport(() => true, true)} className={btnCls + " px-2 py-0.5 text-xs"}>ติ๊กทุกคน</button>
             <button type="button" onClick={() => tickReport(() => true, false)} className={btnCls + " px-2 py-0.5 text-xs"}>ล้าง</button>
+            <span className="mx-1 text-slate-300">|</span>
+            <button type="button" onClick={() => saveToLedger(active)} disabled={!active.length} className={btnCls + " px-2 py-0.5 text-xs"} title="เก็บ ชื่อ/พาส/เอเจนซี่/วันหมดอายุ ของทุกคนวันนี้ไว้ในทะเบียน (หน้า ใกล้หมดอายุ) — กด export สรุปก็บันทึกให้อัตโนมัติ">💾 บันทึกทะเบียนหมดอายุทุกคน</button>
+            <a href="/expiry" className="text-xs text-indigo-700 hover:underline">⏰ ดูหน้าใกล้หมดอายุ</a>
+            {ledgerState && <span className={`text-xs ${ledgerState.startsWith("บันทึกทะเบียนไม่") ? "text-red-600" : "text-slate-500"}`}>{ledgerState}</span>}
           </div>
           <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-            <ExpiryReport ref={reportRef} people={reportPeople} meta={meta} company={reportCompany} mode={mode} />
+            <ExpiryReport ref={reportRef} rows={reportRows} header={reportHeader} today={reportDay ?? new Date()} />
           </div>
         </div>
       )}
