@@ -69,11 +69,11 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         {(headFlight || headLand) && (
           <div style={{ textAlign: "center", marginTop: 4 }}>
             {headFlight && <div style={{ fontSize: 40, fontWeight: 800, color: "#111", letterSpacing: 1 }}>{headFlight}</div>}
-            {headLand && <div style={{ fontSize: 40, fontWeight: 800, color: "#111", lineHeight: 1.1 }}>เครื่องลง {headLand} น</div>}
+            {headLand && <div style={{ fontSize: 38, fontWeight: 800, color: "#111", lineHeight: 1.1, whiteSpace: "nowrap" }}>เครื่องลง {headLand} น</div>}
           </div>
         )}
         {headReturn && (
-          <div style={{ background: "#ffb3b8", color: "#1a1aa6", borderRadius: 18, padding: "14px 24px", fontSize: 30, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>
+          <div style={{ background: "#ffb3b8", color: "#1a1aa6", borderRadius: 18, padding: "14px 22px", fontSize: 26, fontWeight: 700, textAlign: "center", lineHeight: 1.2, whiteSpace: "nowrap" }}>
             กลับถึงสนามบินก่อน {headReturn} น
           </div>
         )}
