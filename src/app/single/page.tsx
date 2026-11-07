@@ -6,6 +6,7 @@ import type { Tm7FormData, Title } from "@/lib/tm7-generator";
 import { buildTm7Filename } from "@/lib/tm7-filename";
 import AiPassportScanner, { type AiScanResult } from "@/components/AiPassportScanner";
 import AiTm30Scanner, { type AiTm30ScanResult } from "@/components/AiTm30Scanner";
+import AiStampScanner, { type StampScanResult } from "@/components/AiStampScanner";
 
 type FormState = {
   title: Title;
@@ -126,6 +127,17 @@ export default function Page() {
 
   function handleScanError(msg: string) {
     setScanWarning(msg);
+  }
+
+  function handleStampScan(d: StampScanResult) {
+    setForm((prev) => ({
+      ...prev,
+      arrivalDate: d.arrivalDate || prev.arrivalDate,
+      portOfArrival: d.portOfArrival || prev.portOfArrival,
+      arrivedBy: d.arrivedBy || prev.arrivedBy,
+    }));
+    setError("");
+    setScanWarning(d.admittedUntil ? `Stamp read. Admitted until ${d.admittedUntil} — check for overstay before the appointment date.` : "Stamp read.");
   }
 
   function handleTm30Scan(data: AiTm30ScanResult, file: File) {
@@ -292,7 +304,7 @@ export default function Page() {
           TM.7 Visa Extension Form
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Fill in your details below and generate a printable TM.7 packet (5 pages: TM.7, STM.2, STM.9, STM.11).
+          Fill in your details below and generate a printable TM.7 packet for the selected office (Bangkok / Nonthaburi / Rayong / Chiang Saen).
         </p>
       </header>
 
@@ -303,6 +315,7 @@ export default function Page() {
         </p>
         <div className="space-y-4">
           <AiPassportScanner onScan={handleAiScan} onError={handleScanError} />
+          <AiStampScanner onScan={handleStampScan} onError={handleScanError} />
           <AiTm30Scanner onScan={handleTm30Scan} onError={handleTm30Error} />
         </div>
         <p className="mt-3 text-xs text-violet-700/70">

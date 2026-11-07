@@ -3,6 +3,22 @@
 import { useRef, useState } from "react";
 import { scanTm30, type AiTm30ScanResult } from "@/app/actions/scanTm30";
 import { compressPdf } from "@/lib/compressPdf";
+import { analyzeDoc } from "@/app/actions/analyzeDoc";
+import { downscaleImage } from "@/lib/today/clientTools";
+
+// Wrap a JPEG into a single A4 PDF page so a photographed TM.30 can still be
+// appended to the TM.7 packet like an uploaded PDF receipt.
+async function imageToPdf(jpeg: Blob): Promise<File> {
+  const { PDFDocument } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  const img = await doc.embedJpg(await jpeg.arrayBuffer());
+  const page = doc.addPage([595.28, 841.89]);
+  const scale = Math.min((595.28 - 40) / img.width, (841.89 - 40) / img.height);
+  const w = img.width * scale, h = img.height * scale;
+  page.drawImage(img, { x: (595.28 - w) / 2, y: (841.89 - h) / 2, width: w, height: h });
+  const bytes = await doc.save();
+  return new File([bytes as unknown as BlobPart], "tm30.pdf", { type: "application/pdf" });
+}
 
 export type { AiTm30ScanResult };
 
@@ -27,6 +43,21 @@ export default function AiTm30Scanner({
     setStage("Reading PDF...");
 
     try {
+      if (file.type.startsWith("image/")) {
+        setStage("Reading TM.30 photo...");
+        const jpeg = await downscaleImage(file, 1800);
+        const fd = new FormData();
+        fd.append("image", new File([jpeg], "tm30.jpg", { type: "image/jpeg" }));
+        const r = await analyzeDoc(fd);
+        if (!r.ok) { onError(r.error); return; }
+        if (r.data.docType !== "tm30" && !r.data.province && !r.data.houseNo) {
+          onError("ภาพนี้ไม่น่าใช่ใบรับแจ้ง TM.30 (อ่านที่อยู่ไม่เจอ) ลองถ่ายใหม่ให้ตรงและชัด");
+          return;
+        }
+        const { houseNo, road, subDistrict, district, province, postalCode } = r.data;
+        onScan({ houseNo, road, subDistrict, district, province, postalCode }, await imageToPdf(jpeg));
+        return;
+      }
       // Oversized PDFs (usually a full-page scan) would be rejected by the
       // Server Action's body-size limit before it ever runs. Rasterize + JPEG
       // re-compress client-side to squeeze them under the limit first.
@@ -79,7 +110,7 @@ export default function AiTm30Scanner({
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,.pdf,image/*"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) handleFile(f);
@@ -114,7 +145,7 @@ export default function AiTm30Scanner({
       </button>
       {!scanning && (
         <p className="text-xs text-slate-500">
-          PDF of your TM.30 receipt — extracts your Thailand address in English.
+          PDF or photo of the TM.30 receipt — extracts the Thailand address and attaches it to the packet.
         </p>
       )}
     </div>
