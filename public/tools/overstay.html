@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คำนวณวันหมดอายุวีซ่า & ค่าปรับ Overstay</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;700&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f3f5f9; --card:#fff; --ink:#1c2230; --muted:#6b7280; --line:#e3e7ee;
+    --blue:#1e5eff; --green:#15803d; --green-bg:#e8f7ee; --amber:#b45309; --amber-bg:#fff4e0;
+    --red:#b91c1c; --red-bg:#fde8e8; --dark-red:#7f1d1d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans Thai",system-ui,sans-serif;font-size:16px;line-height:1.5}
+  .wrap{max-width:560px;margin:0 auto;padding:16px 14px 48px}
+  h1{font-size:1.25rem;margin:4px 0 2px}
+  .sub{color:var(--muted);font-size:.9rem;margin:0 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{font-size:1rem;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .num{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font-size:.85rem;align-items:center;justify-content:center}
+  label{display:block;font-size:.85rem;color:var(--muted);margin:8px 0 4px}
+  input[type=date],input[type=number],select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:1rem;background:#fff;color:var(--ink)}
+  input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:1rem;background:#fff;color:var(--ink)}
+  .chk{display:flex;align-items:center;gap:8px;font-size:.92rem;color:var(--ink);margin:10px 0 4px;cursor:pointer}
+  .chk input{width:18px;height:18px;accent-color:var(--blue)}
+  .dt{position:relative;display:flex;align-items:center}
+  .dt input[type=text]{padding-right:44px;letter-spacing:.5px}
+  .dt .cal{position:absolute;right:4px;top:4px;bottom:4px;width:36px;border:0;background:#eef3ff;border-radius:8px;font-size:1.1rem;cursor:pointer}
+  .dt input[type=date]{position:absolute;right:4px;top:4px;width:36px;height:calc(100% - 8px);opacity:0;pointer-events:none}
+  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:6px}
+  .seg button{flex:1;padding:9px 6px;border:0;background:#fff;font:inherit;font-size:.9rem;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--blue);color:#fff;font-weight:600}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+  .chips button{padding:8px 12px;border:1px solid var(--blue);background:#eef3ff;color:var(--blue);border-radius:999px;font:inherit;font-size:.9rem;font-weight:600;cursor:pointer}
+  .chips button.ghost{border-color:var(--line);background:#fff;color:var(--muted)}
+  .ext-list{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+  .ext{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fafbfd;font-size:.92rem}
+  .ext small{display:block;color:var(--muted);font-size:.8rem}
+  .ext .x{border:0;background:transparent;color:var(--red);font-size:1.1rem;cursor:pointer;padding:4px 8px}
+  .empty{color:var(--muted);font-size:.88rem;padding:6px 2px}
+  .result{text-align:center;padding:6px 0 2px}
+  .result .lbl{color:var(--muted);font-size:.88rem}
+  .result .date{font-size:1.6rem;font-weight:700;margin:2px 0}
+  .result .en{color:var(--muted);font-size:.95rem}
+  .badge{display:inline-block;margin-top:10px;padding:8px 16px;border-radius:999px;font-weight:700;font-size:1.05rem}
+  .ok{background:var(--green-bg);color:var(--green)}
+  .warn{background:var(--amber-bg);color:var(--amber)}
+  .bad{background:var(--red-bg);color:var(--red)}
+  .fine{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  .fine .big{font-size:1.4rem;font-weight:700;color:var(--red)}
+  .kv{display:flex;justify-content:space-between;font-size:.92rem;padding:4px 0;border-bottom:1px solid #f1f3f7}
+  .kv:last-child{border:0}
+  .kv span:last-child{font-weight:600;text-align:right}
+  .alert{border-radius:12px;padding:12px 14px;margin-top:12px;font-size:.93rem}
+  .alert.red{background:var(--red-bg);border:1px solid #f5b5b5;color:var(--dark-red)}
+  .alert.amber{background:var(--amber-bg);border:1px solid #f3d49a;color:#7c3f00}
+  .alert.note{background:#f6f7fb;border:1px solid var(--line);color:#374151}
+  .alert strong{display:block;font-size:1rem}
+  .alert ul{margin:6px 0 0;padding-left:18px}
+  .btn{width:100%;padding:12px;border:0;border-radius:12px;background:var(--blue);color:#fff;font:inherit;font-size:1rem;font-weight:700;cursor:pointer;margin-top:10px}
+  .btn.sec{background:#fff;color:var(--blue);border:1px solid var(--blue)}
+  textarea{width:100%;min-height:120px;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:.9rem;white-space:pre-wrap}
+  .hide{display:none}
+  .foot{color:var(--muted);font-size:.78rem;text-align:center;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>คำนวณวันหมดอายุวีซ่า & Overstay</h1>
+  <p class="sub">ฟรีวีซ่า / วีซ่า → ต่ออายุ → อยู่ได้ถึงวันไหน → เช็ค overstay และค่าปรับ</p>
+
+  <!-- 1. วันที่เริ่มต้น -->
+  <div class="card">
+    <h2><span class="num">1</span> วันอนุญาตเดิม (จากตราประทับ)</h2>
+    <div class="seg">
+      <button id="modeStamp" class="on" onclick="setMode('stamp')">กรอกวันที่ในตราประทับ</button>
+      <button id="modeEntry" onclick="setMode('entry')">คำนวณจากวันเข้าประเทศ</button>
+    </div>
+
+    <div id="boxStamp">
+      <label>วันที่ "อนุญาตให้อยู่ถึง" (Admitted until) ตามตราประทับ</label>
+      <div class="dt"><input type="text" id="stampUntil" inputmode="numeric" placeholder="วว/ดด/ปปปป" maxlength="10" oninput="dtInput(this)"><button type="button" class="cal" onclick="openPicker('stampUntil')">📅</button><input type="date" id="stampUntil_p" tabindex="-1" onchange="pickerChanged('stampUntil')"></div>
+    </div>
+
+    <div id="boxEntry" class="hide">
+      <label>วันที่เดินทางเข้าประเทศ (วันที่ประทับตรา)</label>
+      <div class="dt"><input type="text" id="entryDate" inputmode="numeric" placeholder="วว/ดด/ปปปป" maxlength="10" oninput="dtInput(this)"><button type="button" class="cal" onclick="openPicker('entryDate')">📅</button><input type="date" id="entryDate_p" tabindex="-1" onchange="pickerChanged('entryDate')"></div>
+      <label>ประเภทการเข้าประเทศ</label>
+      <select id="entryType" onchange="entryTypeChanged()">
+        <option value="60">ฟรีวีซ่า (Visa Exemption) 60 วัน</option>
+        <option value="30">ฟรีวีซ่า (Visa Exemption) 30 วัน</option>
+        <option value="15">Visa on Arrival 15 วัน</option>
+        <option value="60t">Tourist Visa (TR) 60 วัน</option>
+        <option value="90">Non-Immigrant (B / O / ED) 90 วัน</option>
+        <option value="custom">กำหนดเอง (ระบุจำนวนวัน)</option>
+      </select>
+      <div id="customDaysBox" class="hide">
+        <label>จำนวนวันที่อนุญาต</label>
+        <input type="number" id="customDays" min="1" value="30" oninput="calc()">
+      </div>
+      <p class="empty">* ตม. นับวันที่เข้าเป็นวันที่ 1 เช่น เข้า 1 ม.ค. ได้ 30 วัน = อยู่ถึง 30 ม.ค.</p>
+    </div>
+  </div>
+
+  <!-- 2. การต่ออายุ -->
+  <div class="card">
+    <h2><span class="num">2</span> การต่ออายุวีซ่า (กดเพิ่มได้หลายครั้ง)</h2>
+    <div class="chips">
+      <button onclick="addExt(30)">+ 30 วัน</button>
+      <button onclick="addExt(7)">+ 7 วัน</button>
+      <button onclick="addExt(90)">+ 90 วัน</button>
+      <button onclick="addExt('1y')">+ 1 ปี</button>
+      <button class="ghost" onclick="toggleCustomExt()">+ กำหนดเอง</button>
+    </div>
+    <div id="customExtBox" class="hide row">
+      <input type="number" id="customExtDays" min="1" placeholder="จำนวนวัน">
+      <button class="chips-btn btn sec" style="margin:0;flex:0 0 auto;padding:10px 16px" onclick="addCustomExt()">เพิ่ม</button>
+    </div>
+    <div id="extList" class="ext-list"><div class="empty">ยังไม่มีการต่ออายุ (ถ้าไม่เคยต่อ ข้ามข้อนี้ได้)</div></div>
+  </div>
+
+  <!-- 3. วันที่เช็ค -->
+  <div class="card">
+    <h2><span class="num">3</span> เช็คสถานะ ณ วันที่</h2>
+    <div class="row">
+      <div class="dt"><input type="text" id="checkDate" inputmode="numeric" placeholder="วว/ดด/ปปปป" maxlength="10" oninput="dtInput(this)"><button type="button" class="cal" onclick="openPicker('checkDate')">📅</button><input type="date" id="checkDate_p" tabindex="-1" onchange="pickerChanged('checkDate')"></div>
+      <button class="btn sec" style="margin:0;flex:0 0 auto;padding:10px 14px" onclick="setToday()">วันนี้</button>
+    </div>
+  </div>
+
+  <!-- 4. ข้อมูลลูกค้า / ตัวเลือกข้อความ -->
+  <div class="card">
+    <h2><span class="num">4</span> ข้อมูลลูกค้า & ข้อความเตือน</h2>
+    <div class="row">
+      <div><label>ชื่อ (อังกฤษ/พินอิน)</label><input type="text" id="nameEn" placeholder="WANG YANAN" oninput="calc()" style="text-transform:uppercase"></div>
+      <div><label>ชื่อจีน (ถ้ามี)</label><input type="text" id="nameZh" placeholder="王亚楠" oninput="calc()"></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="reentryOn" onchange="calc()"> เพิ่มข้อความเตือนเรื่อง Re-entry Permit</label>
+    <div id="reentryOpts" class="hide" style="padding-left:26px">
+      <label class="chk"><input type="radio" name="reentry" value="self" checked onchange="calc()"> ลูกค้ายังไม่ได้ทำ → เตือนให้ไปทำเองก่อนออกนอกประเทศ</label>
+      <label class="chk"><input type="radio" name="reentry" value="done" onchange="calc()"> ทำ Re-entry กับเราแล้ว → เตือนให้พกเอกสารแสดง ตม.</label>
+    </div>
+  </div>
+
+  <!-- ผลลัพธ์ -->
+  <div class="card" id="resultCard">
+    <div id="noData" class="empty" style="text-align:center">กรอกวันที่ในข้อ 1 เพื่อเริ่มคำนวณ</div>
+    <div id="resultBody" class="hide">
+      <div class="result">
+        <div class="lbl">อยู่ในประเทศไทยได้ถึงวันที่</div>
+        <div class="date" id="finalTh"></div>
+        <div class="en" id="finalEn"></div>
+        <div class="badge" id="statusBadge"></div>
+      </div>
+
+      <div class="fine" id="fineBox"></div>
+
+      <div id="alerts"></div>
+
+      <div class="alert note">
+        <strong>หมายเหตุ</strong>
+        <ul>
+          <li><b>ห้าม overstay เกิน 90 วันโดยเด็ดขาด</b> จะติด blacklist ห้ามเข้าไทย 1 ปี (เกิน 1 ปี → 3 ปี, 3 ปี → 5 ปี, 5 ปี → 10 ปี)</li>
+          <li>ค่าปรับ 500 บาท/วัน สูงสุด 20,000 บาท จ่ายที่ด่าน ตม. ตอนออก</li>
+          <li>ถูกจับขณะ overstay → ดำเนินคดี + ห้ามเข้าอย่างน้อย 5 ปี</li>
+        </ul>
+      </div>
+
+      <label style="margin-top:12px">ข้อความส่งลูกค้า — เลือกภาษา</label>
+      <div class="seg">
+        <button id="langth" class="on" onclick="setLang('th')">ไทย</button>
+        <button id="langzh" onclick="setLang('zh')">中文</button>
+        <button id="langen" onclick="setLang('en')">English</button>
+      </div>
+      <textarea id="summary" readonly></textarea>
+      <button class="btn" onclick="copySummary()" id="copyBtn">คัดลอกข้อความ</button>
+
+      <label style="margin-top:14px">รูปภาพส่งลูกค้า / ปริ้น (ภาษาตามที่เลือกด้านบน)</label>
+      <div class="row">
+        <button class="btn" style="margin:0" onclick="exportImage('color')">💾 บันทึกรูปสี</button>
+        <button class="btn sec" style="margin:0" onclick="exportImage('bw')">🖨️ รูปขาวดำ (PeriPage)</button>
+      </div>
+      <div id="imgHint" class="empty" style="text-align:center"></div>
+      <img id="preview" class="hide" style="width:100%;border:1px solid var(--line);border-radius:12px;margin-top:8px" alt="preview">
+      <canvas id="cv" class="hide"></canvas>
+    </div>
+  </div>
+
+  <p class="foot">เครื่องมือช่วยคำนวณเบื้องต้น — ให้ยึดวันที่ในตราประทับ / ใบอนุญาตของ ตม. เป็นหลัก</p>
+</div>
+
+<script>
+const TH_MONTHS=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const TH_MONTHS_FULL=["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const EN_MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+let mode='stamp';
+let exts=[]; // {type:'days'|'1y', days}
+
+// รับ DD/MM/YYYY (ค.ศ. หรือ พ.ศ.) หรือ YYYY-MM-DD
+function parseD(s){
+  if(!s) return null; s=s.trim();
+  let d,m,y;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){ [y,m,d]=s.split('-').map(Number); }
+  else{
+    const p=s.split(/[\/\-.]/); if(p.length!==3) return null;
+    d=+p[0]; m=+p[1]; y=+p[2];
+    if(p[2].length===2) y+=2000;
+    if(y>2400) y-=543;
+  }
+  if(!d||!m||!y||m>12||d>31||y<1990) return null;
+  const dt=new Date(y,m-1,d);
+  if(dt.getMonth()!==m-1||dt.getDate()!==d) return null;
+  return dt;
+}
+function fmtDMY(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
+function dtInput(el){
+  let v=el.value.replace(/[^\d]/g,'').slice(0,8);
+  let out=v;
+  if(v.length>4) out=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+  else if(v.length>2) out=v.slice(0,2)+'/'+v.slice(2);
+  el.value=out;
+  const ok=parseD(out);
+  el.style.borderColor=(out.length===10&&!ok)?'var(--red)':'';
+  if(ok){ const p=document.getElementById(el.id+'_p'); if(p) p.value=toISO(ok); }
+  calc();
+}
+function openPicker(id){
+  const p=document.getElementById(id+'_p');
+  const cur=parseD(document.getElementById(id).value); if(cur) p.value=toISO(cur);
+  p.style.pointerEvents='auto';
+  try{ if(p.showPicker) p.showPicker(); else { p.focus(); p.click(); } }catch(e){ p.focus(); p.click(); }
+}
+function pickerChanged(id){
+  const p=document.getElementById(id+'_p'); p.style.pointerEvents='none';
+  if(p.value){ const [y,m,d]=p.value.split('-').map(Number); document.getElementById(id).value=fmtDMY(new Date(y,m-1,d)); document.getElementById(id).style.borderColor=''; }
+  calc();
+}
+function toISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function addYear(d){ const r=new Date(d); r.setFullYear(r.getFullYear()+1); return r; }
+function diffDays(a,b){ return Math.round((Date.UTC(a.getFullYear(),a.getMonth(),a.getDate())-Date.UTC(b.getFullYear(),b.getMonth(),b.getDate()))/86400000); }
+function fmtTh(d,full){ return d.getDate()+' '+(full?TH_MONTHS_FULL:TH_MONTHS)[d.getMonth()]+' '+(d.getFullYear()+543); }
+function fmtEn(d){ return d.getDate()+' '+EN_MONTHS[d.getMonth()]+' '+d.getFullYear(); }
+function baht(n){ return n.toLocaleString('en-US')+' บาท'; }
+
+function setMode(m){
+  mode=m;
+  document.getElementById('modeStamp').classList.toggle('on',m==='stamp');
+  document.getElementById('modeEntry').classList.toggle('on',m==='entry');
+  document.getElementById('boxStamp').classList.toggle('hide',m!=='stamp');
+  document.getElementById('boxEntry').classList.toggle('hide',m!=='entry');
+  calc();
+}
+function entryTypeChanged(){
+  const v=document.getElementById('entryType').value;
+  document.getElementById('customDaysBox').classList.toggle('hide',v!=='custom');
+  calc();
+}
+function setToday(){ document.getElementById('checkDate').value=fmtDMY(new Date()); calc(); }
+function toggleCustomExt(){ document.getElementById('customExtBox').classList.toggle('hide'); }
+function addExt(v){ exts.push(v==='1y'?{type:'1y'}:{type:'days',days:v}); renderExts(); calc(); }
+function addCustomExt(){
+  const n=parseInt(document.getElementById('customExtDays').value,10);
+  if(!n||n<1) return;
+  addExt(n); document.getElementById('customExtDays').value='';
+}
+function removeExt(i){ exts.splice(i,1); renderExts(); calc(); }
+function extLabel(e){ return e.type==='1y'?'ต่ออายุ 1 ปี':'ต่ออายุ '+e.days+' วัน'; }
+
+function baseUntil(){
+  if(mode==='stamp') return parseD(document.getElementById('stampUntil').value);
+  const entry=parseD(document.getElementById('entryDate').value);
+  if(!entry) return null;
+  const t=document.getElementById('entryType').value;
+  let days;
+  if(t==='custom') days=parseInt(document.getElementById('customDays').value,10);
+  else days=parseInt(t,10);
+  if(!days||days<1) return null;
+  return addDays(entry,days-1);
+}
+function chain(){
+  const b=baseUntil(); if(!b) return null;
+  const steps=[]; let cur=b;
+  exts.forEach(e=>{ const next=e.type==='1y'?addYear(cur):addDays(cur,e.days); steps.push({label:extLabel(e),from:cur,to:next}); cur=next; });
+  return {base:b,steps,final:cur};
+}
+function renderExts(){
+  const box=document.getElementById('extList');
+  if(!exts.length){ box.innerHTML='<div class="empty">ยังไม่มีการต่ออายุ (ถ้าไม่เคยต่อ ข้ามข้อนี้ได้)</div>'; return; }
+  const c=chain();
+  box.innerHTML=exts.map((e,i)=>{
+    const s=c&&c.steps[i];
+    const sub=s?('จาก '+fmtTh(s.from)+' → ถึง <b>'+fmtTh(s.to)+'</b>'):'';
+    return '<div class="ext"><div>ครั้งที่ '+(i+1)+': '+extLabel(e)+'<small>'+sub+'</small></div><button class="x" onclick="removeExt('+i+')" aria-label="ลบ">✕</button></div>';
+  }).join('');
+}
+
+function calc(){
+  document.getElementById('reentryOpts').classList.toggle('hide',!document.getElementById('reentryOn').checked);
+  renderExts();
+  const c=chain();
+  const body=document.getElementById('resultBody'), nd=document.getElementById('noData');
+  if(!c){ body.classList.add('hide'); nd.classList.remove('hide'); return; }
+  body.classList.remove('hide'); nd.classList.add('hide');
+
+  const fin=c.final;
+  const check=parseD(document.getElementById('checkDate').value)||new Date();
+  document.getElementById('finalTh').textContent=fmtTh(fin,true);
+  document.getElementById('finalEn').textContent=fmtEn(fin)+(exts.length?'  (ต่ออายุแล้ว '+exts.length+' ครั้ง)':'');
+
+  const over=diffDays(check,fin); // >0 = overstay days
+  const badge=document.getElementById('statusBadge');
+  const fineBox=document.getElementById('fineBox');
+  const alerts=document.getElementById('alerts');
+  const day90=addDays(fin,90); // overstay ครบ 90 วัน
+  let fine=0, lines=[];
+
+  if(over<0){
+    const left=-over;
+    badge.className='badge '+(left<=7?'warn':'ok');
+    badge.textContent='ยังอยู่ได้อีก '+left+' วัน'+(left<=7?' — ใกล้หมดอายุ':'');
+    fineBox.innerHTML='<div class="kv"><span>วันที่เช็ค</span><span>'+fmtTh(check)+'</span></div>'+
+      '<div class="kv"><span>วันสุดท้ายที่อยู่ได้</span><span>'+fmtTh(fin)+'</span></div>'+
+      '<div class="kv"><span>ค่าปรับ overstay</span><span style="color:var(--green)">0 บาท</span></div>';
+    alerts.innerHTML=left<=7?'<div class="alert amber"><strong>ใกล้หมดอายุ</strong>ควรต่ออายุหรือเดินทางออกก่อนวันที่ '+fmtTh(fin)+'</div>':'';
+  }else if(over===0){
+    badge.className='badge warn';
+    badge.textContent='วันนี้เป็นวันสุดท้าย — ต้องออกหรือต่ออายุวันนี้';
+    fineBox.innerHTML='<div class="kv"><span>ค่าปรับ overstay</span><span style="color:var(--green)">0 บาท (ยังไม่ overstay)</span></div>';
+    alerts.innerHTML='<div class="alert amber"><strong>วันสุดท้าย</strong>ถ้าอยู่ต่อถึงพรุ่งนี้จะเริ่มนับ overstay วันที่ 1 (ปรับ 500 บาท)</div>';
+  }else{
+    fine=Math.min(over*500,20000);
+    badge.className='badge bad';
+    badge.textContent='OVERSTAY '+over+' วัน';
+    fineBox.innerHTML='<div class="kv"><span>วันที่เช็ค</span><span>'+fmtTh(check)+'</span></div>'+
+      '<div class="kv"><span>หมดอายุเมื่อ</span><span>'+fmtTh(fin)+'</span></div>'+
+      '<div class="kv"><span>จำนวนวัน overstay</span><span style="color:var(--red)">'+over+' วัน</span></div>'+
+      '<div class="kv"><span>ค่าปรับ (500 บาท/วัน, สูงสุด 20,000)</span><span class="big">'+baht(fine)+'</span></div>'+
+      '<div class="kv"><span>ครบ overstay 90 วัน ในวันที่</span><span>'+fmtTh(day90)+'</span></div>';
+    if(over>90){
+      let ban='1 ปี'; if(over>365*5) ban='10 ปี'; else if(over>365*3) ban='5 ปี'; else if(over>365) ban='3 ปี';
+      alerts.innerHTML='<div class="alert red"><strong>⚠️ Overstay เกิน 90 วันแล้ว ('+over+' วัน)</strong>ติด blacklist ห้ามเข้าประเทศไทย <b>'+ban+'</b> นับจากวันเดินทางออก และต้องชำระค่าปรับ '+baht(fine)+' ควรเดินทางออกโดยเร็วที่สุดเพื่อไม่ให้ระยะห้ามเข้าเพิ่มขึ้น</div>';
+    }else{
+      const toBan=90-over;
+      alerts.innerHTML='<div class="alert '+(toBan<=14?'red':'amber')+'"><strong>'+(toBan<=14?'⚠️ ด่วนมาก: ':'')+'เหลืออีก '+toBan+' วัน จะครบ overstay 90 วัน</strong>ต้องเดินทางออกจากประเทศไทย <b>ภายในวันที่ '+fmtTh(day90)+'</b> มิฉะนั้นจะติด blacklist ห้ามเข้าประเทศ 1 ปี</div>';
+    }
+  }
+
+  lastCalc={fin,check,over,fine,day90};
+  renderSummary();
+}
+
+let lang='th', lastCalc=null;
+function setLang(l){ lang=l; ['th','zh','en'].forEach(k=>document.getElementById('lang'+k).classList.toggle('on',k===l)); renderSummary(); }
+function fmtZh(d){ return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'; }
+function custName(){
+  const en=document.getElementById('nameEn').value.trim().toUpperCase();
+  const zh=document.getElementById('nameZh').value.trim();
+  return en&&zh?en+' - '+zh:(en||zh);
+}
+function reentryMode(){
+  if(!document.getElementById('reentryOn').checked) return null;
+  return document.querySelector('input[name=reentry]:checked').value;
+}
+// ข้อความแต่ละภาษา แยกเป็นบรรทัด/บล็อก เพื่อใช้ทั้ง textarea และรูป
+function buildText(){
+  const {fin,over,fine,day90}=lastCalc;
+  const fineN=fine.toLocaleString('en-US');
+  const re=reentryMode();
+  const T={th:{},zh:{},en:{}};
+  T.th.title='วีซ่าของท่านหมดอายุวันที่';
+  T.th.date=fmtTh(fin,true); T.th.date2=fmtEn(fin);
+  T.th.status= over<0?'เหลืออีก '+(-over)+' วัน': over===0?'วันนี้วันสุดท้าย ต้องออกหรือต่ออายุ':'Overstay '+over+' วัน ค่าปรับ '+fineN+' บาท';
+  T.th.warn='***ห้าม overstay เกิน 90 วัน (ครบ '+fmtTh(day90)+') มิฉะนั้นติด blacklist ห้ามเข้าไทย 1 ปี ค่าปรับ 500 บาท/วัน สูงสุด 20,000 บาท';
+  T.th.re= re==='self'?'***ถ้าจะออกนอกประเทศก่อนวันหมดอายุ อย่าลืมทำ Re-entry Permit ที่ ตม. สนามบินก่อนออก มิฉะนั้นวีซ่าจะถูกยกเลิก':
+           re==='done'?'***ท่านทำ Re-entry Permit ไว้แล้ว เวลาออกนอกประเทศให้แสดงต่อ ตม. ทุกครั้ง วีซ่าจะได้ไม่ถูกยกเลิก':'';
+  T.th.thanks='ขอบคุณค่ะ';
+
+  T.zh.title='您的签证到';
+  T.zh.date=fmtZh(fin)+'到期'; T.zh.date2='';
+  T.zh.status= over<0?'还剩 '+(-over)+' 天': over===0?'今天是最后一天，须离境或办理延期':'已逾期 '+over+' 天，罚款 '+fineN+' 泰铢';
+  T.zh.warn='***请您务必注意，不要逾期停留（overstay）超过90天（'+fmtZh(day90)+'），否则将被列入黑名单，1年内禁止入境泰国。罚款每天500泰铢，最高20,000泰铢。';
+  T.zh.re= re==='self'?'***在到期日前出境，要记得在机场办理回头签（Re-entry），要不签证作废。':
+           re==='done'?'***您已办理回头签（Re-entry），出境时请务必向移民局出示，签证才不会作废。':'';
+  T.zh.thanks='谢谢。';
+
+  T.en.title='Your visa is valid until';
+  T.en.date=fmtEn(fin); T.en.date2='';
+  T.en.status= over<0?(-over)+' days remaining': over===0?'Today is the last day — exit or extend today':'Overstay '+over+' days, fine THB '+fineN;
+  T.en.warn='***Never overstay more than 90 days (by '+fmtEn(day90)+') or you will be blacklisted from Thailand for 1 year. Fine THB 500/day, max THB 20,000.';
+  T.en.re= re==='self'?'***If you leave Thailand before this date, you MUST get a Re-entry Permit at the airport immigration before departure, or your visa will be cancelled.':
+           re==='done'?'***You already have a Re-entry Permit. Show it to immigration every time you leave Thailand so your visa stays valid.':'';
+  T.en.thanks='Thank you.';
+  return T[lang];
+}
+function renderSummary(){
+  if(!lastCalc) return;
+  const t=buildText(), name=custName();
+  let s='';
+  if(name) s+=name+'\n';
+  s+=t.title+' '+t.date+(t.date2?' ('+t.date2+')':'')+'\n';
+  s+=(lastCalc.over>0?'❌ ':'✅ ')+t.status+'\n';
+  s+=t.warn+'\n';
+  if(t.re) s+=t.re+'\n';
+  s+=t.thanks;
+  document.getElementById('summary').value=s;
+}
+
+/* ---------- Export image ---------- */
+function wrapText(ctx,text,maxW){
+  const lines=[]; let line='';
+  // คำจีนตัดได้ทุกตัว, ไทย/อังกฤษตัดที่ช่องว่าง
+  const hasSpace=/\s/.test(text);
+  const units=hasSpace?text.split(/(\s+)/):Array.from(text);
+  for(const u of units){
+    const test=line+u;
+    if(ctx.measureText(test).width>maxW&&line){ lines.push(line.trimEnd()); line=u.trimStart(); }
+    else line=test;
+  }
+  if(line) lines.push(line.trimEnd());
+  return lines;
+}
+function drawHeart(ctx,x,y,s,color){
+  ctx.save(); ctx.fillStyle=color; ctx.beginPath();
+  ctx.moveTo(x,y+s*0.3);
+  ctx.bezierCurveTo(x,y,x-s*0.5,y,x-s*0.5,y+s*0.3);
+  ctx.bezierCurveTo(x-s*0.5,y+s*0.6,x,y+s*0.8,x,y+s);
+  ctx.bezierCurveTo(x,y+s*0.8,x+s*0.5,y+s*0.6,x+s*0.5,y+s*0.3);
+  ctx.bezierCurveTo(x+s*0.5,y,x,y,x,y+s*0.3);
+  ctx.fill(); ctx.restore();
+}
+async function exportImage(style){
+  if(!lastCalc) return;
+  const hint=document.getElementById('imgHint'); hint.textContent='กำลังสร้างรูป...';
+  try{ await document.fonts.load('700 40px "Noto Sans Thai"'); await document.fonts.load('700 40px "Noto Sans SC"'); await document.fonts.ready; }catch(e){}
+  const t=buildText(), name=custName(), over=lastCalc.over;
+  const FONT='"Noto Sans Thai","Noto Sans SC",sans-serif';
+  const W=1000, P=60, cw=W-P*2;
+  const bw=style==='bw';
+  const C=bw?{bg:'#fff',ink:'#000',muted:'#000',accent:'#000',warnBg:'#fff',warnInk:'#000',okBg:'#fff',okInk:'#000',line:'#000'}
+            :{bg:'#ffffff',ink:'#1c2230',muted:'#6b7280',accent:'#1e5eff',warnBg:'#fde8e8',warnInk:'#7f1d1d',okBg:'#e8f7ee',okInk:'#14532d',line:'#e3e7ee'};
+  const statusCol=bw?'#000':(over>0?'#b91c1c':over===0?'#b45309':'#15803d');
+  const statusBg=bw?'#fff':(over>0?'#fde8e8':over===0?'#fff4e0':'#e8f7ee');
+
+  // วัดความสูงก่อน
+  const cv=document.getElementById('cv'); const ctx=cv.getContext('2d');
+  cv.width=W; cv.height=100;
+  const blocks=[];
+  let y=P;
+  const measure=(txt,font,maxW)=>{ ctx.font=font; return wrapText(ctx,txt,maxW); };
+  const warnLines=measure(t.warn,'500 30px '+FONT,cw-50);
+  const reLines=t.re?measure(t.re,'500 30px '+FONT,cw-50):[];
+  const titleLines=measure(t.title,'500 36px '+FONT,cw);
+  const dateLines=measure(t.date,'700 60px '+FONT,cw);
+  let H=P;
+  H+=bw?0:14; // header bar
+  if(name) H+=64;
+  H+=titleLines.length*48+8;
+  H+=dateLines.length*74;
+  if(t.date2) H+=40;
+  H+=20+70+30; // status pill
+  H+=warnLines.length*42+40+24;
+  if(t.re) H+=reLines.length*42+40+24;
+  H+=60; // thanks
+  H+=P;
+  cv.height=H;
+
+  // วาด
+  ctx.fillStyle=C.bg; ctx.fillRect(0,0,W,H);
+  if(!bw){ ctx.fillStyle=C.accent; ctx.fillRect(0,0,W,14); } else { ctx.fillStyle='#000'; ctx.fillRect(0,0,W,6); }
+  y=P+(bw?6:14)+10;
+  ctx.textBaseline='top'; ctx.textAlign='left';
+  if(name){ ctx.fillStyle=C.ink; ctx.font='700 40px '+FONT; ctx.fillText(name,P,y); y+=64; }
+  ctx.fillStyle=C.muted; ctx.font='500 36px '+FONT;
+  titleLines.forEach(l=>{ ctx.fillText(l,P,y); y+=48; }); y+=8;
+  ctx.fillStyle=bw?'#000':C.accent; ctx.font='700 60px '+FONT;
+  dateLines.forEach(l=>{ ctx.fillText(l,P,y); y+=74; });
+  if(t.date2){ ctx.fillStyle=C.muted; ctx.font='500 30px '+FONT; ctx.fillText(t.date2,P,y); y+=40; }
+  y+=20;
+  // status pill
+  ctx.font='700 34px '+FONT; const stTxt=(over>0?'❌ ':over===0?'⚠️ ':'✅ ')+t.status; const stW=ctx.measureText(stTxt).width+50;
+  ctx.fillStyle=statusBg; roundRect(ctx,P,y,Math.min(stW,cw),70,35); ctx.fill();
+  if(bw){ ctx.strokeStyle='#000'; ctx.lineWidth=3; roundRect(ctx,P,y,Math.min(stW,cw),70,35); ctx.stroke(); }
+  ctx.fillStyle=statusCol; ctx.fillText(stTxt,P+25,y+16); y+=70+30;
+  // warn box
+  const box=(lines,bg,ink)=>{
+    const h=lines.length*42+40;
+    ctx.fillStyle=bg; roundRect(ctx,P,y,cw,h,18); ctx.fill();
+    if(bw){ ctx.strokeStyle='#000'; ctx.lineWidth=3; roundRect(ctx,P,y,cw,h,18); ctx.stroke(); }
+    else { ctx.fillStyle=ink; ctx.fillRect(P,y+14,8,h-28); }
+    ctx.fillStyle=ink; ctx.font='500 30px '+FONT;
+    lines.forEach((l,i)=>ctx.fillText(l,P+25,y+20+i*42));
+    y+=h+24;
+  };
+  box(warnLines,C.warnBg,C.warnInk);
+  if(t.re) box(reLines,C.okBg,C.okInk);
+  // thanks + heart
+  ctx.fillStyle=C.ink; ctx.font='500 34px '+FONT; ctx.fillText(t.thanks,P,y+6);
+  if(!bw){ drawHeart(ctx,W-P-40,y-6,56,'#f26b8a'); drawHeart(ctx,W-P-100,y+14,34,'#f9a8c0'); }
+  else { drawHeart(ctx,W-P-40,y-6,56,'#000'); }
+
+  const dataUrl=cv.toDataURL('image/png');
+  const img=document.getElementById('preview'); img.src=dataUrl; img.classList.remove('hide');
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+  const fname='visa_'+(document.getElementById('nameEn').value.trim().replace(/\s+/g,'_')||'customer')+'_'+toISO(lastCalc.fin)+(bw?'_bw':'')+'.png';
+  // iPhone/Android: share sheet (บันทึกลงรูปภาพ / ส่ง LINE / เปิดใน PeriPage) — PC: ดาวน์โหลดไฟล์
+  const file=new File([blob],fname,{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); hint.textContent=bw?'แชร์แล้ว → เลือกแอป PeriPage เพื่อปริ้น':'แชร์/บันทึกแล้ว ✓'; }
+    catch(e){ hint.textContent='ยกเลิก — กดค้างที่รูปด้านล่างเพื่อบันทึกก็ได้'; }
+  }else{
+    const a=document.createElement('a'); a.href=dataUrl; a.download=fname; document.body.appendChild(a); a.click(); a.remove();
+    hint.textContent='ดาวน์โหลดรูปแล้ว ✓ ('+fname+')';
+  }
+}
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function copySummary(){
+  const ta=document.getElementById('summary'); const btn=document.getElementById('copyBtn');
+  const done=()=>{ btn.textContent='คัดลอกแล้ว ✓'; setTimeout(()=>btn.textContent='คัดลอกข้อความ',1500); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(ta.value).then(done).catch(()=>{ ta.select(); try{document.execCommand('copy');done();}catch(e){ ta.focus(); } });
+  }else{ ta.select(); try{document.execCommand('copy');done();}catch(e){ ta.focus(); } }
+}
+
+// init
+document.getElementById('checkDate').value=fmtDMY(new Date());
+calc();
+</script>
+</body>
+</html>
