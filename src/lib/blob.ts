@@ -70,7 +70,12 @@ export async function blobDelete(urls: string[]): Promise<void> {
 export async function blobGetByPath(pathname: string): Promise<Response | null> {
   const found = (await blobList(pathname)).find((b) => b.pathname === pathname);
   if (!found) return null;
-  return fetch(found.url, { cache: "no-store" });
+  return blobFetchUrl(found.url);
+}
+
+/** Fetch a blob by its store URL. Works for Private stores (token sent) and Public ones alike. */
+export function blobFetchUrl(url: string): Promise<Response> {
+  return fetch(url, { headers: { authorization: `Bearer ${token()}` }, cache: "no-store" });
 }
 
 export async function blobGetJson<T>(pathname: string): Promise<T | null> {

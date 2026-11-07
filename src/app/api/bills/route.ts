@@ -3,7 +3,7 @@
 // GET  /api/bills?q=<name or passport>  → { bills: [...] } newest first (all years)
 // POST /api/bills  body: BillRecord (id assigned here) → { id }
 import { NextRequest, NextResponse } from "next/server";
-import { blobDelete, blobGetJson, blobList, blobPut } from "@/lib/blob";
+import { blobDelete, blobFetchUrl, blobGetJson, blobList, blobPut } from "@/lib/blob";
 
 export const runtime = "nodejs";
 
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const keep = blobs.filter((b) => !old.includes(b)).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).slice(0, 400);
     const bills: BillRecord[] = [];
     await Promise.all(keep.map(async (b) => {
-      const r = await fetch(b.url, { cache: "no-store" });
+      const r = await blobFetchUrl(b.url);
       if (r.ok) bills.push((await r.json()) as BillRecord);
     }));
     bills.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
