@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { overstayInfo } from "@/lib/today/types";
+import { loadHolidays, overstayInfo } from "@/lib/today/types";
 import { OFFICES, OFFICE_IDS, DEFAULT_OFFICE, isOfficeId, type OfficeId } from "@/lib/offices";
 import type { Tm7FormData, Title } from "@/lib/tm7-generator";
 import { buildTm7Filename } from "@/lib/tm7-filename";
@@ -91,6 +91,8 @@ export default function Page() {
   const [scanWarning, setScanWarning] = useState<string>("");
   const [tm30Message, setTm30Message] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [tm30File, setTm30File] = useState<File | null>(null);
+  const [holidays, setHolidays] = useState<string[]>([]);
+  useEffect(() => { setHolidays(loadHolidays()); }, []);
   // Android Chrome has no built-in inline PDF viewer, so a blob PDF inside an
   // <iframe> renders blank. Detect it and show a download/open card instead.
   // (Desktop + iOS Safari render inline PDFs fine, so they keep the iframe.)
@@ -499,15 +501,15 @@ export default function Page() {
             <DateInput value={form.admittedUntil} onChange={(v) => set("admittedUntil", v)} />
           </Field>
           {(() => {
-            const ov = overstayInfo(form.arrivalDate, form.admittedUntil, form.visaType, form.appointmentDate);
+            const ov = overstayInfo(form.arrivalDate, form.admittedUntil, form.visaType, form.appointmentDate, holidays);
             if (!ov) return null;
             return ov.days > 0 ? (
               <div className="sm:col-span-2 rounded-lg border-2 border-red-400 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">
-                ⚠ OVERSTAY {ov.days} วัน — ค่าปรับ {ov.fine.toLocaleString()} บาท · อยู่ได้ถึง {ov.until} ({ov.source === "stamp" ? "ตามตราน้ำเงิน" : "คำนวณจากประเภทวีซ่า"}) แต่วันที่ยื่นคือ {form.appointmentDate} — แจ้งลูกค้าและเก็บค่าปรับเพิ่ม
+                ⚠ OVERSTAY {ov.days} วัน — ค่าปรับ {ov.fine.toLocaleString()} บาท · อยู่ได้ถึง {ov.until} ({ov.source === "stamp" ? "ตามตราน้ำเงิน" : "คำนวณจากประเภทวีซ่า"}){ov.graceUntil ? ` หมดวันหยุด ยื่นได้ถึง ${ov.graceUntil} โดยไม่เสียค่าปรับ` : ""} แต่วันที่ยื่นคือ {form.appointmentDate} — แจ้งลูกค้าและเก็บค่าปรับเพิ่ม
               </div>
             ) : (
               <div className="sm:col-span-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                อยู่ได้ถึง {ov.until} ({ov.source === "stamp" ? "ตามตราน้ำเงิน" : "คำนวณจากประเภทวีซ่า"}) — ยื่น {form.appointmentDate || "…"} ยังไม่ overstay
+                อยู่ได้ถึง {ov.until} ({ov.source === "stamp" ? "ตามตราน้ำเงิน" : "คำนวณจากประเภทวีซ่า"}){ov.graceUntil ? ` — ตรงวันหยุด ยื่นวันทำการถัดไป ${ov.graceUntil} ไม่เสียค่าปรับ` : ""} — ยื่น {form.appointmentDate || "…"} ไม่มีค่าปรับ
               </div>
             );
           })()}

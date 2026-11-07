@@ -178,11 +178,61 @@ export function effectiveAdmittedUntil(arrivalDate: string, admittedUntil: strin
   return { date: d, source: "visa" };
 }
 
-export function overstayInfo(arrivalDate: string, admittedUntil: string, visaType: string, appointmentDate: string) {
+// ---------- working days / holidays ----------
+// Immigration follows government holidays. Default list = Thai government
+// holidays for 2026 (editable in the ⚙ panel; stored in localStorage as
+// DD/MM/YYYY per line). A visa that expires on a weekend or holiday can be
+// extended on the NEXT WORKING DAY with no fine; filing any later than that
+// is fined for every day after expiry, weekend included.
+export const DEFAULT_HOLIDAYS = [
+  "01/01/2026", "02/01/2026", "03/03/2026", "06/04/2026", "13/04/2026", "14/04/2026", "15/04/2026",
+  "04/05/2026", "01/06/2026", "03/06/2026", "28/07/2026", "29/07/2026", "30/07/2026", "12/08/2026",
+  "13/10/2026", "23/10/2026", "07/12/2026", "10/12/2026", "31/12/2026",
+];
+const HOLIDAY_KEY = "tm7-holidays";
+export function loadHolidays(): string[] {
+  try {
+    const raw = localStorage.getItem(HOLIDAY_KEY);
+    if (raw) return raw.split(/\r?\n|,/).map((x) => x.trim()).filter(Boolean);
+  } catch {}
+  return [...DEFAULT_HOLIDAYS];
+}
+export function saveHolidays(list: string[]) {
+  try { localStorage.setItem(HOLIDAY_KEY, list.join("\n")); } catch {}
+}
+const fmtDdmmyyyy = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+export function isWorkingDay(d: Date, holidays: string[]): boolean {
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false;
+  return !holidays.includes(fmtDdmmyyyy(d));
+}
+export function nextWorkingDay(d: Date, holidays: string[]): Date {
+  const n = new Date(d);
+  do { n.setDate(n.getDate() + 1); } while (!isWorkingDay(n, holidays));
+  return n;
+}
+
+export type OverstayInfo = {
+  days: number;            // fined days (0 when within the grace rule)
+  fine: number;
+  until: string;           // DD/MM/YYYY admitted-until used
+  source: "stamp" | "visa";
+  graceUntil?: string;     // next working day after a weekend/holiday expiry (no fine if filed by then)
+  lateDays?: number;       // calendar days past "until" (shown even when fine is 0 under grace)
+};
+
+export function overstayInfo(arrivalDate: string, admittedUntil: string, visaType: string, appointmentDate: string, holidays: string[] = DEFAULT_HOLIDAYS): OverstayInfo | null {
   const until = effectiveAdmittedUntil(arrivalDate, admittedUntil, visaType);
   const appt = parseDdmmyyyy(appointmentDate);
   if (!until || !appt) return null;
-  const days = daysBetween(until.date, appt);
-  const fmt = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-  return { days: Math.max(0, days), fine: Math.max(0, days) * OVERSTAY_FINE_PER_DAY, until: fmt(until.date), source: until.source };
+  const late = daysBetween(until.date, appt);
+  const base = { until: fmtDdmmyyyy(until.date), source: until.source, lateDays: Math.max(0, late) };
+  if (late <= 0) return { ...base, days: 0, fine: 0 };
+  if (!isWorkingDay(until.date, holidays)) {
+    const grace = nextWorkingDay(until.date, holidays);
+    const graceStr = fmtDdmmyyyy(grace);
+    if (daysBetween(grace, appt) <= 0) return { ...base, days: 0, fine: 0, graceUntil: graceStr };
+    return { ...base, days: late, fine: late * OVERSTAY_FINE_PER_DAY, graceUntil: graceStr };
+  }
+  return { ...base, days: late, fine: late * OVERSTAY_FINE_PER_DAY };
 }

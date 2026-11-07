@@ -15,7 +15,7 @@ import { analyzeTm30 } from "@/app/actions/analyzeTm30";
 import { compressPdf } from "@/lib/compressPdf";
 import type { Tm7FormData } from "@/lib/tm7-generator";
 import {
-  DEFAULT_META, EMPTY_FIELDS, ddmmyyyyToIso, newId, overstayInfo,
+  DEFAULT_META, EMPTY_FIELDS, ddmmyyyyToIso, loadHolidays, newId, overstayInfo, saveHolidays,
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
@@ -54,6 +54,7 @@ export default function TodayPage() {
   const [working, setWorking] = useState(false);
   const [photoSettings, setPhotoSettings] = useState<PhotoSettings>(PHOTO_SETTINGS_DEFAULT);
   const [showSettings, setShowSettings] = useState(false);
+  const [holidays, setHolidays] = useState<string[]>([]);
   const [summaryBlob, setSummaryBlob] = useState<Blob | null>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const peopleRef = useRef<Person[]>([]);
@@ -69,6 +70,7 @@ export default function TodayPage() {
       setLoaded(true);
     });
     setPhotoSettings(loadPhotoSettings());
+    setHolidays(loadHolidays());
   }, []);
 
   function updatePhotoSettings(patch: Partial<PhotoSettings>) {
@@ -636,6 +638,8 @@ export default function TodayPage() {
             <textarea rows={5} value={photoSettings.promptSelfie} onChange={(e) => updatePhotoSettings({ promptSelfie: e.target.value })} className={inputCls} /></label>
           <label className="block"><span className="mb-1 block text-xs text-slate-500">Prompt กรณีใช้รูปพาสปอร์ต — {"{เสื้อผ้า}"} จะถูกสุ่มแทน</span>
             <textarea rows={5} value={photoSettings.promptPassport} onChange={(e) => updatePhotoSettings({ promptPassport: e.target.value })} className={inputCls} /></label>
+          <label className="block"><span className="mb-1 block text-xs text-slate-500">วันหยุดราชการ (DD/MM/YYYY บรรทัดละวัน) — ใช้คำนวณค่าปรับ overstay: หมดวันหยุดแล้วมาต่อวันทำการถัดไปไม่เสียค่าปรับ</span>
+            <textarea rows={5} value={holidays.join("\n")} onChange={(e) => { const list = e.target.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean); setHolidays(list); saveHolidays(list); }} className={inputCls} /></label>
           <label className="block"><span className="mb-1 block text-xs text-slate-500">รายการเสื้อผ้า (บรรทัดละแบบ)</span>
             <textarea rows={5} value={photoSettings.clothes} onChange={(e) => updatePhotoSettings({ clothes: e.target.value })} className={inputCls} /></label>
         </div>
@@ -662,6 +666,7 @@ export default function TodayPage() {
             onCrop={(crop, photo) => updateCrop(p.id, crop, photo)}
             clothes={clothesList()}
             onMoveFile={(fileId, toId) => moveFile(p.id, fileId, toId)}
+            holidays={holidays}
             busy={working}
           />
         ))}
@@ -685,7 +690,7 @@ export default function TodayPage() {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, clothes, onMoveFile, busy,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, clothes, onMoveFile, holidays, busy,
 }: {
   person: Person;
   people: Person[];
@@ -699,6 +704,7 @@ function PersonCard({
   onCrop: (crop: Crop, photo: Blob) => void;
   clothes: string[];
   onMoveFile: (fileId: string, toPersonId: string) => void;
+  holidays: string[];
   busy: boolean;
 }) {
   const f = p.fields;
@@ -713,7 +719,7 @@ function PersonCard({
   }
 
   // overstay: appointment date after "admitted until"
-  const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
+  const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays);
   const overstayDays = ov?.days ?? 0;
   const fine = ov?.fine ?? 0;
   const missing: string[] = [];
@@ -748,12 +754,15 @@ function PersonCard({
         </div>
       </div>
 
-      {(fine > 0 || missing.length > 0 || !hasSelfie) && (
+      {(fine > 0 || missing.length > 0 || !hasSelfie || (ov?.graceUntil && ov.days === 0 && (ov.lateDays ?? 0) > 0)) && (
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {fine > 0 && (
             <span className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-1 font-semibold text-red-800">
               ⚠ OVERSTAY {overstayDays} วัน — ค่าปรับ {fine.toLocaleString()} บาท (อยู่ได้ถึง {ov?.until}{ov?.source === "visa" ? " คำนวณจากประเภทวีซ่า" : " ตามตราน้ำเงิน"}) แจ้งลูกค้าและเก็บเพิ่ม
             </span>
+          )}
+          {ov?.graceUntil && ov.days === 0 && (ov.lateDays ?? 0) > 0 && (
+            <span className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-emerald-800">วีซ่าหมด {ov.until} (วันหยุด) ยื่นภายใน {ov.graceUntil} ไม่เสียค่าปรับ</span>
           )}
           {missing.length > 0 && <span className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-amber-800">ขาด: {missing.join(", ")}</span>}
           {!hasSelfie && <span className="rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-slate-600">ไม่มีเซลฟี่ → ใช้รูปจากพาสปอร์ต</span>}
