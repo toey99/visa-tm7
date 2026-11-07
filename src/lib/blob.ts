@@ -27,7 +27,7 @@ export async function blobPut(pathname: string, body: Blob | ArrayBuffer | strin
       authorization: `Bearer ${token()}`,
       "x-api-version": "7",
       "x-content-type": contentType,
-      "x-access": "private",
+      "x-vercel-blob-access": "private",
       "x-add-random-suffix": "0",
       "x-allow-overwrite": "1",
       "x-cache-control-max-age": "0",
