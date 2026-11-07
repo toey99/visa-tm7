@@ -1300,8 +1300,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
         </div>
         <div style={{ textAlign: "right", lineHeight: 1.25 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: accent, letterSpacing: 1 }}>诚信经营 · 用心服务</div>
-          <div style={{ fontSize: 10, color: "#555", fontStyle: "italic" }}>Integrity in Business, Care in Service</div>
           <div style={{ fontSize: 11, color: "#444" }}>ซื่อสัตย์ จริงใจ ใส่ใจบริการ</div>
+          <div style={{ fontSize: 10, color: "#555", fontStyle: "italic" }}>Integrity in Business, Care in Service</div>
         </div>
       </div>
     </div>
