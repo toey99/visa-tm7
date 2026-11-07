@@ -1,95 +1,190 @@
-// IndexedDB persistence for the /today board (client only).
+// Server-backed persistence for the /today board (client side).
 //
-// Everything for the current day — people, their fields and the file blobs —
-// lives in the browser, so closing the tab or refreshing loses nothing. The
-// store is a single object store keyed by record id; a "meta" record holds the
-// day settings. No server storage is involved.
+// Everything lives in the project's Vercel Blob store, so both signed-in
+// users see the same day from any device, and the week's days can be
+// reopened until the Sunday-night purge. Binaries are uploaded once and
+// referenced by path in the day's index.json; the index is saved (debounced)
+// after every change. Blobs are cached in memory per session.
 
-import type { DayMeta, Person } from "./types";
+import type { DayMeta, DocFile, Person } from "./types";
 
-const DB_NAME = "toyka-today";
-const DB_VERSION = 1;
-const STORE = "records";
+type FileRef = Omit<DocFile, "blob"> & { path: string };
+type PersonRef = Omit<Person, "files" | "tm7Pdf" | "aiPhoto" | "photo" | "collectImage"> & {
+  files: FileRef[];
+  tm7Pdf?: string;
+  aiPhoto?: string;
+  photo?: string;
+  collectImage?: string;
+};
+type DayIndex = { meta?: DayMeta; people: PersonRef[]; savedAt: string };
 
-type Record_ = { id: string; kind: "person"; value: Person } | { id: "meta"; kind: "meta"; value: DayMeta };
+const dayKeyOf = (date: string) => date.replace(/\//g, "");
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
-      reject(new Error("IndexedDB unavailable"));
-      return;
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+// ---------- in-memory state for the open day ----------
+let currentDay = "";
+let peopleCache = new Map<string, Person>();
+let metaCache: DayMeta | null = null;
+let saveTimer: number | undefined;
+let savingPromise: Promise<void> | null = null;
+export let lastError = "";
+
+function extOf(mime: string) {
+  return mime === "application/pdf" ? "pdf" : mime === "image/png" ? "png" : "jpg";
 }
 
-function tx(db: IDBDatabase, mode: IDBTransactionMode) {
-  return db.transaction(STORE, mode).objectStore(STORE);
+async function uploadBlob(path: string, blob: Blob): Promise<string> {
+  const fd = new FormData();
+  fd.append("path", path);
+  fd.append("file", new File([blob], path.split("/").pop() ?? "file", { type: blob.type || "application/octet-stream" }));
+  const r = await fetch("/api/day/file", { method: "POST", body: fd });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+  return ((await r.json()) as { path: string }).path;
 }
 
-function wrap<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+async function downloadBlob(path: string): Promise<Blob | null> {
+  const r = await fetch(`/api/day/file?path=${encodeURIComponent(path)}`);
+  if (!r.ok) return null;
+  return r.blob();
 }
 
-export async function loadAll(): Promise<{ people: Person[]; meta: DayMeta | null }> {
+// Paths already uploaded, keyed by object identity (a Blob is re-uploaded only if it's a new object).
+const uploaded = new WeakMap<Blob, string>();
+
+async function ensureUploaded(day: string, personId: string, name: string, blob: Blob | undefined): Promise<string | undefined> {
+  if (!blob) return undefined;
+  const known = uploaded.get(blob);
+  if (known) return known;
+  const path = await uploadBlob(`days/${day}/${personId}/${name}.${extOf(blob.type)}`, blob);
+  uploaded.set(blob, path);
+  return path;
+}
+
+async function toRef(day: string, p: Person): Promise<PersonRef> {
+  const files: FileRef[] = [];
+  for (const f of p.files) {
+    const { blob, ...rest } = f;
+    const path = (await ensureUploaded(day, p.id, `doc-${f.id}`, blob)) ?? "";
+    files.push({ ...rest, path });
+  }
+  const { files: _f, tm7Pdf, aiPhoto, photo, collectImage, ...rest } = p;
+  void _f;
+  return {
+    ...rest,
+    files,
+    tm7Pdf: await ensureUploaded(day, p.id, "tm7", tm7Pdf),
+    aiPhoto: await ensureUploaded(day, p.id, "ai-photo", aiPhoto),
+    photo: await ensureUploaded(day, p.id, "photo-white", photo),
+    collectImage: await ensureUploaded(day, p.id, "collect", collectImage),
+  };
+}
+
+async function fromRef(r: PersonRef): Promise<Person> {
+  const files: DocFile[] = [];
+  for (const f of r.files) {
+    const blob = f.path ? await downloadBlob(f.path) : null;
+    const { path, ...rest } = f;
+    const b = blob ?? new Blob([], { type: rest.mime });
+    if (path) uploaded.set(b, path);
+    files.push({ ...rest, blob: b });
+  }
+  const pick = async (path?: string) => {
+    if (!path) return undefined;
+    const b = await downloadBlob(path);
+    if (b) uploaded.set(b, path);
+    return b ?? undefined;
+  };
+  const { files: _f, tm7Pdf, aiPhoto, photo, collectImage, ...rest } = r;
+  void _f;
+  return { ...rest, files, tm7Pdf: await pick(tm7Pdf), aiPhoto: await pick(aiPhoto), photo: await pick(photo), collectImage: await pick(collectImage) };
+}
+
+// ---------- public API (same shape the page used with IndexedDB) ----------
+
+export async function loadDay(date: string): Promise<{ people: Person[]; meta: DayMeta | null }> {
+  const day = dayKeyOf(date);
+  currentDay = day;
+  peopleCache = new Map();
+  metaCache = null;
+  lastError = "";
   try {
-    const db = await openDb();
-    const all = (await wrap(tx(db, "readonly").getAll())) as Record_[];
-    db.close();
-    const people = all.filter((r): r is Extract<Record_, { kind: "person" }> => r.kind === "person").map((r) => r.value);
+    const r = await fetch(`/api/day?date=${day}`, { cache: "no-store" });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+    const idx = (await r.json()) as Partial<DayIndex>;
+    const people: Person[] = [];
+    for (const ref of idx.people ?? []) people.push(await fromRef(ref));
     people.sort((a, b) => a.order - b.order);
-    const metaRec = all.find((r) => r.kind === "meta") as Extract<Record_, { kind: "meta" }> | undefined;
-    return { people, meta: metaRec?.value ?? null };
-  } catch {
+    for (const p of people) peopleCache.set(p.id, p);
+    metaCache = idx.meta ?? null;
+    return { people, meta: metaCache };
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : String(e);
     return { people: [], meta: null };
   }
 }
 
+function scheduleSave() {
+  if (saveTimer) window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => { void flush(); }, 800);
+}
+
+export async function flush(): Promise<void> {
+  if (savingPromise) await savingPromise;
+  const day = currentDay;
+  if (!day) return;
+  savingPromise = (async () => {
+    try {
+      const refs: PersonRef[] = [];
+      for (const p of peopleCache.values()) refs.push(await toRef(day, p));
+      refs.sort((a, b) => a.order - b.order);
+      const idx: DayIndex = { meta: metaCache ?? undefined, people: refs, savedAt: new Date().toISOString() };
+      const r = await fetch(`/api/day?date=${day}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(idx) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+      lastError = "";
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+      console.warn("[today/store] save failed", e);
+    } finally {
+      savingPromise = null;
+    }
+  })();
+  await savingPromise;
+}
+
 export async function savePerson(p: Person): Promise<void> {
-  try {
-    const db = await openDb();
-    await wrap(tx(db, "readwrite").put({ id: p.id, kind: "person", value: p } satisfies Record_));
-    db.close();
-  } catch (err) {
-    console.warn("[today/store] savePerson failed", err);
-  }
+  peopleCache.set(p.id, p);
+  scheduleSave();
 }
 
 export async function deletePerson(id: string): Promise<void> {
-  try {
-    const db = await openDb();
-    await wrap(tx(db, "readwrite").delete(id));
-    db.close();
-  } catch (err) {
-    console.warn("[today/store] deletePerson failed", err);
-  }
+  peopleCache.delete(id);
+  scheduleSave();
 }
 
 export async function saveMeta(meta: DayMeta): Promise<void> {
+  const day = dayKeyOf(meta.date);
+  if (day !== currentDay) return; // date change is handled by loadDay
+  metaCache = meta;
+  scheduleSave();
+}
+
+export async function clearDay(date: string): Promise<void> {
+  const day = dayKeyOf(date);
+  if (saveTimer) window.clearTimeout(saveTimer);
+  peopleCache = new Map();
+  metaCache = null;
+  await fetch(`/api/day?date=${day}`, { method: "DELETE" });
+}
+
+export async function listDays(): Promise<{ date: string; files: number; updated: string }[]> {
   try {
-    const db = await openDb();
-    await wrap(tx(db, "readwrite").put({ id: "meta", kind: "meta", value: meta } satisfies Record_));
-    db.close();
-  } catch (err) {
-    console.warn("[today/store] saveMeta failed", err);
+    const r = await fetch("/api/day/list", { cache: "no-store" });
+    if (!r.ok) return [];
+    return ((await r.json()) as { days: { date: string; files: number; updated: string }[] }).days;
+  } catch {
+    return [];
   }
 }
 
-export async function clearAll(): Promise<void> {
-  try {
-    const db = await openDb();
-    await wrap(tx(db, "readwrite").clear());
-    db.close();
-  } catch (err) {
-    console.warn("[today/store] clearAll failed", err);
-  }
+export function isSaving(): boolean {
+  return !!savingPromise || !!saveTimer;
 }

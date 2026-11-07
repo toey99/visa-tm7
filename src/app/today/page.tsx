@@ -19,7 +19,7 @@ import {
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
-import { clearAll, deletePerson, loadAll, saveMeta, savePerson } from "@/lib/today/store";
+import { clearDay as clearDayRemote, deletePerson, flush, isSaving, listDays, loadDay, saveMeta, savePerson, lastError as storeError } from "@/lib/today/store";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
@@ -55,23 +55,39 @@ export default function TodayPage() {
   const [photoSettings, setPhotoSettings] = useState<PhotoSettings>(PHOTO_SETTINGS_DEFAULT);
   const [showSettings, setShowSettings] = useState(false);
   const [holidays, setHolidays] = useState<string[]>([]);
+  const [days, setDays] = useState<{ date: string; files: number }[]>([]);
+  const [saveState, setSaveState] = useState("");
   const [summaryBlob, setSummaryBlob] = useState<Blob | null>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const peopleRef = useRef<Person[]>([]);
   useEffect(() => { peopleRef.current = people; }, [people]);
 
   // ---------- load / persist ----------
+  const openDay = useCallback(async (date: string) => {
+    setLoaded(false);
+    setStatus("กำลังโหลดข้อมูลวัน " + date + "…");
+    const { people: p, meta: m } = await loadDay(date);
+    setPeople(p);
+    const merged = { ...DEFAULT_META, ...(m ?? {}), date };
+    if (!isOfficeId(merged.office)) merged.office = DEFAULT_META.office;
+    setMeta(merged);
+    setLoaded(true);
+    setStatus(storeError ? "โหลดจากเซิร์ฟเวอร์ไม่สำเร็จ: " + storeError : "");
+    try { sessionStorage.setItem("tm7-open-day", date); } catch {}
+    listDays().then(setDays);
+  }, []);
+
   useEffect(() => {
-    loadAll().then(({ people: p, meta: m }) => {
-      setPeople(p);
-      const merged = { ...DEFAULT_META, ...(m ?? {}), date: m?.date || todayDdmmyyyy() };
-      if (!isOfficeId(merged.office)) merged.office = DEFAULT_META.office;
-      setMeta(merged);
-      setLoaded(true);
-    });
+    let initial = todayDdmmyyyy();
+    try { initial = sessionStorage.getItem("tm7-open-day") || initial; } catch {}
+    void openDay(initial);
     setPhotoSettings(loadPhotoSettings());
     setHolidays(loadHolidays());
-  }, []);
+    const t = window.setInterval(() => setSaveState(isSaving() ? "กำลังบันทึก…" : storeError ? "บันทึกไม่สำเร็จ: " + storeError : "บันทึกแล้ว"), 1000);
+    const onLeave = () => { void flush(); };
+    window.addEventListener("beforeunload", onLeave);
+    return () => { window.clearInterval(t); window.removeEventListener("beforeunload", onLeave); };
+  }, [openDay]);
 
   function updatePhotoSettings(patch: Partial<PhotoSettings>) {
     setPhotoSettings((prev) => {
@@ -79,6 +95,19 @@ export default function TodayPage() {
       try { localStorage.setItem("today-photo-settings", JSON.stringify(next)); } catch {}
       return next;
     });
+  }
+
+  function commitDate(v: string) {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return;
+    if (v !== metaRefDate.current) { void flush().then(() => openDay(v)); }
+  }
+  const metaRefDate = useRef("");
+  useEffect(() => { if (loaded) metaRefDate.current = meta.date; }, [meta.date, loaded]);
+  function shiftDay(delta: number) {
+    const [dd, mm, yy] = metaRefDate.current.split("/").map(Number);
+    const d = new Date(yy, mm - 1, dd);
+    d.setDate(d.getDate() + delta);
+    commitDate(`${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`);
   }
 
   function changeOffice(office: OfficeId) {
@@ -512,6 +541,26 @@ export default function TodayPage() {
   function openBill(list: Person[]) {
     const amount = list.length === 1 ? Number(list[0].fields.amount) || 0 : list.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
     window.open(billUrl(list, amount), "_blank");
+    // register the bill so it can be re-issued later (kept 1 year on the server)
+    void fetch("/api/bills", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+      date: meta.date, office: meta.office, amount,
+      customers: list.map((p) => ({ en: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "), cn: p.fields.chineseName, pp: p.fields.passportNo })),
+    }) }).catch(() => {});
+  }
+
+  // ---------- bill history ----------
+  type BillRow = { id: string; createdAt: string; date: string; office: string; amount: number; customers: { en: string; cn: string; pp: string }[] };
+  const [showBills, setShowBills] = useState(false);
+  const [billQuery, setBillQuery] = useState("");
+  const [bills, setBills] = useState<BillRow[] | null>(null);
+  async function searchBills(q: string) {
+    setBills(null);
+    const r = await fetch(`/api/bills?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+    setBills(r.ok ? ((await r.json()) as { bills: BillRow[] }).bills : []);
+  }
+  function reopenBill(b: BillRow) {
+    const fake = b.customers.map((c, i) => ({ id: String(i), order: i + 1, createdAt: 0, files: [], fields: { ...EMPTY_FIELDS, firstName: c.en.split(" ").slice(0, -1).join(" ") || c.en, lastName: c.en.split(" ").slice(-1)[0] || "", chineseName: c.cn, passportNo: c.pp } })) as Person[];
+    window.open(billUrl(fake, b.amount), "_blank");
   }
 
   async function excelTm30() {
@@ -542,11 +591,11 @@ export default function TodayPage() {
   }
 
   async function clearDay() {
-    if (!window.confirm("ล้างรายการทั้งวันนี้? (ไฟล์ที่ยังไม่ได้ดาวน์โหลดจะหายไป)")) return;
-    await clearAll();
+    if (!window.confirm(`ลบข้อมูลวัน ${meta.date} ทั้งหมดออกจากเซิร์ฟเวอร์? (ทุกเครื่องจะไม่เห็นวันนี้อีก)`)) return;
+    await clearDayRemote(meta.date);
     setPeople([]);
-    updateMeta({ date: todayDdmmyyyy() });
     setStatus("");
+    listDays().then(setDays);
   }
 
   // ---------- file moves ----------
@@ -574,7 +623,11 @@ export default function TodayPage() {
         <div className="flex flex-wrap items-end gap-3 text-sm">
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500">วันที่ยื่น</span>
-            <input value={meta.date} onChange={(e) => updateMeta({ date: formatDateMask(e.target.value) })} className={inputCls + " w-32"} placeholder="DD/MM/YYYY" />
+            <div className="flex items-center gap-1">
+              <button type="button" className={btnCls + " px-2"} title="วันก่อนหน้า" onClick={() => shiftDay(-1)}>◀</button>
+              <input value={meta.date} onChange={(e) => setMeta((m) => ({ ...m, date: formatDateMask(e.target.value) }))} onBlur={(e) => commitDate(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") commitDate((e.target as HTMLInputElement).value); }} className={inputCls + " w-32 text-center"} placeholder="DD/MM/YYYY" />
+              <button type="button" className={btnCls + " px-2"} title="วันถัดไป" onClick={() => shiftDay(1)}>▶</button>
+            </div>
           </label>
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500">ชื่อโฟลเดอร์</span>
@@ -594,7 +647,18 @@ export default function TodayPage() {
         </div>
       </header>
 
-      <DropZone onFiles={handleFiles} disabled={working} />
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-slate-500">วันที่มีข้อมูลในสัปดาห์นี้:</span>
+        {days.length === 0 && <span className="text-slate-400">— ยังไม่มี —</span>}
+        {days.map((d) => {
+          const label = `${d.date.slice(0, 2)}/${d.date.slice(2, 4)}/${d.date.slice(4)}`;
+          const active = label === meta.date;
+          return <button key={d.date} type="button" onClick={() => commitDate(label)} className={`rounded-full border px-2.5 py-0.5 ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>{label}</button>;
+        })}
+        <span className={`ml-auto ${saveState.startsWith("บันทึกไม่") ? "text-red-600" : "text-slate-400"}`}>{saveState}</span>
+      </div>
+
+      <DropZone onFiles={handleFiles} disabled={working || !loaded} />
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-700">
@@ -611,11 +675,42 @@ export default function TodayPage() {
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(people.filter((p) => p.fields.pay === "collect"))} disabled={!people.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
+          <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
           <button onClick={dayZip} disabled={working || !people.length} className={btnCls}>⬇ โฟลเดอร์วันนี้ (zip)</button>
           <button onClick={clearDay} disabled={working} className={btnDangerCls}>ล้างวัน</button>
         </div>
       </div>
+
+      {showBills && (
+        <div className="mt-3 rounded-2xl bg-white p-4 text-sm shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={billQuery} onChange={(e) => setBillQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void searchBills(billQuery); }} placeholder="ค้นชื่อ / ชื่อจีน / เลขพาสปอร์ต" className={inputCls + " w-72"} />
+            <button onClick={() => void searchBills(billQuery)} className={btnCls}>ค้นหา</button>
+            <span className="text-xs text-slate-500">บิลที่เคยกดออกจากหน้านี้ เก็บไว้ 1 ปี — กด "เปิดบิล" เพื่อออกใบเดิมให้ลูกค้าอีกครั้ง</span>
+          </div>
+          <div className="mt-3 max-h-72 overflow-auto">
+            {bills === null && <p className="text-xs text-slate-400">กำลังค้นหา…</p>}
+            {bills && bills.length === 0 && <p className="text-xs text-slate-400">ไม่พบ</p>}
+            {bills && bills.length > 0 && (
+              <table className="w-full text-xs">
+                <thead><tr className="text-left text-slate-500"><th className="py-1">วันที่</th><th>หน้างาน</th><th>ลูกค้า</th><th className="text-right">บาท</th><th></th></tr></thead>
+                <tbody>
+                  {bills.map((b) => (
+                    <tr key={b.id} className="border-t border-slate-100">
+                      <td className="py-1 whitespace-nowrap">{b.date}</td>
+                      <td>{OFFICES[b.office as OfficeId]?.short ?? b.office}</td>
+                      <td>{b.customers.map((c) => `${c.en}${c.cn ? ` ${c.cn}` : ""} (${c.pp})`).join(", ")}</td>
+                      <td className="text-right">{b.amount.toLocaleString()}</td>
+                      <td className="text-right"><button onClick={() => reopenBill(b)} className={btnCls + " px-2 py-0.5"}>เปิดบิล</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
 
       {showSettings && (
         <div className="mt-3 grid gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm ring-1 ring-slate-200 lg:grid-cols-3">

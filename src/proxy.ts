@@ -16,6 +16,6 @@ export const config = {
   // users can actually sign in), Next.js internals, and static asset files.
   // App pages, /api/generate-tm7, and the Gemini server actions are all gated.
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|ttf|woff2?|pdf)$).*)",
+    "/((?!api/auth|api/cron|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|ttf|woff2?|pdf)$).*)",
   ],
 };
