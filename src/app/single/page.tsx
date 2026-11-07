@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { OFFICES, OFFICE_IDS, DEFAULT_OFFICE, isOfficeId, type OfficeId } from "@/lib/offices";
 import type { Tm7FormData, Title } from "@/lib/tm7-generator";
 import { buildTm7Filename } from "@/lib/tm7-filename";
 import AiPassportScanner, { type AiScanResult } from "@/components/AiPassportScanner";
@@ -31,6 +32,7 @@ type FormState = {
   phone: string;
   appointmentDate: string;
   formLocation: string;
+  office: OfficeId;
   extensionDays: string;
   extensionReason: string;
 };
@@ -60,6 +62,7 @@ const INITIAL: FormState = {
   phone: "",
   appointmentDate: "",
   formLocation: "BANGKOK",
+  office: DEFAULT_OFFICE,
   extensionDays: "30",
   extensionReason: "TOURISM",
 };
@@ -218,7 +221,8 @@ export default function Page() {
       postalCode: form.postalCode || undefined,
       phone: form.phone || undefined,
       appointmentDate: ddmmyyyyToIso(form.appointmentDate),
-      formLocation: form.formLocation || undefined,
+      formLocation: OFFICES[form.office].formLocation,
+      office: form.office,
       extensionDays: form.extensionDays ? Number(form.extensionDays) : undefined,
       extensionReason: form.extensionReason || undefined,
     };
@@ -528,13 +532,14 @@ export default function Page() {
               highlight
             />
           </Field>
-          <Field label="Form Location" thai="สถานที่ยื่นคำร้อง">
-            <input
-              type="text"
-              value={form.formLocation}
-              onChange={(e) => set("formLocation", e.target.value)}
+          <Field label="Office" thai="หน้างาน / ด่าน">
+            <select
+              value={form.office}
+              onChange={(e) => { const v = e.target.value; if (isOfficeId(v)) { set("office", v); set("formLocation", OFFICES[v].formLocation); } }}
               className={inputCls}
-            />
+            >
+              {OFFICE_IDS.map((id) => <option key={id} value={id}>{OFFICES[id].label} — {OFFICES[id].pages}</option>)}
+            </select>
           </Field>
           <Field label="Extension Days" thai="จำนวนวันที่ขอต่อ">
             <input
