@@ -57,6 +57,7 @@ export type PersonFields = {
   flight: string;               // per-person flight when it differs from the day's (else "")
   landTime: string;             // HH:MM landing time when it differs from the day's
   returnBy: string;             // HH:MM "back at the airport before" when it differs from the day's
+  cambodia: boolean;            // passport shows Cambodia entries/exits → 🐻 on the driver card so the Lao side is cleared correctly
 };
 
 export type Person = {
@@ -131,6 +132,7 @@ export const EMPTY_FIELDS: PersonFields = {
   flight: "",
   landTime: "",
   returnBy: "",
+  cambodia: false,
 };
 
 export const DEFAULT_META: DayMeta = {
@@ -144,6 +146,7 @@ export const DEFAULT_META: DayMeta = {
   flight: "",
   landTime: "",
   returnBy: "",
+  cambodia: false,
 };
 
 // Visa-run board defaults: customers are driven to the Chiang Saen border.

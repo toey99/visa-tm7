@@ -1072,6 +1072,7 @@ function PersonCard({
               {f.chineseName && <span className="ml-2 text-slate-600">{f.chineseName}</span>}
               {isRun && car && <span className="ml-2 rounded px-2 py-0.5 text-xs font-semibold text-white" style={{ background: car.accent }}>🚗 {car.id} {car.plate}</span>}
               {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">+30 วัน</span>}
+              {isRun && f.cambodia && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">🐻 กัมพูชา</span>}
               {p.cancelled && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">❌ ไม่มา / ยกเลิก</span>}
               {p.movedTo && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">➡️ เลื่อนไป {p.movedTo}</span>}
             </div>
@@ -1127,6 +1128,8 @@ function PersonCard({
               </button>
             );
           })}
+          <button type="button" onClick={() => set("cambodia", !f.cambodia)} title="พาสปอร์ตมีประวัติเข้าออกกัมพูชา → ติด 🐻 ที่รูปในการ์ดคนขับ"
+            className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.cambodia ? "bg-amber-700 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🐻 {f.cambodia ? "มีประวัติกัมพูชา" : "กัมพูชา?"}</button>
           <label className="ml-2 flex items-center gap-1 text-xs text-slate-700">✈ ไฟลท์ต่างจากวัน
             <input value={f.flight ?? ""} onChange={(e) => set("flight", e.target.value.toUpperCase())} className={inputCls + " w-20"} placeholder={meta.flight || "DD102"} />
           </label>
@@ -1433,6 +1436,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                   <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
                   {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
                   {isRun && carById(f.car) && <span style={{ position: "absolute", top: -6, right: -6, background: carById(f.car)!.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>🚗{f.car}</span>}
+                  {isRun && f.cambodia && <span style={{ position: "absolute", top: 18, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐻</span>}
                   {isRun && f.run === "RUN30" && <span style={{ position: "absolute", bottom: -6, left: -6, background: "#ea580c", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>+30</span>}
                   {p.arrived && (
                     <span style={{ position: "absolute", right: -8, bottom: 10, width: 34, height: 34, borderRadius: "50%", background: "#16a34a", border: "3px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>

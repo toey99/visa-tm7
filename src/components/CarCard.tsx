@@ -79,6 +79,9 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
                   <div style={{ position: "relative", display: "inline-block" }}>
                     <CardPhoto person={p} w={PH.w} h={PH.h} />
                     <span style={{ position: "absolute", top: -8, left: -8, width: 30, height: 30, borderRadius: "50%", background: accent, color: "#fff", fontSize: 14, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }}>{i + 1}</span>
+                    {driver && f.cambodia && (
+                      <span title="มีประวัติกัมพูชา" style={{ position: "absolute", top: -14, right: -14, width: 64, height: 64, borderRadius: "50%", background: "#fff", border: `4px solid ${accent}`, boxShadow: "0 2px 8px rgba(0,0,0,.35)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 40, lineHeight: 1 }}>🐻</span>
+                    )}
                     {f.run === "RUN30" && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#ea580c", color: "#fff", borderRadius: 8, fontSize: 11, fontWeight: 700, padding: "2px 7px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>+30</span>}
                   </div>
                   <div style={{ fontFamily: "'Courier New', ui-monospace, monospace", fontSize: driver ? 23 : 21, fontWeight: 700, color: "#111", marginTop: 8, letterSpacing: 0.5, lineHeight: 1.1 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || " "}</div>
@@ -158,7 +161,12 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
           </div>
         </div>
       </div>}
-      {driver && <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative" }}>👥 {people.length} คน · การ์ดสำหรับคนขับ — รับลูกค้าตามรูปและชื่อด้านบน</div>}
+      {driver && (
+        <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>👥 {people.length} คน · การ์ดสำหรับคนขับ — รับลูกค้าตามรูปและชื่อด้านบน</span>
+          {people.some((p) => p.fields.cambodia) && <span style={{ background: "#fef3c7", color: "#78350f", borderRadius: 10, padding: "4px 12px", fontWeight: 800, fontSize: 14 }}>🐻 = มีประวัติกัมพูชา {people.filter((p) => p.fields.cambodia).length} คน</span>}
+        </div>
+      )}
     </div>
   );
 });
