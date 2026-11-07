@@ -167,7 +167,7 @@ export async function mergePdfs(blobs: Blob[]): Promise<Blob> {
 
 const KIND_FILE: Record<string, string> = { passport: "passport", stamp: "stamp", selfie: "selfie", tm30: "tm30", other: "file" };
 
-export async function buildDayZip(people: Person[], meta: DayMeta, extras: { photoSheet?: Blob; summary?: Blob } = {}): Promise<Blob> {
+export async function buildDayZip(people: Person[], meta: DayMeta, extras: { photoSheet?: Blob; summary?: Blob; cars?: { name: string; blob: Blob }[] } = {}): Promise<Blob> {
   const JSZip = await getJSZip();
   const zip = new JSZip();
   const dayFolder = meta.date.replace(/\//g, "");
@@ -193,6 +193,7 @@ export async function buildDayZip(people: Person[], meta: DayMeta, extras: { pho
   }
   if (extras.photoSheet) root.file("photo-sheet.pdf", extras.photoSheet);
   if (extras.summary) root.file("summary.png", extras.summary);
+  for (const c of extras.cars ?? []) root.file(c.name, c.blob);
   return zip.generateAsync({ type: "blob", compression: "STORE" });
 }
 

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const MAX = 15 * 1024 * 1024;
 
 function safePath(p: string): string | null {
-  return /^days\/\d{8}\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p) ? p : null;
+  return /^(?:days|run)\/\d{8}\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p) ? p : null;
 }
 
 export async function POST(req: NextRequest) {

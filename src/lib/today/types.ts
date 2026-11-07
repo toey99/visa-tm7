@@ -51,6 +51,12 @@ export type PersonFields = {
   cost: string;                 // THB actually paid out (fee, fine, VIP, embassy letter...)
   costNote: string;             // what the cost was made of
   note: string;
+  // visa-run board only
+  run: "RUN" | "RUN30";         // ordinary run, or run + 30-day extension (needs the TM.7 packet)
+  car: string;                  // car id from CARS ("" = not assigned yet)
+  flight: string;               // per-person flight when it differs from the day's (else "")
+  landTime: string;             // HH:MM landing time when it differs from the day's
+  returnBy: string;             // HH:MM "back at the airport before" when it differs from the day's
 };
 
 export type Person = {
@@ -79,6 +85,11 @@ export type DayMeta = {
   formLocation: string;         // BANGKOK
   extensionDays: string;        // "30"
   extensionReason: string;      // TOURISM
+  // visa-run board only
+  slot: string;                 // RUN_SLOTS id — morning / noon / afternoon / evening
+  flight: string;               // default flight for the day, e.g. DD102
+  landTime: string;             // HH:MM
+  returnBy: string;             // HH:MM — must be back at the airport before this
 };
 
 export const EMPTY_FIELDS: PersonFields = {
@@ -115,6 +126,11 @@ export const EMPTY_FIELDS: PersonFields = {
   cost: "",
   costNote: "",
   note: "",
+  run: "RUN",
+  car: "",
+  flight: "",
+  landTime: "",
+  returnBy: "",
 };
 
 export const DEFAULT_META: DayMeta = {
@@ -124,6 +140,18 @@ export const DEFAULT_META: DayMeta = {
   formLocation: OFFICES[DEFAULT_OFFICE].formLocation,
   extensionDays: "30",
   extensionReason: "TOURISM",
+  slot: "morning",
+  flight: "",
+  landTime: "",
+  returnBy: "",
+};
+
+// Visa-run board defaults: customers are driven to the Chiang Saen border.
+export const DEFAULT_META_RUN: DayMeta = {
+  ...DEFAULT_META,
+  office: "CHIANG_SAEN",
+  jobType: "RUN",
+  formLocation: OFFICES.CHIANG_SAEN.formLocation,
 };
 
 export function newId(): string {

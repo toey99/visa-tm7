@@ -1,15 +1,16 @@
-// GET /api/day/list → { days: [{ date: "DDMMYYYY", people: n, office }] } newest first
-import { NextResponse } from "next/server";
+// GET /api/day/list[?ns=run] → { days: [{ date: "DDMMYYYY", people: n, office }] } newest first
+import { NextRequest, NextResponse } from "next/server";
 import { blobList } from "@/lib/blob";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const ns = req.nextUrl.searchParams.get("ns") === "run" ? "run" : "days";
   try {
-    const blobs = await blobList("days/");
+    const blobs = await blobList(`${ns}/`);
     const days = new Map<string, { date: string; files: number; updated: string }>();
     for (const b of blobs) {
-      const m = b.pathname.match(/^days\/(\d{8})\//);
+      const m = b.pathname.match(new RegExp(`^${ns}/(\\d{8})/`));
       if (!m) continue;
       const cur = days.get(m[1]) ?? { date: m[1], files: 0, updated: b.uploadedAt };
       cur.files++;
