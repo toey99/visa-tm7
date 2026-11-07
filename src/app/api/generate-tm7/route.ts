@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
       tm30Bytes = new Uint8Array(await tm30.arrayBuffer());
     }
 
+    if (OFFICES[office].generator === "none") {
+      return NextResponse.json({ error: `${OFFICES[office].label} ไม่ต้องทำ TM.7` }, { status: 400 });
+    }
     let pdfBytes: Uint8Array;
     switch (OFFICES[office].generator) {
       case "nonthaburi":

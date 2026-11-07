@@ -739,7 +739,7 @@ export default function TodayPage() {
         <div className="flex flex-wrap gap-2">
           <button onClick={() => addEmptyPerson()} className={btnCls}>+ เพิ่มคนว่าง</button>
           <button onClick={excelTm30} disabled={working || !people.length} className={btnCls}>⬇ Excel TM30</button>
-          <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>⬇ TM7 ทุกคน (PDF เดียว)</button>
+          {OFFICES[meta.office].generator !== "none" && <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>⬇ TM7 ทุกคน (PDF เดียว)</button>}
           <button onClick={photosAll} disabled={working || !people.length} className={btnPrimaryCls}>✦ ทำรูปพื้นขาวทุกคน</button>
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
@@ -944,7 +944,7 @@ function PersonCard({
   if (!f.firstName || !f.lastName) missing.push("ชื่อ");
   if (!f.passportNo) missing.push("เลขพาสปอร์ต");
   if (!f.arrivalDate) missing.push("วันเข้าเมือง");
-  if (!f.houseNo && !f.province) missing.push("ที่อยู่ (TM30)");
+  if (!f.houseNo && !f.province && OFFICES[meta.office].generator !== "none") missing.push("ที่อยู่ (TM30)");
   const hasSelfie = p.files.some((x) => x.kind === "selfie");
 
   return (
@@ -967,7 +967,7 @@ function PersonCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={onToggleArrived} className={p.arrived ? "rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls} title="ลูกค้ามาถึงหน้างานแล้ว (ขึ้นเครื่องหมายถูกเขียวใน summary)">{p.arrived ? "✅ มาแล้ว" : "☐ มาแล้ว?"}</button>
-          <button onClick={onTm7} disabled={busy} className={btnCls}>TM7 PDF</button>
+          {OFFICES[meta.office].generator !== "none" && <button onClick={onTm7} disabled={busy} className={btnCls}>TM7 PDF</button>}
           <button onClick={onPhoto} disabled={busy} className={btnCls}>{p.aiPhoto ? "ทำรูปใหม่" : "✦ ทำรูปพื้นขาว"}</button>
           {f.pay === "collect" && <button onClick={onCollect} disabled={busy} className={btnCls} title="รูปพาสปอร์ตพร้อมยอดที่ต้องเก็บ">฿ รูปเรียกเก็บ</button>}
           <button onClick={onBill} className={btnCls} title="เปิดโปรแกรมบิล ABC พร้อมชื่อ/พาสปอร์ต/ยอด">🧾 ออกบิล</button>
@@ -1241,7 +1241,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           <div style={{ fontSize: 34, lineHeight: 1 }}>{o.emoji}</div>
           <div>
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.1 }}>{o.summaryTitle}</div>
-            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 3 }}>{o.subtitle} · ต่อวีซ่า {meta.extensionDays} วัน</div>
+            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 3 }}>{o.subtitle}{o.generator !== "none" ? ` · ต่อวีซ่า ${meta.extensionDays} วัน` : ""}</div>
           </div>
         </div>
         <div style={{ textAlign: "right" }}>

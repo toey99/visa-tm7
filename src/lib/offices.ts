@@ -55,6 +55,30 @@ export const OFFICES = {
     summaryAccent: "#c2410c",
     pages: "TM.7 2 หน้า + STM.2 + STM.9 + TM30",
   },
+  VFS_BANGKOK: {
+    label: "VFS ศูนย์ราชการ (ตึก B)",
+    short: "VFS",
+    formLocation: "BANGKOK",
+    generator: "none",
+    summaryTitle: "VFS ศูนย์ราชการ ตึก B",
+    emoji: "🏢",
+    subtitle: "VFS Global · ศูนย์ราชการแจ้งวัฒนะ อาคาร B",
+    summaryBg: "linear-gradient(135deg,#e9d5ff,#f5ecff 40%,#d8b4fe)",
+    summaryAccent: "#7e22ce",
+    pages: "ไม่ต้องทำ TM.7 (ยื่นผ่าน VFS)",
+  },
+  VFS_PATTAYA: {
+    label: "VFS พัทยา",
+    short: "VFSPTY",
+    formLocation: "PATTAYA",
+    generator: "none",
+    summaryTitle: "VFS พัทยา",
+    emoji: "🏖️",
+    subtitle: "VFS Global · พัทยา",
+    summaryBg: "linear-gradient(135deg,#ccfbf1,#ecfefb 40%,#99f6e4)",
+    summaryAccent: "#0f766e",
+    pages: "ไม่ต้องทำ TM.7 (ยื่นผ่าน VFS)",
+  },
 } as const;
 
 export type OfficeId = keyof typeof OFFICES;
