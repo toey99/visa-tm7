@@ -21,7 +21,13 @@ const FONT = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Ap
 const PANEL: React.CSSProperties = { background: "rgba(255,255,255,.92)", borderRadius: 16, boxShadow: "0 2px 10px rgba(0,0,0,.06)" };
 const ZH_NUM = ["", "1", "2", "3", "4"];
 
-const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: DayMeta }>(function CarCard({ car, people, meta }, ref) {
+// variant "customer": meeting-point strip at the bottom (sent to the riders).
+// variant "driver": no strip, bigger faces so the driver can match people fast.
+export type CarCardVariant = "customer" | "driver";
+
+const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: DayMeta; variant?: CarCardVariant }>(function CarCard({ car, people, meta, variant = "customer" }, ref) {
+  const driver = variant === "driver";
+  const PH = driver ? { w: 220, h: 290 } : { w: 180, h: 236 };
   const [dd, mm] = meta.date.split("/");
   const slot = RUN_SLOTS.find((s) => s.id === (meta.slot || "morning")) ?? RUN_SLOTS[0];
   const dateTh = dd && mm ? `${dd} ${TH_MONTHS[Number(mm) - 1] ?? mm} ${slot.th}` : "";
@@ -53,7 +59,7 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>VISA RUN · 签证跑</div>
-          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>{dateTh}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>{dateTh}{driver ? " · 🧑‍✈️ คนขับ" : ""}</div>
           <div style={{ fontSize: 15, opacity: 0.95 }}>{dateZh}</div>
         </div>
       </div>
@@ -69,14 +75,14 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
               const land = f.landTime && f.landTime !== headLand ? f.landTime : "";
               const ret = f.returnBy && f.returnBy !== headReturn ? f.returnBy : "";
               return (
-                <div key={p.id} style={{ textAlign: "center", width: 240 }}>
+                <div key={p.id} style={{ textAlign: "center", width: driver ? 262 : 240 }}>
                   <div style={{ position: "relative", display: "inline-block" }}>
-                    <CardPhoto person={p} />
+                    <CardPhoto person={p} w={PH.w} h={PH.h} />
                     <span style={{ position: "absolute", top: -8, left: -8, width: 30, height: 30, borderRadius: "50%", background: accent, color: "#fff", fontSize: 14, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }}>{i + 1}</span>
                     {f.run === "RUN30" && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#ea580c", color: "#fff", borderRadius: 8, fontSize: 11, fontWeight: 700, padding: "2px 7px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>+30</span>}
                   </div>
-                  <div style={{ fontFamily: "'Courier New', ui-monospace, monospace", fontSize: 21, fontWeight: 700, color: "#111", marginTop: 8, letterSpacing: 0.5, lineHeight: 1.1 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || " "}</div>
-                  <div style={{ fontSize: 27, color: "#111", lineHeight: 1.2 }}>{f.chineseName || " "}</div>
+                  <div style={{ fontFamily: "'Courier New', ui-monospace, monospace", fontSize: driver ? 23 : 21, fontWeight: 700, color: "#111", marginTop: 8, letterSpacing: 0.5, lineHeight: 1.1 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || " "}</div>
+                  <div style={{ fontSize: driver ? 30 : 27, color: "#111", lineHeight: 1.2 }}>{f.chineseName || " "}</div>
                   {(flight || land || ret) && (
                     <div style={{ marginTop: 3, display: "inline-block", background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
                       {flight && `✈ ${flight} `}{land && `ลง ${land} `}{ret && `· กลับก่อน ${ret}`}
@@ -117,8 +123,8 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         </div>
       </div>
 
-      {/* meeting point after landing — replaces the separate guide picture */}
-      <div style={{ ...PANEL, marginTop: 14, padding: "12px 14px", position: "relative" }}>
+      {/* meeting point after landing — replaces the separate guide picture (customer card only) */}
+      {!driver && <div style={{ ...PANEL, marginTop: 14, padding: "12px 14px", position: "relative" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
           <span style={{ background: "#1e3a8a", color: "#fff", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>📍 จุดนัดพบหลังลงเครื่อง · 下飞机后的集合地点</span>
           <span style={{ background: "#ffeb3b", color: "#111", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>ประตู {MEETING_POINT.gate} · {MEETING_POINT.gate}号门</span>
@@ -151,7 +157,8 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
             <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>👥 {people.length} คน · โปรดรอที่บริเวณประตู {MEETING_POINT.gate} · 请在 {MEETING_POINT.gate} 号门附近等候</div>
           </div>
         </div>
-      </div>
+      </div>}
+      {driver && <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative" }}>👥 {people.length} คน · การ์ดสำหรับคนขับ — รับลูกค้าตามรูปและชื่อด้านบน</div>}
     </div>
   );
 });
@@ -159,7 +166,7 @@ export default CarCard;
 
 // The rider's face: the framed white-background photo when made, else the
 // photo cropped out of the passport page, else the selfie.
-function CardPhoto({ person: p }: { person: Person }) {
+function CardPhoto({ person: p, w, h }: { person: Person; w: number; h: number }) {
   const passport = p.files.find((x) => x.kind === "passport");
   const selfie = p.files.find((x) => x.kind === "selfie");
   const [url, setUrl] = useState("");
@@ -179,7 +186,7 @@ function CardPhoto({ person: p }: { person: Person }) {
     })();
     return () => { alive = false; if (u) URL.revokeObjectURL(u); };
   }, [p.photo, passport, selfie]);
-  const box: React.CSSProperties = { width: 180, height: 236, objectFit: "cover", borderRadius: 12, border: "4px solid #fff", boxShadow: "0 3px 10px rgba(0,0,0,.22)", background: "#eee", display: "inline-block" };
+  const box: React.CSSProperties = { width: w, height: h, objectFit: "cover", borderRadius: 12, border: "4px solid #fff", boxShadow: "0 3px 10px rgba(0,0,0,.22)", background: "#eee", display: "inline-block" };
   // eslint-disable-next-line @next/next/no-img-element
   return url ? <img src={url} alt="" style={box} /> : <div style={box} />;
 }

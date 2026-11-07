@@ -592,27 +592,31 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   // ---------- visa-run car cards (one PNG per car) ----------
-  const carRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const carRefs = useRef<Record<string, HTMLDivElement | null>>({});          // customer cards
+  const driverRefs = useRef<Record<string, HTMLDivElement | null>>({});       // driver cards (rendered off-screen)
+  const [carView, setCarView] = useState<"customer" | "driver">("customer");
   const carsInUse = CARS.filter((c) => active.some((p) => p.fields.car === c.id));
   const unassigned = active.filter((p) => !p.fields.car);
-  async function makeCarCards(): Promise<{ name: string; blob: Blob }[]> {
+  async function makeCarCards(which: ("customer" | "driver")[] = ["customer", "driver"]): Promise<{ name: string; blob: Blob }[]> {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
     const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
     const out: { name: string; blob: Blob }[] = [];
-    for (const c of carsInUse) {
-      const el = carRefs.current[c.id];
-      if (!el) continue;
-      const blob = await hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
-      if (blob) out.push({ name: `car-${c.id}-${c.plate.replace(/\s+/g, "")}.png`, blob });
+    for (const v of which) {
+      for (const c of carsInUse) {
+        const el = (v === "driver" ? driverRefs : carRefs).current[c.id];
+        if (!el) continue;
+        const blob = await hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+        if (blob) out.push({ name: `car-${c.id}-${c.plate.replace(/\s+/g, "")}-${v === "driver" ? "คนขับ" : "ลูกค้า"}.png`, blob });
+      }
     }
     return out;
   }
-  async function downloadCarCards() {
+  async function downloadCarCards(which: "customer" | "driver") {
     setError("");
     if (!carsInUse.length) { setError("ยังไม่ได้จัดใครลงรถเลย — เลือกคันในการ์ดแต่ละคนก่อน"); return; }
-    setWorking(true); setStatus("กำลังทำการ์ดรถ…");
+    setWorking(true); setStatus(which === "driver" ? "กำลังทำการ์ดคนขับ…" : "กำลังทำการ์ดลูกค้า…");
     try {
-      const cards = await makeCarCards();
+      const cards = await makeCarCards([which]);
       for (const c of cards) { downloadBlob(c.blob, `${meta.date.replace(/\//g, "")}_${c.name}`); await new Promise((r) => setTimeout(r, 300)); }
       setStatus(`การ์ดรถ ${cards.length} คัน`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
@@ -812,7 +816,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={() => addEmptyPerson()} className={btnCls}>+ เพิ่มคนว่าง</button>
           <button onClick={excelTm30} disabled={working || !people.length} className={btnCls}>⬇ Excel TM30</button>
           {OFFICES[meta.office].generator !== "none" && <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>{isRun ? "⬇ TM7 คนไปต่อ 30 วัน (PDF เดียว)" : "⬇ TM7 ทุกคน (PDF เดียว)"}</button>}
-          {isRun && <button onClick={downloadCarCards} disabled={working || !people.length} className={btnPrimaryCls}>🚗 การ์ดรถ (PNG ทุกคัน)</button>}
+          {isRun && <button onClick={() => downloadCarCards("customer")} disabled={working || !people.length} className={btnPrimaryCls} title="มีจุดนัดพบประตู 2 — ส่งให้ลูกค้า">🚗 การ์ดลูกค้า (ทุกคัน)</button>}
+          {isRun && <button onClick={() => downloadCarCards("driver")} disabled={working || !people.length} className={btnPrimaryCls} title="ไม่มีจุดนัดพบ รูปหน้าใหญ่ — ส่งให้คนขับ">🧑‍✈️ การ์ดคนขับ (ทุกคัน)</button>}
           <button onClick={photosAll} disabled={working || !people.length} className={btnPrimaryCls}>✦ ทำรูปพื้นขาวทุกคน</button>
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
@@ -962,7 +967,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 
       {isRun && (
         <div className="mt-8">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">การ์ดรถ (1 รูปต่อคัน — ส่งให้ลูกค้าคันนั้น)</h2>
+          <div className="mb-2 flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-slate-700">การ์ดรถ (1 รูปต่อคัน)</h2>
+            {(["customer", "driver"] as const).map((v) => (
+              <button key={v} type="button" onClick={() => setCarView(v)} className={`rounded-full px-3 py-0.5 text-xs ${carView === v ? "bg-indigo-600 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{v === "customer" ? "🚗 แบบลูกค้า (มีจุดนัดพบ)" : "🧑‍✈️ แบบคนขับ"}</button>
+            ))}
+          </div>
           {carsInUse.length === 0 && <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">เลือก "รถ" ในการ์ดของแต่ละคน แล้วการ์ดรถจะโผล่ตรงนี้</p>}
           <div className="flex flex-wrap gap-4">
             {carsInUse.map((c) => {
@@ -970,8 +980,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
               return (
                 <div key={c.id}>
                   {riders.length > c.seats && <p className="mb-1 text-xs font-semibold text-red-600">⚠ {c.name} นั่งได้ {c.seats} คน แต่จัดไว้ {riders.length} คน</p>}
-                  <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-                    <CarCard ref={(el) => { carRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} />
+                  {/* both variants stay mounted so either can be exported; the one not being viewed sits off-screen */}
+                  <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "customer" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
+                    <CarCard ref={(el) => { carRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="customer" />
+                  </div>
+                  <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "driver" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
+                    <CarCard ref={(el) => { driverRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="driver" />
                   </div>
                 </div>
               );
