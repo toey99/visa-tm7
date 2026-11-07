@@ -23,6 +23,9 @@ export async function GET(req: NextRequest) {
       const m = b.pathname.match(/^(?:days|run)\/(\d{2})(\d{2})(\d{4})\//);
       if (!m) return false;
       const key = `${m[3]}${m[2]}${m[1]}`;
+      // visa runs go out every day, Sunday included: keep that Sunday's run
+      // folder until the following week so Monday can still settle it
+      if (b.pathname.startsWith("run/")) return key < todayKey;
       return key <= todayKey;
     });
     if (victims.length) await blobDelete(victims.map((b) => b.url));

@@ -262,14 +262,17 @@ export type OverstayInfo = {
   lateDays?: number;       // calendar days past "until" (shown even when fine is 0 under grace)
 };
 
-export function overstayInfo(arrivalDate: string, admittedUntil: string, visaType: string, appointmentDate: string, holidays: string[] = DEFAULT_HOLIDAYS): OverstayInfo | null {
+// grace=false for the visa-run board: the border is open every day, so an
+// expiry on a weekend/holiday gets no next-working-day allowance — every day
+// after "admitted until" is fined.
+export function overstayInfo(arrivalDate: string, admittedUntil: string, visaType: string, appointmentDate: string, holidays: string[] = DEFAULT_HOLIDAYS, grace = true): OverstayInfo | null {
   const until = effectiveAdmittedUntil(arrivalDate, admittedUntil, visaType);
   const appt = parseDdmmyyyy(appointmentDate);
   if (!until || !appt) return null;
   const late = daysBetween(until.date, appt);
   const base = { until: fmtDdmmyyyy(until.date), source: until.source, lateDays: Math.max(0, late) };
   if (late <= 0) return { ...base, days: 0, fine: 0 };
-  if (!isWorkingDay(until.date, holidays)) {
+  if (grace && !isWorkingDay(until.date, holidays)) {
     const grace = nextWorkingDay(until.date, holidays);
     const graceStr = fmtDdmmyyyy(grace);
     if (daysBetween(grace, appt) <= 0) return { ...base, days: 0, fine: 0, graceUntil: graceStr };

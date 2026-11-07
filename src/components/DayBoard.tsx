@@ -1036,7 +1036,7 @@ function PersonCard({
   }
 
   // overstay: appointment date after "admitted until"
-  const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays);
+  const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, !isRun);
   const overstayDays = ov?.days ?? 0;
   const fine = ov?.fine ?? 0;
   const missing: string[] = [];
@@ -1359,7 +1359,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   const sum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
   const received = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
   const pendingN = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
-  const overstays = people.filter((p) => (overstayInfo(p.fields.arrivalDate, p.fields.admittedUntil, p.fields.visaType, meta.date)?.days ?? 0) > 0).length;
+  const overstays = people.filter((p) => (overstayInfo(p.fields.arrivalDate, p.fields.admittedUntil, p.fields.visaType, meta.date, undefined, !isRun)?.days ?? 0) > 0).length;
   const accent = o.summaryAccent;
   const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
   const cols = shown.length <= 6 ? 6 : 8;
@@ -1401,7 +1401,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                 : f.paidHow === "agent" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `🏢 ${who}จ่ายที่เอเจนซี่` }
                 : { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() })
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
-            const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
+            const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, undefined, !isRun);
             return (
               <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1 }}>
                 <div style={{ position: "relative", display: "inline-block", filter: ghost ? "grayscale(1)" : undefined }}>
