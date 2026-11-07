@@ -44,7 +44,10 @@ export type PersonFields = {
   // bookkeeping for the day
   agent: string;                // who sent the case
   pay: "collect" | "paid" | "nocollect";
-  amount: string;               // THB to collect
+  amount: string;               // THB to collect at the counter
+  agentPrice: string;           // THB to invoice the agent for this person
+  cost: string;                 // THB actually paid out (fee, fine, VIP, embassy letter...)
+  costNote: string;             // what the cost was made of
   note: string;
 };
 
@@ -101,6 +104,9 @@ export const EMPTY_FIELDS: PersonFields = {
   agent: "",
   pay: "collect",
   amount: "",
+  agentPrice: "",
+  cost: "",
+  costNote: "",
   note: "",
 };
 

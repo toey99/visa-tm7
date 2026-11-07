@@ -22,7 +22,7 @@ import {
 import { clearDay as clearDayRemote, deletePerson, flush, isSaving, listDays, loadDay, saveMeta, savePerson, lastError as storeError } from "@/lib/today/store";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
-  billUrl, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
+  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
 } from "@/lib/today/clientTools";
 import {
   DEFAULT_CROP, buildPhotoSheetPdf, cropPassportPhoto, drawCrop, findHeadByBackground, loadImage, renderPhoto,
@@ -548,6 +548,19 @@ export default function TodayPage() {
     }) }).catch(() => {});
   }
 
+  // ---------- agent settlement ----------
+  const [showAgents, setShowAgents] = useState(false);
+  const num = (v: string | undefined) => Number(v) || 0;
+  const agentGroups = (() => {
+    const m = new Map<string, Person[]>();
+    for (const p of people) { const k = p.fields.agent || "(ไม่ระบุ)"; m.set(k, [...(m.get(k) ?? []), p]); }
+    return [...m.entries()];
+  })();
+  async function agentExcel() {
+    try { downloadBlob(await buildAgentExcel(people, meta.date, OFFICES[meta.office].label), `agents_${meta.date.replace(/\//g, "")}_${meta.jobType}.xlsx`); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
   // ---------- bill history ----------
   type BillRow = { id: string; createdAt: string; date: string; office: string; amount: number; customers: { en: string; cn: string; pp: string }[] };
   const [showBills, setShowBills] = useState(false);
@@ -675,12 +688,51 @@ export default function TodayPage() {
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(people.filter((p) => p.fields.pay === "collect"))} disabled={!people.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
+          <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
           <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
           <button onClick={dayZip} disabled={working || !people.length} className={btnCls}>⬇ โฟลเดอร์วันนี้ (zip)</button>
           <button onClick={clearDay} disabled={working} className={btnDangerCls}>ล้างวัน</button>
         </div>
       </div>
+
+      {showAgents && (
+        <div className="mt-3 rounded-2xl bg-white p-4 text-sm shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <b>สรุปเอเจนซี่ วันที่ {meta.date} — {OFFICES[meta.office].label}</b>
+            <button onClick={agentExcel} className={btnCls}>⬇ Excel เรียกเก็บเอเจนซี่</button>
+          </div>
+          <div className="mt-3 space-y-3">
+            {agentGroups.map(([agent, list]) => {
+              const price = list.reduce((s, p) => s + num(p.fields.agentPrice), 0);
+              const cost = list.reduce((s, p) => s + num(p.fields.cost), 0);
+              const collect = list.reduce((s, p) => s + (p.fields.pay === "collect" ? num(p.fields.amount) : 0), 0);
+              return (
+                <div key={agent} className="rounded-xl border border-slate-200 p-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-semibold">{agent} <span className="font-normal text-slate-500">({list.length} คน)</span></span>
+                    <span className="text-xs">ราคาเอเจนซี่ <b>{price.toLocaleString()}</b> · ต้นทุน <b>{cost.toLocaleString()}</b> · กำไร <b className={price - cost < 0 ? "text-red-600" : "text-emerald-700"}>{(price - cost).toLocaleString()}</b>{collect ? <> · เก็บหน้างานแล้ว {collect.toLocaleString()}</> : null}</span>
+                  </div>
+                  <table className="mt-2 w-full text-xs">
+                    <tbody>
+                      {list.map((p) => (
+                        <tr key={p.id} className="border-t border-slate-100">
+                          <td className="py-1 w-8 text-slate-400">{String(p.order).padStart(2, "0")}</td>
+                          <td>{[p.fields.firstName, p.fields.lastName].filter(Boolean).join(" ")} {p.fields.chineseName}</td>
+                          <td className="text-right">{num(p.fields.agentPrice).toLocaleString()}</td>
+                          <td className="text-right text-slate-500">−{num(p.fields.cost).toLocaleString()}</td>
+                          <td className="text-slate-500">{p.fields.costNote}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">รวมทั้งวัน: ราคาเอเจนซี่ {people.reduce((s, p) => s + num(p.fields.agentPrice), 0).toLocaleString()} · ต้นทุน {people.reduce((s, p) => s + num(p.fields.cost), 0).toLocaleString()} · กำไร {(people.reduce((s, p) => s + num(p.fields.agentPrice) - num(p.fields.cost), 0)).toLocaleString()} บาท</p>
+        </div>
+      )}
 
       {showBills && (
         <div className="mt-3 rounded-2xl bg-white p-4 text-sm shadow-sm ring-1 ring-slate-200">
@@ -943,7 +995,10 @@ function PersonCard({
             <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="nocollect">ไม่เก็บ</option>
           </select>
         </F>
-        <F label="บาท"><input value={f.amount} onChange={(e) => set("amount", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="4000" /></F>
+        <F label="เก็บหน้างาน (บาท)"><input value={f.amount} onChange={(e) => set("amount", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="4000" /></F>
+        <F label="ราคาเอเจนซี่"><input value={f.agentPrice ?? ""} onChange={(e) => set("agentPrice", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="เรียกเก็บเอเจนซี่" /></F>
+        <F label="ต้นทุนจริง"><input value={f.cost ?? ""} onChange={(e) => set("cost", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="ค่าธรรมเนียม+ปรับ+VIP" /></F>
+        <F label="รายการต้นทุน" wide><input value={f.costNote ?? ""} onChange={(e) => set("costNote", e.target.value)} className={inputCls} placeholder="เช่น ค่าธรรมเนียม 1900 + ค่าปรับ 1500 + หนังสือสถานทูต 500" /></F>
         <F label="หมายเหตุ" wide><input value={f.note} onChange={(e) => set("note", e.target.value)} className={inputCls} /></F>
         <F label="โทร"><input value={f.phone} onChange={(e) => set("phone", e.target.value)} className={inputCls} /></F>
       </div>
