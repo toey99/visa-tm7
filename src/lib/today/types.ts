@@ -90,7 +90,7 @@ export const EMPTY_FIELDS: PersonFields = {
   fromCountry: "CHINA",
   portOfArrival: "SUVARNABHUMI AIRPORT",
   arrivedBy: "AIRPLANE",
-  visaType: "EXEMPTION (PORPOR 60)",
+  visaType: "EXEMPTION (PORPOR 30)",
   houseNo: "",
   road: "",
   subDistrict: "",
@@ -153,4 +153,36 @@ export function personFolderName(p: Person): string {
   const nn = String(p.order).padStart(2, "0");
   const name = [p.fields.lastName, p.fields.firstName].filter(Boolean).join(" ").replace(/[\\/:*?"<>|]/g, "").trim();
   return `${nn} ${name || "UNKNOWN"}`;
+}
+
+// Days of stay a visa type grants on entry (day of arrival counts as day 1),
+// read from the free-text visa type: "PORPOR 30" → 30, "VOA" → 15, "TR" → 60.
+export function allowedDaysFromVisaType(visaType: string): number | null {
+  const v = (visaType || "").toUpperCase();
+  const m = v.match(/(\d{2,3})\s*(?:DAYS?)?/);
+  if (m) return Number(m[1]);
+  if (/VOA|ON ARRIVAL/.test(v)) return 15;
+  if (/\bTR\b|TOURIST/.test(v)) return 60;
+  return null;
+}
+
+// "Admitted until" date: the blue stamp if read, else arrival + allowed days − 1.
+export function effectiveAdmittedUntil(arrivalDate: string, admittedUntil: string, visaType: string): { date: Date; source: "stamp" | "visa" } | null {
+  const stamped = parseDdmmyyyy(admittedUntil);
+  if (stamped) return { date: stamped, source: "stamp" };
+  const arr = parseDdmmyyyy(arrivalDate);
+  const days = allowedDaysFromVisaType(visaType);
+  if (!arr || !days) return null;
+  const d = new Date(arr);
+  d.setDate(d.getDate() + days - 1);
+  return { date: d, source: "visa" };
+}
+
+export function overstayInfo(arrivalDate: string, admittedUntil: string, visaType: string, appointmentDate: string) {
+  const until = effectiveAdmittedUntil(arrivalDate, admittedUntil, visaType);
+  const appt = parseDdmmyyyy(appointmentDate);
+  if (!until || !appt) return null;
+  const days = daysBetween(until.date, appt);
+  const fmt = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  return { days: Math.max(0, days), fine: Math.max(0, days) * OVERSTAY_FINE_PER_DAY, until: fmt(until.date), source: until.source };
 }

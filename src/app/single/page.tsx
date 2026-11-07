@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { overstayInfo } from "@/lib/today/types";
 import { OFFICES, OFFICE_IDS, DEFAULT_OFFICE, isOfficeId, type OfficeId } from "@/lib/offices";
 import type { Tm7FormData, Title } from "@/lib/tm7-generator";
 import { buildTm7Filename } from "@/lib/tm7-filename";
@@ -20,6 +21,7 @@ type FormState = {
   passportExpiryDate: string;
   passportIssuedAt: string;
   arrivalDate: string;
+  admittedUntil: string;
   fromCountry: string;
   portOfArrival: string;
   arrivedBy: string;
@@ -62,10 +64,11 @@ const INITIAL: FormState = {
   passportExpiryDate: "",
   passportIssuedAt: "",
   arrivalDate: "",
+  admittedUntil: "",
   fromCountry: "CHINA",
   portOfArrival: "SUVARNABHUMI AIRPORT",
   arrivedBy: "AIRPLANE",
-  visaType: "EXEMPTION (PORPOR 60)",
+  visaType: "EXEMPTION (PORPOR 30)",
   houseNo: "",
   road: "",
   subDistrict: "",
@@ -145,6 +148,7 @@ export default function Page() {
     setForm((prev) => ({
       ...prev,
       arrivalDate: d.arrivalDate || prev.arrivalDate,
+      admittedUntil: d.admittedUntil || prev.admittedUntil,
       portOfArrival: d.portOfArrival || prev.portOfArrival,
       arrivedBy: d.arrivedBy || prev.arrivedBy,
     }));
@@ -479,14 +483,34 @@ export default function Page() {
               className={inputCls}
             />
           </Field>
-          <Field label="Type of Visa" thai="ประเภทวีซ่า" full>
+          <Field label="Type of Visa" thai="ประเภทวีซ่า">
             <input
               type="text"
+              list="visa-types"
               value={form.visaType}
-              onChange={(e) => set("visaType", e.target.value)}
+              onChange={(e) => set("visaType", e.target.value.toUpperCase())}
               className={inputCls}
             />
+            <datalist id="visa-types">
+              {["EXEMPTION (PORPOR 30)", "EXEMPTION (PORPOR 60)", "TR (60 DAYS)", "VOA (15 DAYS)", "NON-O (90 DAYS)", "NON-B (90 DAYS)", "NON-ED (90 DAYS)"].map((v) => <option key={v} value={v} />)}
+            </datalist>
           </Field>
+          <Field label="Admitted Until" thai="อยู่ได้ถึง (ตราน้ำเงิน — ว่างได้ จะคำนวณจากประเภทวีซ่า)">
+            <DateInput value={form.admittedUntil} onChange={(v) => set("admittedUntil", v)} />
+          </Field>
+          {(() => {
+            const ov = overstayInfo(form.arrivalDate, form.admittedUntil, form.visaType, form.appointmentDate);
+            if (!ov) return null;
+            return ov.days > 0 ? (
+              <div className="sm:col-span-2 rounded-lg border-2 border-red-400 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">
+                ⚠ OVERSTAY {ov.days} วัน — ค่าปรับ {ov.fine.toLocaleString()} บาท · อยู่ได้ถึง {ov.until} ({ov.source === "stamp" ? "ตามตราน้ำเงิน" : "คำนวณจากประเภทวีซ่า"}) แต่วันที่ยื่นคือ {form.appointmentDate} — แจ้งลูกค้าและเก็บค่าปรับเพิ่ม
+              </div>
+            ) : (
+              <div className="sm:col-span-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                อยู่ได้ถึง {ov.until} ({ov.source === "stamp" ? "ตามตราน้ำเงิน" : "คำนวณจากประเภทวีซ่า"}) — ยื่น {form.appointmentDate || "…"} ยังไม่ overstay
+              </div>
+            );
+          })()}
         </Section>
 
         <Section title="Address in Thailand" subtitle="Where you are currently staying">

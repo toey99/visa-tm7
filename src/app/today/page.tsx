@@ -15,7 +15,7 @@ import { analyzeTm30 } from "@/app/actions/analyzeTm30";
 import { compressPdf } from "@/lib/compressPdf";
 import type { Tm7FormData } from "@/lib/tm7-generator";
 import {
-  DEFAULT_META, EMPTY_FIELDS, OVERSTAY_FINE_PER_DAY, daysBetween, ddmmyyyyToIso, newId, parseDdmmyyyy,
+  DEFAULT_META, EMPTY_FIELDS, ddmmyyyyToIso, newId, overstayInfo,
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
@@ -713,10 +713,9 @@ function PersonCard({
   }
 
   // overstay: appointment date after "admitted until"
-  const until = parseDdmmyyyy(f.admittedUntil);
-  const appt = parseDdmmyyyy(meta.date);
-  const overstayDays = until && appt ? daysBetween(until, appt) : 0;
-  const fine = overstayDays > 0 ? overstayDays * OVERSTAY_FINE_PER_DAY : 0;
+  const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
+  const overstayDays = ov?.days ?? 0;
+  const fine = ov?.fine ?? 0;
   const missing: string[] = [];
   if (!f.firstName || !f.lastName) missing.push("ชื่อ");
   if (!f.passportNo) missing.push("เลขพาสปอร์ต");
@@ -753,7 +752,7 @@ function PersonCard({
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {fine > 0 && (
             <span className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-1 font-semibold text-red-800">
-              ⚠ OVERSTAY {overstayDays} วัน — ค่าปรับ {fine.toLocaleString()} บาท (อยู่ได้ถึง {f.admittedUntil}) แจ้งลูกค้าและเก็บเพิ่ม
+              ⚠ OVERSTAY {overstayDays} วัน — ค่าปรับ {fine.toLocaleString()} บาท (อยู่ได้ถึง {ov?.until}{ov?.source === "visa" ? " คำนวณจากประเภทวีซ่า" : " ตามตราน้ำเงิน"}) แจ้งลูกค้าและเก็บเพิ่ม
             </span>
           )}
           {missing.length > 0 && <span className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-amber-800">ขาด: {missing.join(", ")}</span>}
