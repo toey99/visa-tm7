@@ -481,6 +481,16 @@ export default function TodayPage() {
     setWorking(false);
   }
 
+  async function usePhotoAsIs(p: Person, fileId: string) {
+    const f = p.files.find((x) => x.id === fileId);
+    if (!f || f.mime === "application/pdf") return;
+    setError("");
+    try {
+      const photo = await renderPhoto(f.blob, DEFAULT_CROP);
+      patchPerson(p.id, (x) => ({ ...x, aiPhoto: f.blob, photo, crop: { ...DEFAULT_CROP }, photoMode: "selfie" }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
   function updateCrop(id: string, crop: Crop, photo: Blob) {
     patchPerson(id, (x) => ({ ...x, crop, photo }));
   }
@@ -813,6 +823,7 @@ export default function TodayPage() {
             onCollect={() => collectOne(p)}
             onBill={() => openBill([p])}
             onCrop={(crop, photo) => updateCrop(p.id, crop, photo)}
+            onUseAsPhoto={(fileId) => usePhotoAsIs(p, fileId)}
             clothes={clothesList()}
             onMoveFile={(fileId, toId) => moveFile(p.id, fileId, toId)}
             holidays={holidays}
@@ -839,7 +850,7 @@ export default function TodayPage() {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, clothes, onMoveFile, holidays, busy,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, clothes, onMoveFile, holidays, busy,
 }: {
   person: Person;
   people: Person[];
@@ -851,6 +862,7 @@ function PersonCard({
   onCollect: () => void;
   onBill: () => void;
   onCrop: (crop: Crop, photo: Blob) => void;
+  onUseAsPhoto: (fileId: string) => void;
   clothes: string[];
   onMoveFile: (fileId: string, toPersonId: string) => void;
   holidays: string[];
@@ -933,6 +945,9 @@ function PersonCard({
               </select>
               <button onClick={() => removeFile(d.id)} className="rounded border border-slate-200 px-1.5 text-slate-500 hover:bg-slate-50">✕</button>
             </div>
+            {d.mime !== "application/pdf" && d.kind !== "passport" && d.kind !== "stamp" && d.kind !== "tm30" && (
+              <button onClick={() => onUseAsPhoto(d.id)} className="mt-1 w-full rounded border border-emerald-300 bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-800 hover:bg-emerald-100" title="ใช้รูปนี้เป็นรูปติดฟอร์มเลย ไม่ต้องให้ AI ทำใหม่ (ปรับตำแหน่ง/ซูมได้)">ใช้รูปนี้เลย</button>
+            )}
             {d.error && <div className="mt-1 text-red-700">{d.error}</div>}
           </div>
         ))}
@@ -953,6 +968,7 @@ function PersonCard({
                   <option value="">สุ่ม</option>{clothes.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select></label>
             )}
+            <span className="text-slate-500">มีรูปพื้นขาวอยู่แล้ว? ลากรูปลงด้านบนแล้วกด "ใช้รูปนี้เลย" ใต้รูป — จะครอป/เลื่อนให้โดยไม่เจนใหม่</span>
             <label className="block"><span className="text-slate-500">คำสั่งเพิ่มสำหรับคนนี้ (เช่น เอากระเป๋าออก) แล้วกด "ทำรูปใหม่"</span>
               <input value={p.photoExtra ?? ""} onChange={(e) => onChange({ ...p, photoExtra: e.target.value })} className={inputCls} /></label>
             {p.aiPhoto && <span className="text-slate-500">ปุ่ม ＋－ ซูม · ลูกศรเลื่อนทีละนิด · หรือลากรูปด้วยเมาส์ · ดับเบิลคลิกดูรูปเต็ม</span>}
