@@ -1298,7 +1298,11 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           {shown.some((p) => p.cancelled) && <span style={pill("#fee2e2", "#991b1b", 13)}>❌ ไม่มา {shown.filter((p) => p.cancelled).length}</span>}
           {shown.some((p) => p.movedTo) && <span style={pill("#dbeafe", "#1e3a8a", 13)}>➡ เลื่อนวัน {shown.filter((p) => p.movedTo).length}</span>}
         </div>
-        <div style={{ fontSize: 11, color: "#666" }}>✨ ขอให้ทุกเคสผ่านฉลุย · tm7.toyka.net</div>
+        <div style={{ textAlign: "right", lineHeight: 1.25 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: accent, letterSpacing: 1 }}>诚信经营 · 用心服务</div>
+          <div style={{ fontSize: 10, color: "#555", fontStyle: "italic" }}>Integrity in Business, Care in Service</div>
+          <div style={{ fontSize: 11, color: "#444" }}>ซื่อสัตย์ จริงใจ ใส่ใจบริการ</div>
+        </div>
       </div>
     </div>
   );
