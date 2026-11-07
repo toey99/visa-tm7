@@ -952,6 +952,11 @@ function PhotoFrame({ aiPhoto, crop, onCommit }: { aiPhoto: Blob; crop: Crop; on
 
 // The one-page board the user takes to the counter: photo, EN + CN name,
 // agent + payment tag per person; office and issue date at the bottom.
+const pill = (bg: string, fg: string, size = 12): React.CSSProperties => ({
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+  height: size + 10, lineHeight: 1, padding: "0 9px", borderRadius: 4,
+  fontSize: size, fontWeight: 600, background: bg, color: fg, whiteSpace: "nowrap", boxSizing: "border-box",
+});
 const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta }>(function SummarySheet({ people, meta }, ref) {
   const [dd, mm, yy] = meta.date.split("/");
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -974,18 +979,21 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                 <SummaryPhoto person={p} />
                 <div style={{ fontSize: 10, fontWeight: 600, marginTop: 5, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
                 <div style={{ fontSize: 15, lineHeight: 1.2 }}>{f.chineseName || "\u00a0"}</div>
-                <span style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 600, background: tag.bg, color: tag.fg, whiteSpace: "nowrap" }}>{tag.t}</span>
+                <div style={{ marginTop: 4 }}><span style={pill(tag.bg, tag.fg)}>{tag.t}</span></div>
                 {f.note && <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>{f.note}</div>}
               </div>
             );
           })}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 18 }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: OFFICES[meta.office].summaryAccent }}>{OFFICES[meta.office].summaryTitle}<div style={{ fontSize: 13, fontWeight: 400, color: "#555" }}>{people.length} คน</div></div>
+          <div>
+            <span style={{ ...pill(OFFICES[meta.office].summaryAccent, "#fff", 20), height: 40, padding: "0 16px", borderRadius: 8, fontWeight: 700 }}>{OFFICES[meta.office].summaryTitle}</span>
+            <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>{people.length} คน</div>
+          </div>
           <div style={{ textAlign: "right", fontSize: 13, color: "#333" }}>
             <div style={{ fontSize: 12, letterSpacing: 1, color: "#555" }}>ISSUE DATE</div>
-            <span style={{ display: "inline-block", background: "#ffe66d", padding: "2px 8px", borderRadius: 3, marginTop: 3, fontWeight: 600 }}>{dateEn}</span><br />
-            <span style={{ display: "inline-block", background: "#ffe66d", padding: "2px 8px", borderRadius: 3, marginTop: 3, fontWeight: 600 }}>{dateCn}</span>
+            <div style={{ marginTop: 3 }}><span style={pill("#ffe66d", "#4a3b00", 13)}>{dateEn}</span></div>
+            <div style={{ marginTop: 4 }}><span style={pill("#ffe66d", "#4a3b00", 13)}>{dateCn}</span></div>
             <div style={{ marginTop: 4 }}>{collect.length ? `ต้องเก็บ ${collect.length} คน รวม ${sum.toLocaleString()} บาท` : "ไม่มีรายการเก็บเงิน"}</div>
           </div>
         </div>
