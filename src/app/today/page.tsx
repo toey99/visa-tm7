@@ -145,7 +145,7 @@ export default function TodayPage() {
     deletePerson(id);
   }
 
-  const active = people.filter((p) => !p.cancelled);
+  const active = people.filter((p) => !p.cancelled && !p.movedTo);
 
   async function moveDay(p: Person) {
     const [dd, mm, yy] = meta.date.split("/").map(Number);
@@ -156,7 +156,7 @@ export default function TodayPage() {
     setWorking(true); setStatus(`กำลังย้ายไปวัน ${target}…`);
     try {
       await movePersonToDay(p, target);
-      setPeople((prev) => prev.filter((x) => x.id !== p.id));
+      setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, movedTo: target, arrived: false } : x)));
       setStatus(`ย้าย ${personFolderName(p)} ไปวัน ${target} แล้ว`);
       listDays().then(setDays);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
@@ -714,7 +714,7 @@ export default function TodayPage() {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-700">
-          <span className="font-semibold">{active.length}</span> คน{people.length > active.length && <span className="text-slate-400"> (+{people.length - active.length} ไม่มา)</span>}
+          <span className="font-semibold">{active.length}</span> คน{people.some((p) => p.cancelled) && <span className="text-slate-400"> · ไม่มา {people.filter((p) => p.cancelled).length}</span>}{people.some((p) => p.movedTo) && <span className="text-slate-400"> · เลื่อนวัน {people.filter((p) => p.movedTo).length}</span>}
           {collect.length > 0 && <span className="ml-3 rounded bg-yellow-100 px-2 py-0.5 text-yellow-900">แผนเก็บ {collect.length} คน {collectSum.toLocaleString()} บาท</span>}
           {collect.length > 0 && <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-emerald-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
           {pendingCount > 0 && <span className="ml-2 rounded bg-red-100 px-2 py-0.5 text-red-900">ค้าง {pendingCount} คน</span>}
@@ -873,7 +873,7 @@ export default function TodayPage() {
       <div className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่าง Summary</h2>
         <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-          <SummarySheet ref={summaryRef} people={active} meta={meta} />
+          <SummarySheet ref={summaryRef} people={people} meta={meta} />
         </div>
       </div>
     </div>
@@ -931,7 +931,7 @@ function PersonCard({
   const hasSelfie = p.files.some((x) => x.kind === "selfie");
 
   return (
-    <section className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ${p.cancelled ? "opacity-50 ring-slate-200 grayscale" : fine ? "ring-red-300" : "ring-slate-200"}`}>
+    <section className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ${p.cancelled || p.movedTo ? "opacity-50 ring-slate-200 grayscale" : fine ? "ring-red-300" : "ring-slate-200"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="rounded-lg bg-slate-900 px-2.5 py-1 text-sm font-bold text-white">{String(p.order).padStart(2, "0")}</span>
@@ -939,7 +939,8 @@ function PersonCard({
             <div className="text-base font-semibold text-slate-900">
               {[f.lastName, f.firstName].filter(Boolean).join(" ") || <span className="text-slate-400">ยังไม่มีชื่อ</span>}
               {f.chineseName && <span className="ml-2 text-slate-600">{f.chineseName}</span>}
-              {p.cancelled && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">🚫 ไม่มา / ยกเลิก</span>}
+              {p.cancelled && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">❌ ไม่มา / ยกเลิก</span>}
+              {p.movedTo && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">➡️ เลื่อนไป {p.movedTo}</span>}
             </div>
             <div className="text-xs text-slate-500">
               {f.passportNo || "—"} · {f.nationality || "—"}
@@ -1190,8 +1191,10 @@ const pill = (bg: string, fg: string, size = 12): React.CSSProperties => ({
   height: size + 10, lineHeight: 1, padding: "0 9px", borderRadius: 4,
   fontSize: size, fontWeight: 600, background: bg, color: fg, whiteSpace: "nowrap", boxSizing: "border-box",
 });
-const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta }>(function SummarySheet({ people, meta }, ref) {
+const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta }>(function SummarySheet({ people: all, meta }, ref) {
   const o = OFFICES[meta.office];
+  const people = all.filter((p) => !p.cancelled && !p.movedTo);   // counted
+  const shown = all;                                                // drawn (ghosts included)
   const [dd, mm, yy] = meta.date.split("/");
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const thDays = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -1207,7 +1210,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   const overstays = people.filter((p) => (overstayInfo(p.fields.arrivalDate, p.fields.admittedUntil, p.fields.visaType, meta.date)?.days ?? 0) > 0).length;
   const accent = o.summaryAccent;
   const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
-  const cols = people.length <= 6 ? 6 : 8;
+  const cols = shown.length <= 6 ? 6 : 8;
   return (
     <div ref={ref} style={{ width: 900, padding: 22, background: o.summaryBg, fontFamily: font, position: "relative" }}>
       {/* soft decorative circles */}
@@ -1232,9 +1235,10 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
 
       {/* people */}
       <div style={{ background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, boxShadow: "0 2px 10px rgba(0,0,0,.06)", position: "relative" }}>
-        {people.length === 0 && <div style={{ textAlign: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
+        {shown.length === 0 && <div style={{ textAlign: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "16px 10px" }}>
-          {people.map((p, i) => {
+          {shown.map((p, i) => {
+            const ghost = !!(p.cancelled || p.movedTo);
             const f = p.fields;
             const amt = f.amount ? ` ${Number(f.amount).toLocaleString()}` : "";
             const who = f.agent ? `${f.agent} ` : "";
@@ -1247,9 +1251,19 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
             const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date);
             return (
-              <div key={p.id} style={{ textAlign: "center", position: "relative" }}>
-                <div style={{ position: "relative", display: "inline-block" }}>
+              <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1 }}>
+                <div style={{ position: "relative", display: "inline-block", filter: ghost ? "grayscale(1)" : undefined }}>
                   <SummaryPhoto person={p} />
+                  {p.cancelled && (
+                    <span style={{ position: "absolute", inset: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                    </span>
+                  )}
+                  {p.movedTo && (
+                    <span style={{ position: "absolute", inset: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12h14M13 6l6 6-6 6" /></svg>
+                    </span>
+                  )}
                   <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
                   {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
                   {p.arrived && (
@@ -1260,7 +1274,11 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
                 <div style={{ fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || "\u00a0"}</div>
-                <div style={{ marginTop: 5 }}><span style={pill(tag.bg, tag.fg, 11)}>{tag.t}</span></div>
+                <div style={{ marginTop: 5 }}>
+                  {p.cancelled ? <span style={pill("#fee2e2", "#991b1b", 11)}>❌ ไม่มา</span>
+                    : p.movedTo ? <span style={pill("#dbeafe", "#1e3a8a", 11)}>➡ เลื่อนไป {p.movedTo.slice(0, 5)}</span>
+                    : <span style={pill(tag.bg, tag.fg, 11)}>{tag.t}</span>}
+                </div>
                 {f.note && <div style={{ fontSize: 10, color: "#666", marginTop: 3 }}>📝 {f.note}</div>}
               </div>
             );
@@ -1277,6 +1295,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           {received > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</span>}
           {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
           {overstays > 0 && <span style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</span>}
+          {shown.some((p) => p.cancelled) && <span style={pill("#fee2e2", "#991b1b", 13)}>❌ ไม่มา {shown.filter((p) => p.cancelled).length}</span>}
+          {shown.some((p) => p.movedTo) && <span style={pill("#dbeafe", "#1e3a8a", 13)}>➡ เลื่อนวัน {shown.filter((p) => p.movedTo).length}</span>}
         </div>
         <div style={{ fontSize: 11, color: "#666" }}>✨ ขอให้ทุกเคสผ่านฉลุย · tm7.toyka.net</div>
       </div>

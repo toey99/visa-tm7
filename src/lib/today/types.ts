@@ -68,6 +68,7 @@ export type Person = {
   collectImage?: Blob;          // passport page stamped with the amount to collect
   cancelled?: boolean;          // no-show: kept for the record, excluded from everything
   arrived?: boolean;            // checked in at the counter (green tick on the summary)
+  movedTo?: string;             // DD/MM/YYYY — rescheduled to another day (ghost kept here for the day's record)
   createdAt: number;
 };
 

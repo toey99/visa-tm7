@@ -218,7 +218,8 @@ export async function movePersonToDay(p: Person, targetDate: string): Promise<vo
   const next: DayIndex = { meta: idx.meta, people: [...refs.filter((x) => x.id !== p.id), ref], savedAt: new Date().toISOString() };
   const w = await fetch(`/api/day?date=${target}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
   if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
-  peopleCache.delete(p.id);
+  // keep a ghost on the original day so the day's summary shows the reschedule
+  peopleCache.set(p.id, { ...p, movedTo: targetDate, arrived: false });
   scheduleSave();
 }
 
