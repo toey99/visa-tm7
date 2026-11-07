@@ -201,12 +201,19 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     patchPerson(p.id, (x) => ({ ...x, cancelled: !x.cancelled }));
   }
 
+  // New person defaults: on the extension board everyone starts ticked for the
+  // evening expiry report (untick the few who shouldn't be in it); on the
+  // visa-run board the factory group is ticked by hand / by agent.
+  function freshFields(): PersonFields {
+    return { ...EMPTY_FIELDS, report: !isRun };
+  }
+
   function nextOrder(): number {
     return peopleRef.current.reduce((m, p) => Math.max(m, p.order), 0) + 1;
   }
 
   function addEmptyPerson(): Person {
-    const p: Person = { id: newId(), order: nextOrder(), fields: { ...EMPTY_FIELDS }, files: [], createdAt: Date.now() };
+    const p: Person = { id: newId(), order: nextOrder(), fields: freshFields(), files: [], createdAt: Date.now() };
     upsertPerson(p);
     return p;
   }
@@ -291,7 +298,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       const d = item.result;
       if (item.doc.kind === "passport" && d) {
         const byNo = d.passportNo ? existing().find((p) => p.fields.passportNo && p.fields.passportNo === d.passportNo) : undefined;
-        const base: Person = byNo ?? { id: newId(), order: nextOrder() + touched.size, fields: { ...EMPTY_FIELDS }, files: [], createdAt: Date.now() };
+        const base: Person = byNo ?? { id: newId(), order: nextOrder() + touched.size, fields: freshFields(), files: [], createdAt: Date.now() };
         current = applyPassport(base, d);
         current = { ...current, files: [...current.files, item.doc] };
         touched.set(current.id, current);
@@ -316,12 +323,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           }) ?? null;
         }
         if (!target) {
-          target = { id: newId(), order: nextOrder() + touched.size, fields: { ...EMPTY_FIELDS, firstName: who?.firstName ?? "", lastName: who?.lastName ?? "", passportNo: who?.passportNo ?? "" }, files: [], createdAt: Date.now() };
+          target = { id: newId(), order: nextOrder() + touched.size, fields: { ...freshFields(), firstName: who?.firstName ?? "", lastName: who?.lastName ?? "", passportNo: who?.passportNo ?? "" }, files: [], createdAt: Date.now() };
         }
       }
       if (!target) target = current ?? existing().slice(-1)[0] ?? null;
       if (!target) {
-        target = { id: newId(), order: nextOrder() + touched.size, fields: { ...EMPTY_FIELDS }, files: [], createdAt: Date.now() };
+        target = { id: newId(), order: nextOrder() + touched.size, fields: freshFields(), files: [], createdAt: Date.now() };
       }
       let next: Person = { ...target, files: [...target.files, item.doc] };
       if (item.doc.kind === "stamp" && d) next = applyStamp(next, d);
