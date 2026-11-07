@@ -35,3 +35,11 @@ export const RUN_SLOTS: { id: string; th: string; zh: string }[] = [
   { id: "afternoon", th: "บ่าย", zh: "下午" },
   { id: "evening", th: "เย็น", zh: "傍晚" },
 ];
+
+// Meeting point after landing (Chiang Rai airport, gate 2) — drawn at the
+// bottom of every car card so the customer gets one picture, not two.
+export const MEETING_POINT = {
+  gate: "2",
+  insideImage: "/cars/gate-inside.jpg",
+  outsideImage: "/cars/gate-outside.jpg",
+};

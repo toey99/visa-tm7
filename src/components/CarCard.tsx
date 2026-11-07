@@ -12,7 +12,7 @@
 
 import { forwardRef, useEffect, useState } from "react";
 import type { Car } from "@/lib/visarun/cars";
-import { RUN_SLOTS } from "@/lib/visarun/cars";
+import { MEETING_POINT, RUN_SLOTS } from "@/lib/visarun/cars";
 import type { DayMeta, Person } from "@/lib/today/types";
 import { cropPassportPhoto } from "@/lib/today/photoTools";
 
@@ -117,13 +117,39 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         </div>
       </div>
 
-      {/* footer */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", position: "relative" }}>
-        <div style={{ fontSize: 13, color: "#444" }}>👥 {people.length} คน · 请在机场找这辆车 · มองหารถคันนี้ที่สนามบิน</div>
-        <div style={{ textAlign: "right", lineHeight: 1.25 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: accent, letterSpacing: 1 }}>诚信经营 · 用心服务</div>
-          <div style={{ fontSize: 11, color: "#444" }}>ซื่อสัตย์ จริงใจ ใส่ใจบริการ</div>
-          <div style={{ fontSize: 10, color: "#555", fontStyle: "italic" }}>Integrity in Business, Care in Service</div>
+      {/* meeting point after landing — replaces the separate guide picture */}
+      <div style={{ ...PANEL, marginTop: 14, padding: "12px 14px", position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <span style={{ background: "#1e3a8a", color: "#fff", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>📍 จุดนัดพบหลังลงเครื่อง · 下飞机后的集合地点</span>
+          <span style={{ background: "#ffeb3b", color: "#111", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>ประตู {MEETING_POINT.gate} · {MEETING_POINT.gate}号门</span>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
+          <div style={{ flex: "0 0 300px", textAlign: "center" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={MEETING_POINT.insideImage} alt="" style={{ width: 300, height: 190, objectFit: "cover", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,.18)" }} crossOrigin="anonymous" />
+            <div style={{ fontSize: 12, color: "#333", marginTop: 4, fontWeight: 700 }}>🏢 ภายในอาคาร · 航站楼内 — พบกันที่ประตู {MEETING_POINT.gate}</div>
+          </div>
+          <div style={{ flex: "0 0 300px", textAlign: "center" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={MEETING_POINT.outsideImage} alt="" style={{ width: 300, height: 190, objectFit: "cover", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,.18)" }} crossOrigin="anonymous" />
+            <div style={{ fontSize: 12, color: "#333", marginTop: 4, fontWeight: 700 }}>🚪 ภายนอกอาคาร · 航站楼外 — รอรถที่บริเวณประตู {MEETING_POINT.gate}</div>
+          </div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 6 }}>
+            {[
+              { n: 1, icon: "🚶", th: <>หลังจากลงเครื่องแล้ว ให้เดินมาที่ <b>ประตู {MEETING_POINT.gate}</b></>, zh: `下飞机后，请先走到 ${MEETING_POINT.gate} 号门` },
+              { n: 2, icon: "🚪", th: <>จากนั้นเดินออกไป <b>ภายนอกอาคาร</b></>, zh: "然后从这里走出到航站楼外" },
+              { n: 3, icon: "🚗", th: <>มองหารถ <b>{car.name} {car.color}</b> ทะเบียน <b style={{ background: "#111", color: "#fff", borderRadius: 6, padding: "0 6px" }}>{car.plate}</b></>, zh: `请找 ${car.colorZh} ${car.name} 车牌 ${car.plate}` },
+            ].map((s) => (
+              <div key={s.n} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ flex: "0 0 26px", width: 26, height: 26, borderRadius: "50%", background: accent, color: "#fff", fontSize: 13, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{s.n}</span>
+                <div style={{ fontSize: 13, color: "#222", lineHeight: 1.3 }}>
+                  <div>{s.icon} {s.th}</div>
+                  <div style={{ color: "#1e3a8a", fontSize: 12 }}>{s.zh}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>👥 {people.length} คน · โปรดรอที่บริเวณประตู {MEETING_POINT.gate} · 请在 {MEETING_POINT.gate} 号门附近等候</div>
+          </div>
         </div>
       </div>
     </div>
