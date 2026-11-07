@@ -528,6 +528,16 @@ function copySummary(){
 
 // init
 document.getElementById('checkDate').value=fmtDMY(new Date());
+// Prefill from the /today board: ?until=DD/MM/YYYY (admitted-until stamp) or ?entry=DD/MM/YYYY&type=30|60|15|60t|90
+//   &ext=30 (extension days applied this visit) &name=EN&zh=中文 &check=DD/MM/YYYY
+try{
+  const q=new URLSearchParams(location.search);
+  const setV=(id,v)=>{ const el=document.getElementById(id); if(el&&v){ el.value=v; if(el.type==='text'&&/\d{2}\/\d{2}\/\d{4}/.test(v)){ const p=document.getElementById(id+'_p'); if(p) p.value=toISO(parseD(v)); } } };
+  if(q.get('until')){ setMode('stamp'); setV('stampUntil',q.get('until')); }
+  else if(q.get('entry')){ setMode('entry'); setV('entryDate',q.get('entry')); const t=q.get('type'); if(t){ document.getElementById('entryType').value=t; entryTypeChanged(); } }
+  if(q.get('ext')) addExt(q.get('ext'));
+  setV('nameEn',q.get('name')); setV('nameZh',q.get('zh')); setV('checkDate',q.get('check'));
+}catch(e){ console.warn('prefill',e); }
 calc();
 </script>
 </body>

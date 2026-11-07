@@ -162,6 +162,21 @@ export default function TodayPage() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
     finally { setWorking(false); }
   }
+  function openOverstayCalc(p: Person) {
+    const f = p.fields;
+    const q = new URLSearchParams();
+    if (f.admittedUntil) q.set("until", f.admittedUntil);
+    else if (f.arrivalDate) {
+      q.set("entry", f.arrivalDate);
+      const v = (f.visaType || "").toUpperCase();
+      q.set("type", /VOA|ON ARRIVAL/.test(v) ? "15" : /\bTR\b|TOURIST/.test(v) ? "60t" : /NON/.test(v) ? "90" : /30/.test(v) ? "30" : "60");
+    }
+    if (meta.extensionDays) q.set("ext", meta.extensionDays);
+    q.set("name", [f.firstName, f.lastName].filter(Boolean).join(" "));
+    if (f.chineseName) q.set("zh", f.chineseName);
+    q.set("check", meta.date);
+    window.open(`/tools/overstay.html?${q.toString()}`, "_blank");
+  }
   function toggleArrived(p: Person) {
     patchPerson(p.id, (x) => ({ ...x, arrived: !x.arrived }));
   }
@@ -860,6 +875,7 @@ export default function TodayPage() {
             onUseAsPhoto={(fileId) => usePhotoAsIs(p, fileId)}
             onMoveDay={() => moveDay(p)}
             onToggleArrived={() => toggleArrived(p)}
+            onOverstayCalc={() => openOverstayCalc(p)}
             onToggleCancelled={() => toggleCancelled(p)}
             clothes={clothesList()}
             onMoveFile={(fileId, toId) => moveFile(p.id, fileId, toId)}
@@ -887,7 +903,7 @@ export default function TodayPage() {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onToggleArrived, onToggleCancelled, clothes, onMoveFile, holidays, busy,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onToggleArrived, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy,
 }: {
   person: Person;
   people: Person[];
@@ -902,6 +918,7 @@ function PersonCard({
   onUseAsPhoto: (fileId: string) => void;
   onMoveDay: () => void;
   onToggleArrived: () => void;
+  onOverstayCalc: () => void;
   onToggleCancelled: () => void;
   clothes: string[];
   onMoveFile: (fileId: string, toPersonId: string) => void;
@@ -954,6 +971,7 @@ function PersonCard({
           <button onClick={onPhoto} disabled={busy} className={btnCls}>{p.aiPhoto ? "ทำรูปใหม่" : "✦ ทำรูปพื้นขาว"}</button>
           {f.pay === "collect" && <button onClick={onCollect} disabled={busy} className={btnCls} title="รูปพาสปอร์ตพร้อมยอดที่ต้องเก็บ">฿ รูปเรียกเก็บ</button>}
           <button onClick={onBill} className={btnCls} title="เปิดโปรแกรมบิล ABC พร้อมชื่อ/พาสปอร์ต/ยอด">🧾 ออกบิล</button>
+          <button onClick={onOverstayCalc} className={btnCls} title="เปิดหน้าคำนวณวันหมดอายุวีซ่า & Overstay พร้อมข้อมูลคนนี้ เพื่อทำรูปแจ้งเตือนส่งลูกค้า">🗓️ แจ้งวันหมดอายุ</button>
           <button onClick={onMoveDay} disabled={busy} className={btnCls} title="ย้ายคนนี้พร้อมไฟล์ไปวันอื่น">📅 ย้ายวัน</button>
           <button onClick={onToggleCancelled} className={btnCls} title="ลูกค้าไม่มา: คงไว้เป็นประวัติ แต่ไม่นับยอด ไม่ออกฟอร์ม">{p.cancelled ? "↩ กลับมา" : "🚫 ไม่มา"}</button>
           <button onClick={() => { if (window.confirm("ลบคนนี้?")) onRemove(); }} className={btnDangerCls}>ลบ</button>
