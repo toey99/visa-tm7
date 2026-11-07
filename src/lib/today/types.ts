@@ -208,6 +208,17 @@ export function runExpiry(runDate: string, visaType: string, run: "RUN" | "RUN30
   out.setDate(out.getDate() + days - 1 + (run === "RUN30" ? 30 : 0));
   return out;
 }
+// After a 30-day (or N-day) extension at the office: the stamped "admitted
+// until" (or arrival + visa days − 1) plus the extension.
+export function extensionExpiry(arrivalDate: string, admittedUntil: string, visaType: string, extensionDays: string, override = ""): Date | null {
+  const o = parseDdmmyyyy(override);
+  if (o) return o;
+  const until = effectiveAdmittedUntil(arrivalDate, admittedUntil, visaType);
+  if (!until) return null;
+  const out = new Date(until.date);
+  out.setDate(out.getDate() + (Number(extensionDays) || 30));
+  return out;
+}
 export const fmtDdmmyyyy = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 
 // Folder name the user keeps on disk: "01 LU LIANG" (surname first).

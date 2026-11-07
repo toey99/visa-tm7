@@ -18,7 +18,7 @@ import { analyzeTm30 } from "@/app/actions/analyzeTm30";
 import { compressPdf } from "@/lib/compressPdf";
 import type { Tm7FormData } from "@/lib/tm7-generator";
 import {
-  DEFAULT_META, DEFAULT_META_RUN, EMPTY_FIELDS, ddmmyyyyToIso, fmtDdmmyyyy, runExpiry, loadHolidays, newId, overstayInfo, saveHolidays,
+  DEFAULT_META, DEFAULT_META_RUN, EMPTY_FIELDS, ddmmyyyyToIso, extensionExpiry, fmtDdmmyyyy, runExpiry, loadHolidays, newId, overstayInfo, saveHolidays,
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
@@ -721,7 +721,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       const sheet = await photoSheet();
       const summary = summaryBlob ?? (await makeSummary().catch(() => null));
       const cars = isRun ? await makeCarCards().catch(() => []) : [];
-      const report = isRun ? await makeExpiryReport().catch(() => null) : null;
+      const report = await makeExpiryReport().catch(() => null);
       if (report) cars.push({ name: "expiry-report.png", blob: report });
       const blob = await buildDayZip(active, meta, { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars });
       downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}.zip`);
@@ -844,7 +844,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {OFFICES[meta.office].generator !== "none" && <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>{isRun ? "⬇ TM7 คนไปต่อ 30 วัน (PDF เดียว)" : "⬇ TM7 ทุกคน (PDF เดียว)"}</button>}
           {isRun && <button onClick={() => downloadCarCards("customer")} disabled={working || !people.length} className={btnPrimaryCls} title="มีจุดนัดพบประตู 2 — ส่งให้ลูกค้า">🚗 การ์ดลูกค้า (ทุกคัน)</button>}
           {isRun && <button onClick={() => downloadCarCards("driver")} disabled={working || !people.length} className={btnPrimaryCls} title="ไม่มีจุดนัดพบ รูปหน้าใหญ่ — ส่งให้คนขับ">🧑‍✈️ การ์ดคนขับ (ทุกคัน)</button>}
-          {isRun && <button onClick={downloadExpiryReport} disabled={working || !reportPeople.length} className={btnCls} title="รูปสรุปชื่อ/พาสปอร์ต/วันเข้า/วันหมดอายุ ของคนที่ติ๊ก 📅 — ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น">📅 สรุปหมดอายุ ({reportPeople.length})</button>}
+          <button onClick={downloadExpiryReport} disabled={working || !reportPeople.length} className={btnCls} title="รูปสรุปชื่อ/พาสปอร์ต/วันเข้า/วันหมดอายุ ของคนที่ติ๊ก 📅 — ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น">📅 สรุปหมดอายุ ({reportPeople.length})</button>
           <button onClick={photosAll} disabled={working || !people.length} className={btnPrimaryCls}>✦ ทำรูปพื้นขาวทุกคน</button>
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
@@ -1021,7 +1021,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         </div>
       )}
 
-      {isRun && (
+      {(
         <div className="mt-8">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold text-slate-700">📅 สรุปวันหมดอายุ (ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น)</h2>
@@ -1033,7 +1033,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
             <button type="button" onClick={() => tickReport(() => true, false)} className={btnCls + " px-2 py-0.5 text-xs"}>ล้าง</button>
           </div>
           <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-            <ExpiryReport ref={reportRef} people={reportPeople} meta={meta} company={reportCompany} />
+            <ExpiryReport ref={reportRef} people={reportPeople} meta={meta} company={reportCompany} mode={mode} />
           </div>
         </div>
       )}
@@ -1133,6 +1133,7 @@ function PersonCard({
           {f.pay === "collect" && <button onClick={onCollect} disabled={busy} className={btnCls} title="รูปพาสปอร์ตพร้อมยอดที่ต้องเก็บ">฿ รูปเรียกเก็บ</button>}
           <button onClick={onBill} className={btnCls} title="เปิดโปรแกรมบิล ABC พร้อมชื่อ/พาสปอร์ต/ยอด">🧾 ออกบิล</button>
           <button onClick={onOverstayCalc} className={btnCls} title="เปิดหน้าคำนวณวันหมดอายุวีซ่า & Overstay พร้อมข้อมูลคนนี้ เพื่อทำรูปแจ้งเตือนส่งลูกค้า">🗓️ แจ้งวันหมดอายุ</button>
+          <button type="button" onClick={() => set("report", !f.report)} title="ใส่คนนี้ในรูปสรุปวันหมดอายุ (ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น)" className={f.report ? "rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white" : btnCls}>📅 {f.report ? "อยู่ในสรุปหมดอายุ" : "ใส่สรุปหมดอายุ"}</button>
           <button onClick={onMoveDay} disabled={busy} className={btnCls} title="ย้ายคนนี้พร้อมไฟล์ไปวันอื่น">📅 ย้ายวัน</button>
           <button onClick={onToggleCancelled} className={btnCls} title="ลูกค้าไม่มา: คงไว้เป็นประวัติ แต่ไม่นับยอด ไม่ออกฟอร์ม">{p.cancelled ? "↩ กลับมา" : "🚫 ไม่มา"}</button>
           <button onClick={() => { if (window.confirm("ลบคนนี้?")) onRemove(); }} className={btnDangerCls}>ลบ</button>
@@ -1172,8 +1173,6 @@ function PersonCard({
               </button>
             );
           })}
-          <button type="button" onClick={() => set("report", !f.report)} title="ใส่คนนี้ในรูปสรุปวันหมดอายุที่ส่งกลับโรงงาน/เอเจนซี่"
-            className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.report ? "bg-amber-500 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>📅 {f.report ? "อยู่ในสรุปหมดอายุ" : "ใส่สรุปหมดอายุ"}</button>
           <button type="button" onClick={() => set("cambodia", !f.cambodia)} title="พาสปอร์ตมีประวัติเข้าออกกัมพูชา → ติด 🐻 ที่รูปในการ์ดคนขับ"
             className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.cambodia ? "bg-amber-700 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🐻 {f.cambodia ? "มีประวัติกัมพูชา" : "กัมพูชา?"}</button>
           <label className="ml-2 flex items-center gap-1 text-xs text-slate-700">✈ ไฟลท์ต่างจากวัน
@@ -1280,6 +1279,7 @@ function PersonCard({
         <F label="ด่าน"><input value={f.portOfArrival} onChange={(e) => set("portOfArrival", e.target.value.toUpperCase())} className={inputCls} /></F>
         <F label="โดย"><input value={f.arrivedBy} onChange={(e) => set("arrivedBy", e.target.value.toUpperCase())} className={inputCls} /></F>
         <F label="ประเภทวีซ่า" wide><input value={f.visaType} onChange={(e) => set("visaType", e.target.value.toUpperCase())} className={inputCls} /></F>
+        {!isRun && <F label={`หมดอายุใหม่ (หลังต่อ)${(() => { const d = extensionExpiry(f.arrivalDate, f.admittedUntil, f.visaType, meta.extensionDays); return d && !f.newUntil ? ` คำนวณ ${fmtDdmmyyyy(d)}` : ""; })()}`}><DateIn value={f.newUntil ?? ""} onChange={(v) => set("newUntil", v)} /></F>}
 
         <F label="บ้านเลขที่"><input value={f.houseNo} onChange={(e) => set("houseNo", e.target.value.toUpperCase())} className={inputCls} /></F>
         <F label="ถนน"><input value={f.road} onChange={(e) => set("road", e.target.value.toUpperCase())} className={inputCls} /></F>
