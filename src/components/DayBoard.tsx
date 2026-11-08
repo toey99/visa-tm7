@@ -1510,6 +1510,7 @@ const pill = (bg: string, fg: string, size = 12): React.CSSProperties => ({
   height: size + 10, lineHeight: 1, padding: "0 9px", borderRadius: 4,
   fontSize: size, fontWeight: 600, background: bg, color: fg, whiteSpace: "nowrap", boxSizing: "border-box",
 });
+const wrapPill: React.CSSProperties = { whiteSpace: "normal", height: "auto", minHeight: 21, lineHeight: 1.25, padding: "3px 8px", maxWidth: "100%", textAlign: "center" };
 const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta; mode: BoardMode; agentFilter?: string }>(function SummarySheet({ people: all, meta, mode, agentFilter = "" }, ref) {
   const o = OFFICES[meta.office];
   const isRun = mode === "run";
@@ -1532,8 +1533,11 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   const accent = o.summaryAccent;
   const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
   const cols = shown.length <= 6 ? 6 : 8;
+  // 8 columns need more room: the name + payment pill under a 90px photo
+  // overflow a 900px sheet, so widen it instead of shrinking the cards
+  const sheetW = cols === 8 ? 1040 : 900;
   return (
-    <div ref={ref} style={{ width: 900, padding: 22, background: o.summaryBg, fontFamily: font, position: "relative" }}>
+    <div ref={ref} style={{ width: sheetW, padding: 22, background: o.summaryBg, fontFamily: font, position: "relative" }}>
       {/* soft decorative circles */}
       <div style={{ position: "absolute", right: -60, top: -60, width: 220, height: 220, borderRadius: "50%", background: accent, opacity: 0.08 }} />
       <div style={{ position: "absolute", left: -40, bottom: -70, width: 180, height: 180, borderRadius: "50%", background: accent, opacity: 0.06 }} />
@@ -1573,7 +1577,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
             const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, undefined, !isRun);
             return (
-              <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1 }}>
+              <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1, minWidth: 0 }}>
                 <div style={{ position: "relative", display: "inline-block", filter: ghost ? "grayscale(1)" : undefined }}>
                   <SummaryPhoto person={p} />
                   {p.cancelled && (
@@ -1601,9 +1605,10 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                 <div style={{ fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || "\u00a0"}</div>
                 {f.subAgent && <div style={{ fontSize: 10, color: "#4338ca", fontWeight: 700, marginTop: 2 }}>↳ {f.subAgent}</div>}
                 <div style={{ marginTop: 5 }}>
-                  {p.cancelled ? <span style={pill("#fee2e2", "#991b1b", 11)}>❌ ไม่มา</span>
-                    : p.movedTo ? <span style={pill("#dbeafe", "#1e3a8a", 11)}>➡ เลื่อนไป {p.movedTo.slice(0, 5)}</span>
-                    : <span style={pill(tag.bg, tag.fg, 11)}>{tag.t}</span>}
+                  {/* long tags (agent name + amount) wrap inside the column instead of spilling over the neighbour */}
+                  {p.cancelled ? <span style={{ ...pill("#fee2e2", "#991b1b", 11), ...wrapPill }}>❌ ไม่มา</span>
+                    : p.movedTo ? <span style={{ ...pill("#dbeafe", "#1e3a8a", 11), ...wrapPill }}>➡ เลื่อนไป {p.movedTo.slice(0, 5)}</span>
+                    : <span style={{ ...pill(tag.bg, tag.fg, 11), ...wrapPill }}>{tag.t}</span>}
                 </div>
                 {f.note && <div style={{ fontSize: 10, color: "#666", marginTop: 3 }}>📝 {f.note}</div>}
               </div>
