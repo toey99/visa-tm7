@@ -15,8 +15,8 @@ export const OFFICES = {
     summaryTitle: "IT SQUARE ชั้น 3",
     emoji: "🏙️",
     subtitle: "IT Square ชั้น 3 · แจ้งวัฒนะ",
-    summaryBg: "linear-gradient(135deg,#e9ecef,#f8f9fa 40%,#dfe3e8)",
-    summaryAccent: "#495057",
+    summaryBg: "linear-gradient(135deg,#fbcfe8,#fdf2f8 40%,#f9a8d4)",
+    summaryAccent: "#be185d",
     pages: "TM.7 5 หน้า + TM30",
   },
   NONTHABURI: {
