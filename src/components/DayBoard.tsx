@@ -61,6 +61,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const { loadDay, flush, savePerson, deletePerson, saveMeta, listDays, movePersonToDay, isLoading, isSaving, lastError: storeError, lastSavedAt, loadProgress } = store;
   const clearDayRemote = store.clearDay;
   const dayKey = isRun ? "tm7-open-day-run" : "tm7-open-day";
+  const officeKey = dayKey + "-office";
+  // the office is part of the board's address (date + office), not just a label on the day
+  const officeRef = useRef<OfficeId>(DEFAULTS.office);
   const [people, setPeople] = useState<Person[]>([]);
   const [meta, setMeta] = useState<DayMeta>({ ...DEFAULTS });
   const [loaded, setLoaded] = useState(false);
@@ -78,27 +81,35 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   useEffect(() => { peopleRef.current = people; }, [people]);
 
   // ---------- load / persist ----------
-  const openDay = useCallback(async (date: string) => {
+  const openDay = useCallback(async (date: string, office?: OfficeId) => {
+    const off = office ?? officeRef.current;
+    officeRef.current = off;
     setLoaded(false);
-    setStatus("กำลังโหลดข้อมูลวัน " + date + "…");
+    setStatus(`กำลังโหลดข้อมูลวัน ${date} · ${OFFICES[off].label}…`);
     setPeople([]);
-    const { people: p, meta: m, stale } = await loadDay(date);
+    const { people: p, meta: m, stale } = await loadDay(date, off);
     if (stale) return; // user switched to another day meanwhile
     setPeople(p);
-    const merged = { ...DEFAULTS, ...(m ?? {}), date };
-    if (!isOfficeId(merged.office)) merged.office = DEFAULTS.office;
+    // the office we navigated to always wins over whatever the saved meta says
+    const merged = { ...DEFAULTS, ...(m ?? {}), date, office: off };
+    if (!m || m.office !== off) { merged.jobType = OFFICES[off].short; merged.formLocation = OFFICES[off].formLocation; }
     setMeta(merged);
     setLoaded(true);
     setStatus(storeError() ? "โหลดจากเซิร์ฟเวอร์ไม่สำเร็จ: " + storeError() : "");
-    try { sessionStorage.setItem(dayKey, date); } catch {}
+    try { sessionStorage.setItem(dayKey, date); sessionStorage.setItem(officeKey, off); } catch {}
     listDays().then(setDays);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   useEffect(() => {
     let initial = todayDdmmyyyy();
-    try { initial = sessionStorage.getItem(dayKey) || initial; } catch {}
-    void openDay(initial);
+    let office: OfficeId = DEFAULTS.office;
+    try {
+      initial = sessionStorage.getItem(dayKey) || initial;
+      const o = sessionStorage.getItem(officeKey);
+      if (o && isOfficeId(o)) office = o;
+    } catch {}
+    void openDay(initial, office);
     setPhotoSettings(loadPhotoSettings());
     setHolidays(loadHolidays());
     const t = window.setInterval(() => setSaveState(isLoading() ? `กำลังโหลด… ${loadProgress()}` : isSaving() ? "กำลังบันทึก…" : storeError() ? storeError() : lastSavedAt() ? `บันทึกแล้ว ${new Date(lastSavedAt()).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : ""), 1000);
@@ -140,7 +151,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   function changeOffice(office: OfficeId) {
-    updateMeta({ office, jobType: OFFICES[office].short, formLocation: OFFICES[office].formLocation });
+    if (office === officeRef.current) return;
+    // each office is its own board for the day: save this one, then open the other
+    void flush().then(() => openDay(metaRefDate.current || meta.date, office));
   }
 
   function updateMeta(patch: Partial<DayMeta>) {
@@ -820,7 +833,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   async function clearDay() {
-    if (!window.confirm(`ลบข้อมูลวัน ${meta.date} ทั้งหมดออกจากเซิร์ฟเวอร์? (ทุกเครื่องจะไม่เห็นวันนี้อีก)`)) return;
+    if (!window.confirm(`ลบข้อมูลวัน ${meta.date} ของ ${OFFICES[meta.office].label} ทั้งหมดออกจากเซิร์ฟเวอร์? (หน้างานอื่นในวันเดียวกันไม่กระทบ)`)) return;
     await clearDayRemote(meta.date);
     setPeople([]);
     setStatus("");

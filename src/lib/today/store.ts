@@ -8,7 +8,9 @@
 //
 // Each board has its own namespace on the server ("days/" for the extension
 // board, "run/" for the visa-run board), so the two never see each other's
-// customers even on the same date. createDayStore(ns) builds one store per
+// customers even on the same date. Inside a day, each immigration office has
+// its own folder (days/<DDMMYYYY>/<OfficeId>/), so IT Square and Nonthaburi on
+// the same date are separate boards too; loadDay(date, office) picks one. createDayStore(ns) builds one store per
 // namespace; the named exports below are the extension board's store.
 
 import type { DayMeta, DocFile, Person } from "./types";
@@ -30,6 +32,9 @@ export type DayNamespace = "days" | "run";
 export function createDayStore(ns: DayNamespace) {
   // ---------- in-memory state for the open day ----------
   let currentDay = "";
+  let currentOffice = "";   // OfficeId — each office keeps its own folder inside the day
+  const q = (day: string) => `ns=${ns}&date=${day}${currentOffice ? `&office=${currentOffice}` : ""}`;
+  const folder = (day: string) => `${ns}/${day}/${currentOffice ? `${currentOffice}/` : ""}`;
   let peopleCache = new Map<string, Person>();
   let metaCache: DayMeta | null = null;
   let saveTimer: number | undefined;
@@ -67,7 +72,7 @@ export function createDayStore(ns: DayNamespace) {
     if (!blob) return undefined;
     const known = uploaded.get(blob);
     if (known && !force && known.startsWith(`${ns}/${day}/`)) return known;
-    const path = await uploadBlob(`${ns}/${day}/${personId}/${name}.${extOf(blob.type)}`, blob);
+    const path = await uploadBlob(`${folder(day)}${personId}/${name}.${extOf(blob.type)}`, blob);
     uploaded.set(blob, path);
     return path;
   }
@@ -115,18 +120,19 @@ export function createDayStore(ns: DayNamespace) {
 
   // ---------- public API (same shape the page used with IndexedDB) ----------
 
-  async function loadDay(date: string): Promise<{ people: Person[]; meta: DayMeta | null; stale?: boolean }> {
+  async function loadDay(date: string, office = ""): Promise<{ people: Person[]; meta: DayMeta | null; stale?: boolean }> {
     const day = dayKeyOf(date);
     const token = ++loadToken;
     if (saveTimer) { window.clearTimeout(saveTimer); saveTimer = undefined; }
     loading = true;
     currentDay = day;
+    currentOffice = office;
     peopleCache = new Map();
     metaCache = null;
     lastError = "";
     loadProgress = "";
     try {
-      const r = await fetch(`/api/day?ns=${ns}&date=${day}`, { cache: "no-store" });
+      const r = await fetch(`/api/day?${q(day)}`, { cache: "no-store" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
       const idx = (await r.json()) as Partial<DayIndex>;
       const refs = idx.people ?? [];
@@ -164,7 +170,7 @@ export function createDayStore(ns: DayNamespace) {
         for (const p of peopleCache.values()) refs.push(await toRef(day, p));
         refs.sort((a, b) => a.order - b.order);
         const idx: DayIndex = { meta: metaCache ?? undefined, people: refs, savedAt: new Date().toISOString() };
-        const r = await fetch(`/api/day?ns=${ns}&date=${day}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(idx) });
+        const r = await fetch(`/api/day?${q(day)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(idx) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
         lastError = "";
         lastSavedAt = Date.now();
@@ -200,12 +206,12 @@ export function createDayStore(ns: DayNamespace) {
     if (saveTimer) window.clearTimeout(saveTimer);
     peopleCache = new Map();
     metaCache = null;
-    await fetch(`/api/day?ns=${ns}&date=${day}`, { method: "DELETE" });
+    await fetch(`/api/day?${q(day)}`, { method: "DELETE" });
   }
 
   async function listDays(): Promise<{ date: string; files: number; updated: string }[]> {
     try {
-      const r = await fetch(`/api/day/list?ns=${ns}`, { cache: "no-store" });
+      const r = await fetch(`/api/day/list?ns=${ns}${currentOffice ? `&office=${currentOffice}` : ""}`, { cache: "no-store" });
       if (!r.ok) return [];
       return ((await r.json()) as { days: { date: string; files: number; updated: string }[] }).days;
     } catch {
@@ -217,7 +223,7 @@ export function createDayStore(ns: DayNamespace) {
   async function movePersonToDay(p: Person, targetDate: string): Promise<void> {
     const target = dayKeyOf(targetDate);
     if (target === currentDay) return;
-    const r = await fetch(`/api/day?ns=${ns}&date=${target}`, { cache: "no-store" });
+    const r = await fetch(`/api/day?${q(target)}`, { cache: "no-store" });
     if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
     const idx = (await r.json()) as Partial<DayIndex>;
     const refs = idx.people ?? [];
@@ -225,18 +231,18 @@ export function createDayStore(ns: DayNamespace) {
     // the copy on the target day must start fresh: not a ghost, not arrived
     const ref = await toRef(target, { ...p, order, cancelled: false, movedTo: undefined, arrived: false }, true);
     const next: DayIndex = { meta: idx.meta, people: [...refs.filter((x) => x.id !== p.id), ref], savedAt: new Date().toISOString() };
-    const w = await fetch(`/api/day?ns=${ns}&date=${target}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+    const w = await fetch(`/api/day?${q(target)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
     // re-moving a ghost (already moved once): pull the stale copy out of the previous target day
     if (p.movedTo) {
       const prev = dayKeyOf(p.movedTo);
       if (prev !== target && prev !== currentDay) {
-        const pr = await fetch(`/api/day?ns=${ns}&date=${prev}`, { cache: "no-store" });
+        const pr = await fetch(`/api/day?${q(prev)}`, { cache: "no-store" });
         if (pr.ok) {
           const pidx = (await pr.json()) as Partial<DayIndex>;
           const rest = (pidx.people ?? []).filter((x) => x.id !== p.id);
           if (rest.length !== (pidx.people ?? []).length) {
-            await fetch(`/api/day?ns=${ns}&date=${prev}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ meta: pidx.meta, people: rest, savedAt: new Date().toISOString() }) });
+            await fetch(`/api/day?${q(prev)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ meta: pidx.meta, people: rest, savedAt: new Date().toISOString() }) });
           }
         }
       }
