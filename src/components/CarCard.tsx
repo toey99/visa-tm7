@@ -46,10 +46,7 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
   const headLand = joinUniq(combos.map((c) => c.land));
   const headReturn = joinUniq(combos.map((c) => c.ret));
   const multi = combos.length > 1;
-  // money the driver collects on the day: planned "collect" and not paid yet
-  const toCollect = (p: Person) => p.fields.pay === "collect" && (p.fields.paidHow ?? "pending") === "pending" ? Number(p.fields.amount) || 0 : 0;
-  const collectors = people.filter((p) => toCollect(p) > 0);
-  const collectSum = collectors.reduce((s, p) => s + toCollect(p), 0);
+
   const accent = car.accent;
   const cols = people.length <= 1 ? 1 : 2;
 
@@ -86,7 +83,6 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
               const flight = f.flight && (multi || f.flight !== headFlight) ? f.flight : "";
               const land = f.landTime && (multi || f.landTime !== headLand) ? f.landTime : "";
               const ret = f.returnBy && (multi || f.returnBy !== headReturn) ? f.returnBy : "";
-              const money = driver ? toCollect(p) : 0;
               return (
                 <div key={p.id} style={{ textAlign: "center", width: driver ? 262 : 240 }}>
                   <div style={{ position: "relative", display: "inline-block" }}>
@@ -105,11 +101,6 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
                   {(flight || land || ret) && (
                     <div style={{ marginTop: 3, display: "inline-block", background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
                       {flight && `✈ ${flight} `}{land && `ลง ${land} `}{ret && `· กลับก่อน ${ret}`}
-                    </div>
-                  )}
-                  {money > 0 && (
-                    <div style={{ marginTop: 4, display: "inline-block", background: "#ffeb3b", color: "#111", borderRadius: 8, padding: "3px 12px", fontSize: 18, fontWeight: 800, whiteSpace: "nowrap", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }}>
-                      💰 เก็บ {money.toLocaleString()} บาท
                     </div>
                   )}
                 </div>
@@ -185,7 +176,6 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
       {driver && (
         <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative", display: "flex", gap: 14, alignItems: "center" }}>
           <span>👥 {people.length} คน</span>
-          {collectSum > 0 && <span style={{ background: "#ffeb3b", color: "#111", borderRadius: 10, padding: "4px 12px", fontWeight: 800, fontSize: 15 }}>💰 เก็บเงินรวม {collectSum.toLocaleString()} บาท · {collectors.length} คน</span>}
           {/* 🐻 / 🐰 badges on the photos are understood by everyone — no legend text on the driver card */}
           {people.some((p) => p.fields.cambodia) && <span>🐻 {people.filter((p) => p.fields.cambodia).length}</span>}
           {people.some((p) => p.fields.run === "RUN30") && <span>🐰 {people.filter((p) => p.fields.run === "RUN30").length}</span>}
