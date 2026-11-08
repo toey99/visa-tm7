@@ -300,7 +300,7 @@ export type RunSheetRow = {
   carId: string; carLabel: string; detail: string; bear: boolean; cash: number;
 };
 type StyledCell = { v: string | number; t?: "s" | "n"; s?: Record<string, unknown> };
-const CAR_FILL: Record<string, string> = { "1": "FFF2CC", "2": "D9D2E9", "3": "E2EFDA", "4": "F8CBAD" };
+const CAR_FILL: Record<string, string> = { "1": "FFF2CC", "2": "D9D2E9", "3": "E2EFDA", "4": "F8CBAD", "5": "FFE0B2" };
 
 export async function buildRunDaySheet(rows: RunSheetRow[], date: string): Promise<Blob> {
   // xlsx-js-style: SheetJS community build with cell styles (fills, borders, bold)
