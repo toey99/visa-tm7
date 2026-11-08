@@ -91,10 +91,7 @@ const CollectCard = forwardRef<HTMLDivElement, { person: Person; meta: DayMeta }
       </div>
 
       {/* footer */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, padding: "0 4px", fontSize: 12, color: "#555", position: "relative" }}>
-        <span>กรุณาแสดงรูปนี้ตอนชำระเงิน · 付款时请出示此图</span>
-        <span style={{ fontWeight: 700, color: accent }}>ABC · Alliance Border Consulting</span>
-      </div>
+      <div style={{ marginTop: 10, padding: "0 4px", fontSize: 12, color: "#555", position: "relative", textAlign: "center" }}>กรุณาแสดงรูปนี้ตอนชำระเงิน · 付款时请出示此图</div>
     </div>
   );
 });
