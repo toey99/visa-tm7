@@ -27,7 +27,10 @@ function useBlobUrl(blob: Blob | null | undefined): string {
   return url;
 }
 
-const CollectCard = forwardRef<HTMLDivElement, { person: Person; meta: DayMeta }>(function CollectCard({ person: p, meta }, ref) {
+const CollectCard = forwardRef<HTMLDivElement, { person: Person; meta: DayMeta; run?: boolean }>(function CollectCard({ person: p, meta, run = false }, ref) {
+  // visa-run customers pay the driver on the day; extension customers pay at the counter
+  const payAt = run ? "ชำระกับคนขับรถ · 请付给司机" : "ชำระที่เจ้าหน้าที่ · 请向工作人员付款";
+  const footer = run ? "กรุณาแสดงรูปนี้กับคนขับรถตอนชำระเงิน · 付款时请向司机出示此图" : "กรุณาแสดงรูปนี้ตอนชำระเงิน · 付款时请出示此图";
   const f = p.fields;
   const o = OFFICES[meta.office];
   const accent = o.summaryAccent;
@@ -81,7 +84,8 @@ const CollectCard = forwardRef<HTMLDivElement, { person: Person; meta: DayMeta }
       <div style={{ marginTop: 12, background: "#ffeb3b", borderRadius: 14, padding: "14px 18px", boxShadow: "0 2px 10px rgba(0,0,0,.1)", position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", border: `3px solid ${accent}` }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 800, color: "#4a3b00", letterSpacing: 1 }}>ยอดที่ต้องชำระ · 应付金额</div>
-          <div style={{ fontSize: 13, color: "#6b5a00", marginTop: 2 }}>{f.note ? `📝 ${f.note}` : "ชำระที่เจ้าหน้าที่ · 请向工作人员付款"}</div>
+          <div style={{ fontSize: 13, color: "#6b5a00", marginTop: 2, fontWeight: 700 }}>{run ? "🚗 " : ""}{payAt}</div>
+          {f.note && <div style={{ fontSize: 12, color: "#6b5a00", marginTop: 2 }}>📝 {f.note}</div>}
         </div>
         <div style={{ textAlign: "right", lineHeight: 1 }}>
           <span style={{ fontSize: 30, fontWeight: 800, color: "#7a1020", verticalAlign: "top", marginRight: 6 }}>฿</span>
@@ -91,7 +95,7 @@ const CollectCard = forwardRef<HTMLDivElement, { person: Person; meta: DayMeta }
       </div>
 
       {/* footer */}
-      <div style={{ marginTop: 10, padding: "0 4px", fontSize: 12, color: "#555", position: "relative", textAlign: "center" }}>กรุณาแสดงรูปนี้ตอนชำระเงิน · 付款时请出示此图</div>
+      <div style={{ marginTop: 10, padding: "0 4px", fontSize: 12, color: "#555", position: "relative", textAlign: "center" }}>{footer}</div>
     </div>
   );
 });

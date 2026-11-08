@@ -1145,7 +1145,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       {/* off-screen "amount to collect" card, mounted only while being captured */}
       {collectTarget && (
         <div style={{ position: "absolute", left: -20000, top: 0 }}>
-          <CollectCard ref={collectRef} person={collectTarget} meta={meta} />
+          <CollectCard ref={collectRef} person={collectTarget} meta={meta} run={isRun} />
         </div>
       )}
 
