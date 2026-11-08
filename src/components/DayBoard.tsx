@@ -494,41 +494,44 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   // batches of at most BATCH people, in board order, so a big day prints and
   // files in manageable pieces: "ชุด1 (01-20)", "ชุด2 (21-40)", …
   const BATCH = 20;
-  function batches<T>(list: T[]): T[][] {
-    const out: T[][] = [];
-    for (let i = 0; i < list.length; i += BATCH) out.push(list.slice(i, i + BATCH));
-    return out;
+  type Batch = { k: number; from: number; to: number; people: Person[] };
+  // batches are cut on the board (active people, in order) so membership is
+  // stable: person 21 is always in batch 2 whatever filter a button applies
+  const allBatches: Batch[] = [];
+  for (let i = 0; i < active.length; i += BATCH) allBatches.push({ k: allBatches.length, from: i + 1, to: Math.min(i + BATCH, active.length), people: active.slice(i, i + BATCH) });
+  // which batch the output buttons work on: a specific one, or everything
+  const [batchSel, setBatchSel] = useState<number | "all">("all");
+  const selBatches = batchSel === "all" ? allBatches : allBatches.filter((b) => b.k === batchSel);
+  // apply a button's own readiness filter inside the chosen batch(es)
+  function groupsFor(filter: (p: Person) => boolean): Batch[] {
+    return selBatches.map((b) => ({ ...b, people: b.people.filter(filter) })).filter((b) => b.people.length);
   }
-  // file-name tag for batch k of n: "" when everything fits in one file
-  function batchTag(k: number, n: number, size: number): string {
-    if (n <= 1) return "";
-    const from = k * BATCH + 1, to = k * BATCH + size;
-    return `_ชุด${k + 1}(${String(from).padStart(2, "0")}-${String(to).padStart(2, "0")})`;
-  }
+  // file-name tag: "" when the day fits in one batch
+  const tagOf = (b: Batch) => (allBatches.length <= 1 ? "" : `_ชุด${b.k + 1}(${String(b.from).padStart(2, "0")}-${String(b.to).padStart(2, "0")})`);
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function tm7All() {
-    const ready = active.filter((p) => needsTm7(p) && p.fields.firstName && p.fields.lastName && p.fields.passportNo);
-    if (!ready.length) { setError(isRun ? "ยังไม่มีคน 'ไปต่อ 30 วัน' ที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)" : "ยังไม่มีคนที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)"); return; }
+    const groups = groupsFor((p) => needsTm7(p) && !!p.fields.firstName && !!p.fields.lastName && !!p.fields.passportNo);
+    const total = groups.reduce((n, b) => n + b.people.length, 0);
+    if (!total) { setError(isRun ? "ยังไม่มีคน 'ไปต่อ 30 วัน' ที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)" : "ยังไม่มีคนที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)"); return; }
     setWorking(true); setError("");
     try {
-      const groups = batches(ready);
       let done = 0;
-      for (let g = 0; g < groups.length; g++) {
+      for (const b of groups) {
         const blobs: Blob[] = [];
-        for (const p of groups[g]) {
+        for (const p of b.people) {
           done++;
-          setStatus(`กำลังทำ TM7 ${done}/${ready.length} — ${personFolderName(p)}`);
+          setStatus(`กำลังทำ TM7 ${done}/${total} — ${personFolderName(p)}`);
           const blob = await generateTm7(p);
           patchPerson(p.id, (x) => ({ ...x, tm7Pdf: blob }));
           blobs.push(blob);
         }
-        setStatus(groups.length > 1 ? `กำลังรวม PDF ชุด ${g + 1}/${groups.length}…` : "กำลังรวม PDF…");
+        setStatus(allBatches.length > 1 ? `กำลังรวม PDF ชุด ${b.k + 1}…` : "กำลังรวม PDF…");
         const merged = await mergePdfs(blobs);
-        downloadBlob(merged, `TM7-${meta.jobType}-${meta.date.replace(/\//g, "")}-${groups[g].length}คน${batchTag(g, groups.length, groups[g].length)}.pdf`);
+        downloadBlob(merged, `TM7-${meta.jobType}-${meta.date.replace(/\//g, "")}-${b.people.length}คน${tagOf(b)}.pdf`);
         if (groups.length > 1) await pause(400);
       }
-      setStatus(groups.length > 1 ? `TM7 ครบ ${ready.length} คน แบ่งเป็น ${groups.length} ไฟล์ (ไฟล์ละไม่เกิน ${BATCH} คน)` : `TM7 ครบ ${ready.length} คน รวมเป็นไฟล์เดียวแล้ว`);
+      setStatus(allBatches.length > 1 ? `TM7 ${total} คน · ${groups.map((b) => `ชุด ${b.k + 1}`).join(", ")}` : `TM7 ครบ ${total} คน รวมเป็นไฟล์เดียวแล้ว`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -631,12 +634,11 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   async function downloadPhotoSheet() {
     setError("");
     try {
-      const withPhoto = active.filter((p) => p.photo);
-      if (!withPhoto.length) { setError("ยังไม่มีรูปพื้นขาวของใครเลย"); return; }
-      const groups = batches(withPhoto);
-      for (let g = 0; g < groups.length; g++) {
-        const blob = await buildPhotoSheetPdf(groups[g].map((p) => p.photo as Blob));
-        downloadBlob(blob, `photo-sheet_${meta.date.replace(/\//g, "")}${batchTag(g, groups.length, groups[g].length)}.pdf`);
+      const groups = groupsFor((p) => !!p.photo);
+      if (!groups.length) { setError("ยังไม่มีรูปพื้นขาวของใครเลย"); return; }
+      for (const b of groups) {
+        const blob = await buildPhotoSheetPdf(b.people.map((p) => p.photo as Blob));
+        downloadBlob(blob, `photo-sheet_${meta.date.replace(/\//g, "")}${tagOf(b)}.pdf`);
         if (groups.length > 1) await pause(400);
       }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -858,13 +860,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   async function excelTm30() {
-    const ready = active.filter((p) => p.fields.firstName && p.fields.passportNo);
-    if (!ready.length) { setError("ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ต"); return; }
+    const groups = groupsFor((p) => !!p.fields.firstName && !!p.fields.passportNo);
+    if (!groups.length) { setError("ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ต"); return; }
     try {
-      const groups = batches(ready);
-      for (let g = 0; g < groups.length; g++) {
-        const blob = await buildTm30Excel(groups[g], plusDaysDdmmyyyy(10));
-        downloadBlob(blob, `TM30_${meta.date.replace(/\//g, "")}_${groups[g].length}คน${batchTag(g, groups.length, groups[g].length)}.xls`);
+      for (const b of groups) {
+        const blob = await buildTm30Excel(b.people, plusDaysDdmmyyyy(10));
+        downloadBlob(blob, `TM30_${meta.date.replace(/\//g, "")}_${b.people.length}คน${tagOf(b)}.xls`);
         if (groups.length > 1) await pause(400);
       }
     } catch (e) {
@@ -884,13 +885,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       if (summaryAgents.length > 1) cars.push(...(await makeAgentSummaries().catch(() => [])));
       // one zip per batch of BATCH people; the day-level extras (photo sheet,
       // summary, car cards, report) ride along in the first zip only
-      const groups = batches(active);
-      for (let g = 0; g < groups.length; g++) {
-        if (groups.length > 1) setStatus(`กำลังสร้าง zip ชุด ${g + 1}/${groups.length}…`);
-        const extras = g === 0 ? { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars } : { cars: [] };
-        const blob = await buildDayZip(groups[g], meta, extras);
-        downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}${batchTag(g, groups.length, groups[g].length)}.zip`);
-        if (groups.length > 1) await pause(600);
+      for (const b of selBatches) {
+        if (allBatches.length > 1) setStatus(`กำลังสร้าง zip ชุด ${b.k + 1}…`);
+        const extras = b.k === 0 ? { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars } : { cars: [] };
+        const blob = await buildDayZip(b.people, meta, extras);
+        downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}${tagOf(b)}.zip`);
+        if (selBatches.length > 1) await pause(600);
       }
       setStatus("");
     } catch (e) {
@@ -1007,6 +1007,18 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {isRun && active.length > 0 && <span className="ml-2 rounded bg-indigo-50 px-2 py-0.5 text-indigo-900">🚗 {carsInUse.length} คัน{unassigned.length ? ` · ยังไม่ลงรถ ${unassigned.length}` : ""} · ไปต่อ 30 วัน {active.filter((p) => p.fields.run === "RUN30").length}</span>}
           {status && <span className="ml-3 text-slate-500">{status}</span>}
         </div>
+        {allBatches.length > 1 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+            <span className="font-semibold text-amber-900">📦 ทำเอกสารชุด:</span>
+            {allBatches.map((b) => (
+              <button key={b.k} type="button" onClick={() => setBatchSel(b.k)} className={`rounded-full px-3 py-1 text-xs font-semibold ${batchSel === b.k ? "bg-amber-600 text-white" : "bg-white text-amber-900 ring-1 ring-amber-300"}`}>
+                ชุด {b.k + 1} · คน {String(b.from).padStart(2, "0")}–{String(b.to).padStart(2, "0")}
+              </button>
+            ))}
+            <button type="button" onClick={() => setBatchSel("all")} className={`rounded-full px-3 py-1 text-xs font-semibold ${batchSel === "all" ? "bg-amber-600 text-white" : "bg-white text-amber-900 ring-1 ring-amber-300"}`}>ทุกชุด</button>
+            <span className="text-xs text-amber-800">ใช้กับ TM7 ทุกคน · Excel TM30 · แผ่น A4 รูป · zip (ชุดละไม่เกิน {BATCH} คน)</span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <button onClick={() => addEmptyPerson()} className={btnCls}>+ เพิ่มคนว่าง</button>
           <button onClick={excelTm30} disabled={working || !people.length} className={btnCls}>⬇ Excel TM30</button>
