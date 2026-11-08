@@ -26,11 +26,12 @@ import { daysStore, runStore } from "@/lib/today/store";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
+import RunDaySheet from "@/components/RunDaySheet";
 import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
-  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildRunDaySheet, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
+  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, type RunSheetRow, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
 } from "@/lib/today/clientTools";
 import {
   DEFAULT_CROP, buildPhotoSheetPdf, cropPassportPhoto, drawCrop, findHeadByBackground, loadImage, renderPhoto,
@@ -727,11 +728,13 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   // ---------- visa-run day sheet for the checkpoint partner (Excel, rows tinted per car) ----------
+  const runSheetRef = useRef<HTMLDivElement>(null);
+  const [runSheetRows, setRunSheetRows] = useState<RunSheetRow[] | null>(null);
   async function runDaySheet() {
     if (!active.length) { setError("ยังไม่มีคนในบอร์ด"); return; }
-    setError("");
+    setError(""); setWorking(true); setStatus("กำลังทำตารางส่งด่าน…");
     try {
-      const rows = active.map((p) => {
+      const rows: RunSheetRow[] = active.map((p) => {
         const f = p.fields;
         const car = carById(f.car);
         const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
@@ -746,8 +749,16 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           detail, bear: !!f.cambodia, cash: cashAtDriver,
         };
       });
-      downloadBlob(await buildRunDaySheet(rows, meta.date), `visarun_${meta.date.replace(/\//g, "")}_ส่งด่าน.xlsx`);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
+      const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
+      setRunSheetRows(rows);
+      await new Promise((r) => setTimeout(r, 450));
+      const blob = runSheetRef.current ? await hti.toBlob(runSheetRef.current, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" }) : null;
+      if (!blob) throw new Error("สร้างรูปตารางไม่สำเร็จ");
+      downloadBlob(blob, `visarun_${meta.date.replace(/\//g, "")}_ส่งด่าน.png`);
+      setStatus("");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setRunSheetRows(null); setWorking(false); }
   }
 
   // ---------- visa-run expiry report (sent back to the factory / agent in the evening) ----------
@@ -1057,7 +1068,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
           <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
-          {isRun && <button onClick={runDaySheet} disabled={working || !people.length} className={btnCls} title="Excel รายคนส่งให้ด่าน — แถบสีตามคันรถ, ต่อ 30 วัน/อยู่เกิน, 🐻, เงินสดที่คนขับเก็บ">📊 Excel ส่งด่าน</button>}
+          {isRun && <button onClick={runDaySheet} disabled={working || !people.length} className={btnCls} title="รูปตารางรายคนส่งให้ด่าน — แถบสีตามคันรถ, ต่อ 30 วัน/อยู่เกิน, 🐻, เงินสดที่คนขับเก็บ">📊 ตารางส่งด่าน (PNG)</button>}
           <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
           <button onClick={dayZip} disabled={working || !people.length} className={btnCls}>⬇ โฟลเดอร์วันนี้ (zip)</button>
@@ -1167,6 +1178,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 
       {error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
+      {/* off-screen visa-run day table for the checkpoint partner, mounted only while being captured */}
+      {runSheetRows && (
+        <div style={{ position: "absolute", left: -20000, top: 0 }}>
+          <RunDaySheet ref={runSheetRef} rows={runSheetRows} date={meta.date} />
+        </div>
+      )}
       {/* off-screen "amount to collect" card, mounted only while being captured */}
       {collectTarget && (
         <div style={{ position: "absolute", left: -20000, top: 0 }}>
