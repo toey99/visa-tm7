@@ -895,8 +895,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   async function excelTm30() {
-    const groups = groupsFor((p) => !!p.fields.firstName && !!p.fields.passportNo);
-    if (!groups.length) { setError("ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ต"); return; }
+    // on the visa-run board only people going on to the 30-day extension need a TM.30
+    const groups = groupsFor((p) => !!p.fields.firstName && !!p.fields.passportNo && (!isRun || p.fields.run === "RUN30"));
+    if (!groups.length) { setError(isRun ? "ยังไม่มีคน 'ไปต่อ 30 วัน' ที่มีชื่อและเลขพาสปอร์ต (run อย่างเดียวไม่ต้องทำ TM30)" : "ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ต"); return; }
     try {
       for (const b of groups) {
         const blob = await buildTm30Excel(b.people, plusDaysDdmmyyyy(10));
@@ -1056,7 +1057,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         )}
         <div className="flex flex-wrap gap-2">
           <button onClick={() => addEmptyPerson()} className={btnCls}>+ เพิ่มคนว่าง</button>
-          <button onClick={excelTm30} disabled={working || !people.length} className={btnCls}>⬇ Excel TM30</button>
+          <button onClick={excelTm30} disabled={working || !people.length} className={btnCls} title={isRun ? "เฉพาะคนที่ไปต่อ 30 วัน" : undefined}>⬇ Excel TM30{isRun ? ` (ต่อ 30 วัน ${active.filter((p) => p.fields.run === "RUN30").length})` : ""}</button>
           {OFFICES[meta.office].generator !== "none" && <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>{isRun ? "⬇ TM7 คนไปต่อ 30 วัน (PDF เดียว)" : "⬇ TM7 ทุกคน (PDF เดียว)"}</button>}
           {isRun && <button onClick={() => downloadCarCards("customer")} disabled={working || !people.length} className={btnPrimaryCls} title="มีจุดนัดพบประตู 2 — ส่งให้ลูกค้า">🚗 การ์ดลูกค้า (ทุกคัน)</button>}
           {isRun && <button onClick={() => downloadCarCards("driver")} disabled={working || !people.length} className={btnPrimaryCls} title="ไม่มีจุดนัดพบ รูปหน้าใหญ่ — ส่งให้คนขับ">🧑‍✈️ การ์ดคนขับ (ทุกคัน)</button>}
