@@ -222,10 +222,25 @@ export function createDayStore(ns: DayNamespace) {
     const idx = (await r.json()) as Partial<DayIndex>;
     const refs = idx.people ?? [];
     const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
-    const ref = await toRef(target, { ...p, order, cancelled: false }, true);
+    // the copy on the target day must start fresh: not a ghost, not arrived
+    const ref = await toRef(target, { ...p, order, cancelled: false, movedTo: undefined, arrived: false }, true);
     const next: DayIndex = { meta: idx.meta, people: [...refs.filter((x) => x.id !== p.id), ref], savedAt: new Date().toISOString() };
     const w = await fetch(`/api/day?ns=${ns}&date=${target}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+    // re-moving a ghost (already moved once): pull the stale copy out of the previous target day
+    if (p.movedTo) {
+      const prev = dayKeyOf(p.movedTo);
+      if (prev !== target && prev !== currentDay) {
+        const pr = await fetch(`/api/day?ns=${ns}&date=${prev}`, { cache: "no-store" });
+        if (pr.ok) {
+          const pidx = (await pr.json()) as Partial<DayIndex>;
+          const rest = (pidx.people ?? []).filter((x) => x.id !== p.id);
+          if (rest.length !== (pidx.people ?? []).length) {
+            await fetch(`/api/day?ns=${ns}&date=${prev}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ meta: pidx.meta, people: rest, savedAt: new Date().toISOString() }) });
+          }
+        }
+      }
+    }
     // keep a ghost on the original day so the day's summary shows the reschedule
     peopleCache.set(p.id, { ...p, movedTo: targetDate, arrived: false });
     scheduleSave();
