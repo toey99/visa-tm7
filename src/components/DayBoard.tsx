@@ -1057,6 +1057,25 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           })}
         </div>
         {loaded && !people.length && <div className="py-10 text-center text-slate-500">ยังไม่มีคนในวันนี้ — เปิด "โหมดเต็ม" เพื่อลงรูป</div>}
+
+        {/* live summary — updates as people are ticked; one tap sends the agent's own sheet */}
+        {people.length > 0 && (
+          <div className="mt-6">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-700">📸 Summary สด (อัปเดตตามที่ติ๊ก)</h2>
+              <button type="button" onClick={() => setSummaryAgent("")} className={`rounded-full px-3 py-0.5 text-xs ${!summaryAgent ? "bg-indigo-600 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>ทุกคน</button>
+              {summaryAgents.map((a) => (
+                <button key={a} type="button" onClick={() => setSummaryAgent(a)} className={`rounded-full px-3 py-0.5 text-xs ${summaryAgent === a ? "bg-indigo-600 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>
+                  🏢 {a} · มาแล้ว {active.filter((p) => p.fields.agent === a && p.arrived).length}/{active.filter((p) => p.fields.agent === a).length}
+                </button>
+              ))}
+              <button onClick={downloadSummary} disabled={working} className={btnPrimaryCls + " ml-auto"}>⬇ ส่งรูป Summary{summaryAgent ? ` · ${summaryAgent}` : ""}</button>
+            </div>
+            <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
+              <SummarySheet ref={summaryRef} people={summaryAgent ? people.filter((p) => p.fields.agent === summaryAgent) : people} meta={meta} mode={mode} agentFilter={summaryAgent} />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
