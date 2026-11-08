@@ -58,7 +58,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const isRun = mode === "run";
   const store = isRun ? runStore : daysStore;
   const DEFAULTS = isRun ? DEFAULT_META_RUN : DEFAULT_META;
-  const { loadDay, flush, savePerson, deletePerson, saveMeta, listDays, movePersonToDay, isLoading, isSaving, lastError: storeError, lastSavedAt, loadProgress } = store;
+  const { loadDay, flush, savePerson, deletePerson, saveMeta, listDays, movePersonToDay, movePersonToOffice, isLoading, isSaving, lastError: storeError, lastSavedAt, loadProgress } = store;
   const clearDayRemote = store.clearDay;
   const dayKey = isRun ? "tm7-open-day-run" : "tm7-open-day";
   const officeKey = dayKey + "-office";
@@ -200,6 +200,17 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, movedTo: target, arrived: false } : x)));
       setStatus(`ย้าย ${personFolderName(p)} ไปวัน ${target} แล้ว`);
       listDays().then(setDays);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setWorking(false); }
+  }
+  async function moveOffice(p: Person, office: OfficeId) {
+    if (office === meta.office) return;
+    if (!window.confirm(`ย้าย ${personFolderName(p)} ไปหน้างาน ${OFFICES[office].label} (วัน ${meta.date})?\nTM7 PDF เดิมจะถูกทิ้ง ต้องกดทำใหม่ที่หน้างานใหม่`)) return;
+    setWorking(true); setStatus(`กำลังย้ายไป ${OFFICES[office].label}…`);
+    try {
+      await movePersonToOffice(p, office);
+      setPeople((prev) => prev.filter((x) => x.id !== p.id));
+      setStatus(`ย้าย ${personFolderName(p)} ไป ${OFFICES[office].label} แล้ว`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
     finally { setWorking(false); }
   }
@@ -1081,6 +1092,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
             onCrop={(crop, photo) => updateCrop(p.id, crop, photo)}
             onUseAsPhoto={(fileId) => usePhotoAsIs(p, fileId)}
             onMoveDay={() => moveDay(p)}
+            onMoveOffice={(o) => moveOffice(p, o)}
             onToggleArrived={() => toggleArrived(p)}
             onOverstayCalc={() => openOverstayCalc(p)}
             onToggleCancelled={() => toggleCancelled(p)}
@@ -1170,7 +1182,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onToggleArrived, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy, mode, needsTm7,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onMoveOffice, onToggleArrived, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy, mode, needsTm7,
 }: {
   person: Person;
   people: Person[];
@@ -1184,6 +1196,7 @@ function PersonCard({
   onCrop: (crop: Crop, photo: Blob) => void;
   onUseAsPhoto: (fileId: string) => void;
   onMoveDay: () => void;
+  onMoveOffice: (office: OfficeId) => void;
   onToggleArrived: () => void;
   onOverstayCalc: () => void;
   onToggleCancelled: () => void;
@@ -1249,6 +1262,10 @@ function PersonCard({
           <button onClick={onOverstayCalc} className={btnCls} title="เปิดหน้าคำนวณวันหมดอายุวีซ่า & Overstay พร้อมข้อมูลคนนี้ เพื่อทำรูปแจ้งเตือนส่งลูกค้า">🗓️ แจ้งวันหมดอายุ</button>
           <button type="button" onClick={() => set("report", !f.report)} title="ใส่คนนี้ในรูปสรุปวันหมดอายุ (ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น)" className={f.report ? "rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white" : btnCls}>📅 {f.report ? "อยู่ในสรุปหมดอายุ" : "ใส่สรุปหมดอายุ"}</button>
           <button onClick={onMoveDay} disabled={busy} className={btnCls} title="ย้ายคนนี้พร้อมไฟล์ไปวันอื่น">📅 ย้ายวัน</button>
+          <select value="" disabled={busy} onChange={(e) => { const o = e.target.value; if (isOfficeId(o)) onMoveOffice(o); }} className={btnCls} title="ย้ายคนนี้พร้อมไฟล์ไปหน้างานอื่นในวันเดียวกัน">
+            <option value="">🏢 ย้ายหน้างาน…</option>
+            {OFFICE_IDS.filter((id) => id !== meta.office).map((id) => <option key={id} value={id}>{OFFICES[id].label}</option>)}
+          </select>
           <button onClick={onToggleCancelled} className={btnCls} title="ลูกค้าไม่มา: คงไว้เป็นประวัติ แต่ไม่นับยอด ไม่ออกฟอร์ม">{p.cancelled ? "↩ กลับมา" : "🚫 ไม่มา"}</button>
           <button onClick={() => { if (window.confirm("ลบคนนี้?")) onRemove(); }} className={btnDangerCls}>ลบ</button>
         </div>

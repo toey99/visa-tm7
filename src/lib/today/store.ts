@@ -33,8 +33,8 @@ export function createDayStore(ns: DayNamespace) {
   // ---------- in-memory state for the open day ----------
   let currentDay = "";
   let currentOffice = "";   // OfficeId — each office keeps its own folder inside the day
-  const q = (day: string) => `ns=${ns}&date=${day}${currentOffice ? `&office=${currentOffice}` : ""}`;
-  const folder = (day: string) => `${ns}/${day}/${currentOffice ? `${currentOffice}/` : ""}`;
+  const q = (day: string, office = currentOffice) => `ns=${ns}&date=${day}${office ? `&office=${office}` : ""}`;
+  const folder = (day: string, office = currentOffice) => `${ns}/${day}/${office ? `${office}/` : ""}`;
   let peopleCache = new Map<string, Person>();
   let metaCache: DayMeta | null = null;
   let saveTimer: number | undefined;
@@ -68,20 +68,20 @@ export function createDayStore(ns: DayNamespace) {
   // Paths already uploaded, keyed by object identity (a Blob is re-uploaded only if it's a new object).
   const uploaded = new WeakMap<Blob, string>();
 
-  async function ensureUploaded(day: string, personId: string, name: string, blob: Blob | undefined, force = false): Promise<string | undefined> {
+  async function ensureUploaded(day: string, personId: string, name: string, blob: Blob | undefined, force = false, office = currentOffice): Promise<string | undefined> {
     if (!blob) return undefined;
     const known = uploaded.get(blob);
     if (known && !force && known.startsWith(`${ns}/${day}/`)) return known;
-    const path = await uploadBlob(`${folder(day)}${personId}/${name}.${extOf(blob.type)}`, blob);
+    const path = await uploadBlob(`${folder(day, office)}${personId}/${name}.${extOf(blob.type)}`, blob);
     uploaded.set(blob, path);
     return path;
   }
 
-  async function toRef(day: string, p: Person, force = false): Promise<PersonRef> {
+  async function toRef(day: string, p: Person, force = false, office = currentOffice): Promise<PersonRef> {
     const files: FileRef[] = [];
     for (const f of p.files) {
       const { blob, ...rest } = f;
-      const path = (await ensureUploaded(day, p.id, `doc-${f.id}`, blob, force)) ?? "";
+      const path = (await ensureUploaded(day, p.id, `doc-${f.id}`, blob, force, office)) ?? "";
       files.push({ ...rest, path });
     }
     const { files: _f, tm7Pdf, aiPhoto, photo, collectImage, ...rest } = p;
@@ -89,10 +89,10 @@ export function createDayStore(ns: DayNamespace) {
     return {
       ...rest,
       files,
-      tm7Pdf: await ensureUploaded(day, p.id, "tm7", tm7Pdf, force),
-      aiPhoto: await ensureUploaded(day, p.id, "ai-photo", aiPhoto, force),
-      photo: await ensureUploaded(day, p.id, "photo-white", photo, force),
-      collectImage: await ensureUploaded(day, p.id, "collect", collectImage, force),
+      tm7Pdf: await ensureUploaded(day, p.id, "tm7", tm7Pdf, force, office),
+      aiPhoto: await ensureUploaded(day, p.id, "ai-photo", aiPhoto, force, office),
+      photo: await ensureUploaded(day, p.id, "photo-white", photo, force, office),
+      collectImage: await ensureUploaded(day, p.id, "collect", collectImage, force, office),
     };
   }
 
@@ -252,12 +252,32 @@ export function createDayStore(ns: DayNamespace) {
     scheduleSave();
   }
 
+  // Move a person (with all files) to another office's board on the same day.
+  // Unlike a reschedule there is no ghost left behind — the customer was simply
+  // filed under the wrong counter. The TM.7 packet is dropped because its
+  // "written at" / page set depends on the office; regenerate it there.
+  async function movePersonToOffice(p: Person, targetOffice: string): Promise<void> {
+    if (!targetOffice || targetOffice === currentOffice) return;
+    const day = currentDay;
+    const r = await fetch(`/api/day?${q(day, targetOffice)}`, { cache: "no-store" });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+    const idx = (await r.json()) as Partial<DayIndex>;
+    const refs = idx.people ?? [];
+    const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
+    const ref = await toRef(day, { ...p, order, tm7Pdf: undefined, cancelled: false, movedTo: undefined, arrived: false }, true, targetOffice);
+    const next: DayIndex = { meta: idx.meta, people: [...refs.filter((x) => x.id !== p.id), ref], savedAt: new Date().toISOString() };
+    const w = await fetch(`/api/day?${q(day, targetOffice)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+    if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+    peopleCache.delete(p.id);
+    scheduleSave();
+  }
+
   function isSaving(): boolean {
     return !!savingPromise || !!saveTimer;
   }
 
   return {
-    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay,
+    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice,
     isSaving, isLoading,
     lastError: () => lastError,
     lastSavedAt: () => lastSavedAt,
@@ -279,6 +299,7 @@ export const saveMeta = daysStore.saveMeta;
 export const clearDay = daysStore.clearDay;
 export const listDays = daysStore.listDays;
 export const movePersonToDay = daysStore.movePersonToDay;
+export const movePersonToOffice = daysStore.movePersonToOffice;
 export const isSaving = daysStore.isSaving;
 export const isLoading = daysStore.isLoading;
 export const lastError = daysStore.lastError;
