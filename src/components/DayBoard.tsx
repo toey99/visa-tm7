@@ -31,7 +31,7 @@ import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
-  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, captureNode, downloadBlob, type RunSheetRow, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
+  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, captureNode, downloadBlob, type RunSheetRow, downscaleImage, mergePdfs, plusDaysDdmmyyyy,
 } from "@/lib/today/clientTools";
 import {
   DEFAULT_CROP, buildPhotoSheetPdf, cropPassportPhoto, drawCrop, findHeadByBackground, loadImage, renderPhoto,
