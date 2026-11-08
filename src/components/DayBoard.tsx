@@ -31,7 +31,7 @@ import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
-  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, type RunSheetRow, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
+  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, captureNode, downloadBlob, type RunSheetRow, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
 } from "@/lib/today/clientTools";
 import {
   DEFAULT_CROP, buildPhotoSheetPdf, cropPassportPhoto, drawCrop, findHeadByBackground, loadImage, renderPhoto,
@@ -665,9 +665,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     // html-to-image renders through the browser's own layout engine (SVG
     // foreignObject), so Thai text and pills come out exactly as on screen —
     // html2canvas re-implements layout and sat Thai glyphs too low.
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
-    const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
-    const blob = await hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+    const blob = await captureNode(el);
     if (blob) setSummaryBlob(blob);
     return blob;
   }
@@ -711,14 +709,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const carsInUse = CARS.filter((c) => active.some((p) => p.fields.car === c.id));
   const unassigned = active.filter((p) => !p.fields.car);
   async function makeCarCards(which: ("customer" | "driver")[] = ["customer", "driver"]): Promise<{ name: string; blob: Blob }[]> {
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
-    const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
     const out: { name: string; blob: Blob }[] = [];
     for (const v of which) {
       for (const c of carsInUse) {
         const el = (v === "driver" ? driverRefs : carRefs).current[c.id];
         if (!el) continue;
-        const blob = await hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+        const blob = await captureNode(el);
         if (blob) out.push({ name: `car-${c.id}-${c.plate.replace(/\s+/g, "")}-${v === "driver" ? "คนขับ" : "ลูกค้า"}.png`, blob });
       }
     }
@@ -765,11 +761,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           fine: f.overstay ? 2000 + 500 * osDays : 0,
         };
       });
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
-      const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
       setRunSheetRows(rows);
       await new Promise((r) => setTimeout(r, 450));
-      const blob = runSheetRef.current ? await hti.toBlob(runSheetRef.current, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" }) : null;
+      const blob = runSheetRef.current ? await captureNode(runSheetRef.current) : null;
       if (!blob) throw new Error("สร้างรูปตารางไม่สำเร็จ");
       downloadBlob(blob, `visarun_${meta.date.replace(/\//g, "")}_ส่งด่าน.png`);
       setStatus("");
@@ -824,9 +818,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   async function makeExpiryReport(): Promise<Blob | null> {
     const el = reportRef.current;
     if (!el || !reportPeople.length) return null;
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
-    const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
-    return hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+    return captureNode(el);
   }
   async function downloadExpiryReport() {
     setError("");
@@ -850,11 +842,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     if (!amount) { setError(`${personFolderName(p)}: ยังไม่ใส่ยอดเงิน`); return null; }
     let blob: Blob | null = null;
     try {
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
-      const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
       setCollectTarget(p);
       await new Promise((r) => setTimeout(r, 450));
-      if (collectRef.current) blob = await hti.toBlob(collectRef.current, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+      if (collectRef.current) blob = await captureNode(collectRef.current);
     } catch { blob = null; }
     finally { setCollectTarget(null); }
     if (!blob) {

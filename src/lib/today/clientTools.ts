@@ -352,3 +352,33 @@ export async function buildRunDaySheet(rows: RunSheetRow[], date: string): Promi
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
+
+// ---------- capture a DOM node as PNG (html-to-image) ----------
+// One shared entry point for every exported sheet. Safari / iOS WebKit has a
+// long-standing quirk: the first render of <img> inside the SVG foreignObject
+// that html-to-image uses comes out empty (photos missing, text fine). The
+// usual cure is to render once to warm the images up and keep the second
+// pass — so we always do a throw-away pass first, and additionally wait for
+// every <img> in the node to be fully decoded before either pass.
+type HtmlToImage = {
+  toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null>;
+  toCanvas: (el: HTMLElement, o: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+};
+async function getHtmlToImage(): Promise<HtmlToImage> {
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
+  return (window as unknown as { htmlToImage: HtmlToImage }).htmlToImage;
+}
+async function waitForImages(el: HTMLElement): Promise<void> {
+  const imgs = Array.from(el.querySelectorAll("img"));
+  await Promise.all(imgs.map(async (img) => {
+    if (!img.complete) await new Promise<void>((res) => { img.onload = () => res(); img.onerror = () => res(); });
+    try { await img.decode(); } catch { /* broken image — nothing to wait for */ }
+  }));
+}
+export async function captureNode(el: HTMLElement, pixelRatio = 2): Promise<Blob | null> {
+  const hti = await getHtmlToImage();
+  await waitForImages(el);
+  const opts = { pixelRatio, cacheBust: false, backgroundColor: "#ffffff" };
+  try { await hti.toCanvas(el, opts); } catch { /* warm-up only */ }
+  return hti.toBlob(el, opts);
+}

@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { daysBetween, fmtDdmmyyyy, parseDdmmyyyy } from "@/lib/today/types";
 import { OFFICES, type OfficeId } from "@/lib/offices";
-import { downloadBlob, loadScript } from "@/lib/today/clientTools";
+import { captureNode, downloadBlob } from "@/lib/today/clientTools";
 
 type Rec = { passportNo: string; name: string; cn: string; agent: string; phone?: string; kind: "run" | "run30" | "ext"; office: string; jobDate: string; entry: string; expiry: string; updatedAt: string };
 
@@ -65,9 +65,7 @@ export default function ExpiryPage() {
     const el = ref.current; if (!el || !shown.length) return;
     setStatus("กำลังทำรูป…");
     try {
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
-      const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
-      const blob = await hti.toBlob(el, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+      const blob = await captureNode(el);
       if (blob) downloadBlob(blob, `reminder_${fmtDdmmyyyy(today).replace(/\//g, "")}_${agent && agent !== "(ไม่ระบุ)" ? agent : "all"}.png`);
       setStatus("");
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
