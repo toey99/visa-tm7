@@ -42,7 +42,8 @@ export type PersonFields = {
   postalCode: string;
   phone: string;
   // bookkeeping for the day
-  agent: string;                // who sent the case
+  agent: string;
+  subAgent: string;             // the main agent's own downstream agent / note — shown on their per-agent summary                // who sent the case
   pay: "collect" | "paid" | "nocollect";
   amount: string;               // THB to collect at the counter
   paidHow: "pending" | "cash" | "transfer" | "agent" | "none";  // what actually happened at the counter
@@ -121,6 +122,7 @@ export const EMPTY_FIELDS: PersonFields = {
   postalCode: "",
   phone: "",
   agent: "",
+  subAgent: "",
   pay: "collect",
   amount: "",
   paidHow: "pending",

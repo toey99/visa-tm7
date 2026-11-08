@@ -578,6 +578,11 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
+  // Summary can be drawn for everyone or for one main agent only (the agent
+  // then gets a picture with just their customers, each labelled with the
+  // sub-agent note they gave us).
+  const [summaryAgent, setSummaryAgent] = useState("");
+  const summaryAgents = Array.from(new Set(active.map((p) => p.fields.agent).filter(Boolean)));
   async function makeSummary(): Promise<Blob | null> {
     const el = summaryRef.current;
     if (!el || !people.length) return null;
@@ -595,8 +600,32 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     try {
       const blob = await makeSummary();
       if (!blob) return;
-      downloadBlob(blob, `summary_${meta.date.replace(/\//g, "")}_${meta.jobType}.png`);
+      downloadBlob(blob, `summary_${meta.date.replace(/\//g, "")}_${meta.jobType}${summaryAgent ? "_" + summaryAgent : ""}.png`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+  // one summary per main agent: switch the filter, let React paint, capture, repeat
+  async function makeAgentSummaries(): Promise<{ name: string; blob: Blob }[]> {
+    const out: { name: string; blob: Blob }[] = [];
+    const prev = summaryAgent;
+    for (const a of summaryAgents) {
+      setSummaryAgent(a);
+      await new Promise((r) => setTimeout(r, 400));
+      const blob = await makeSummary();
+      if (blob) out.push({ name: `summary-${a.replace(/[\\/:*?"<>|]+/g, "_")}.png`, blob });
+    }
+    setSummaryAgent(prev);
+    return out;
+  }
+  async function downloadAgentSummaries() {
+    setError("");
+    if (!summaryAgents.length) { setError("ยังไม่มีใครใส่ชื่อเอเจนซี่"); return; }
+    setWorking(true); setStatus("กำลังทำ summary แยกเอเจนซี่…");
+    try {
+      const list = await makeAgentSummaries();
+      for (const s of list) { downloadBlob(s.blob, `${meta.date.replace(/\//g, "")}_${s.name}`); await new Promise((r) => setTimeout(r, 300)); }
+      setStatus(`summary ${list.length} เอเจนซี่`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setWorking(false); }
   }
 
   // ---------- visa-run car cards (one PNG per car) ----------
@@ -768,6 +797,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       const cars = isRun ? await makeCarCards().catch(() => []) : [];
       const report = await makeExpiryReport().catch(() => null);
       if (report) cars.push({ name: "expiry-report.png", blob: report });
+      if (summaryAgents.length > 1) cars.push(...(await makeAgentSummaries().catch(() => [])));
       const blob = await buildDayZip(active, meta, { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars });
       downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}.zip`);
       setStatus("");
@@ -892,7 +922,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={downloadExpiryReport} disabled={working || !reportPeople.length} className={btnCls} title="รูปสรุปชื่อ/พาสปอร์ต/วันเข้า/วันหมดอายุ ของคนที่ติ๊ก 📅 — ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น">📅 สรุปหมดอายุ ({reportPeople.length})</button>
           <button onClick={photosAll} disabled={working || !people.length} className={btnPrimaryCls}>✦ ทำรูปพื้นขาวทุกคน</button>
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
-          <button onClick={downloadSummary} disabled={working || !people.length} className={btnCls}>⬇ Summary (PNG)</button>
+          <button onClick={downloadSummary} disabled={working || !people.length} className={btnPrimaryCls}>⬇ Summary (PNG){summaryAgent ? ` · ${summaryAgent}` : ""}</button>
+          {summaryAgents.length > 1 && <button onClick={downloadAgentSummaries} disabled={working} className={btnCls} title="ออก summary คนละรูปต่อเอเจนซี่หลัก เห็นเฉพาะลูกค้าของเขา พร้อมโน้ตเอเจนซี่ย่อย">⬇ Summary แยกเอเจนซี่ ({summaryAgents.length})</button>}
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
           <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
@@ -1089,9 +1120,17 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 
       {/* one-page summary (rendered off-screen, exported with html-to-image) */}
       <div className="mt-8">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่าง Summary</h2>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-700">ตัวอย่าง Summary</h2>
+          <span className="text-xs text-slate-500">แสดง:</span>
+          <button type="button" onClick={() => setSummaryAgent("")} className={`rounded-full px-3 py-0.5 text-xs ${!summaryAgent ? "bg-indigo-600 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>ทุกคน</button>
+          {summaryAgents.map((a) => (
+            <button key={a} type="button" onClick={() => setSummaryAgent(a)} className={`rounded-full px-3 py-0.5 text-xs ${summaryAgent === a ? "bg-indigo-600 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>🏢 {a} ({active.filter((p) => p.fields.agent === a).length})</button>
+          ))}
+          {summaryAgent && <span className="text-xs text-slate-500">— รูปนี้ส่งให้ {summaryAgent} โดยตรง โชว์โน้ตเอเจนซี่ย่อยของเขา</span>}
+        </div>
         <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-          <SummarySheet ref={summaryRef} people={people} meta={meta} mode={mode} />
+          <SummarySheet ref={summaryRef} people={summaryAgent ? people.filter((p) => p.fields.agent === summaryAgent) : people} meta={meta} mode={mode} agentFilter={summaryAgent} />
         </div>
       </div>
     </div>
@@ -1338,6 +1377,7 @@ function PersonCard({
         <F label="รหัสไปรษณีย์"><input value={f.postalCode} onChange={(e) => set("postalCode", e.target.value)} className={inputCls} /></F>
 
         <F label="เอเจนซี่ / ผู้ส่ง"><input value={f.agent} onChange={(e) => set("agent", e.target.value)} className={inputCls} list="today-agents" /></F>
+        <F label="เอเจนซี่ย่อย (โน้ตของเอเจนซี่หลัก)"><input value={f.subAgent ?? ""} onChange={(e) => set("subAgent", e.target.value)} className={inputCls} placeholder="ที่เขาโน้ตมา เช่น 小王" /></F>
         <F label="การเงิน">
           <select value={f.pay} onChange={(e) => set("pay", e.target.value as PersonFields["pay"])} className={inputCls}>
             <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="nocollect">ไม่เก็บ</option>
@@ -1457,7 +1497,7 @@ const pill = (bg: string, fg: string, size = 12): React.CSSProperties => ({
   height: size + 10, lineHeight: 1, padding: "0 9px", borderRadius: 4,
   fontSize: size, fontWeight: 600, background: bg, color: fg, whiteSpace: "nowrap", boxSizing: "border-box",
 });
-const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta; mode: BoardMode }>(function SummarySheet({ people: all, meta, mode }, ref) {
+const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta; mode: BoardMode; agentFilter?: string }>(function SummarySheet({ people: all, meta, mode, agentFilter = "" }, ref) {
   const o = OFFICES[meta.office];
   const isRun = mode === "run";
   const runSlot = RUN_SLOTS.find((s) => s.id === (meta.slot || "morning"));
@@ -1490,7 +1530,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ fontSize: 34, lineHeight: 1 }}>{o.emoji}</div>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.1 }}>{isRun ? `🚗 VISA RUN · ${o.summaryTitle}` : o.summaryTitle}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.1 }}>{isRun ? `🚗 VISA RUN · ${o.summaryTitle}` : o.summaryTitle}{agentFilter ? <span style={{ marginLeft: 10, fontSize: 15, fontWeight: 700, background: "rgba(255,255,255,.22)", borderRadius: 8, padding: "2px 10px", verticalAlign: "middle" }}>🏢 {agentFilter}</span> : null}</div>
             <div style={{ fontSize: 12, opacity: 0.9, marginTop: 3 }}>{isRun ? `รอบ${runSlot?.th ?? ""}${meta.flight ? ` · ✈ ${meta.flight}` : ""}${meta.landTime ? ` ลง ${meta.landTime}` : ""}${meta.returnBy ? ` · กลับถึงสนามบินก่อน ${meta.returnBy}` : ""}` : `${o.subtitle}${o.generator !== "none" ? ` · ต่อวีซ่า ${meta.extensionDays} วัน` : ""}`}</div>
           </div>
         </div>
@@ -1509,7 +1549,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
             const ghost = !!(p.cancelled || p.movedTo);
             const f = p.fields;
             const amt = f.amount ? ` ${Number(f.amount).toLocaleString()}` : "";
-            const who = f.agent ? `${f.agent} ` : "";
+            // on a per-agent sheet the agent is in the header, so the pill carries their sub-agent note instead
+            const who = agentFilter ? (f.subAgent ? `${f.subAgent} ` : "") : (f.agent ? `${f.agent} ` : "");
             const got = f.paidAmount || f.amount ? ` ${Number(f.paidAmount || f.amount).toLocaleString()}` : "";
             const tag = f.pay === "collect"
               ? (f.paidHow === "cash" ? { bg: "#d2f4dd", fg: "#14532d", t: `💵 ${who}รับเงินสดแล้ว${got}` }
@@ -1545,6 +1586,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
                 <div style={{ fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || "\u00a0"}</div>
+                {f.subAgent && <div style={{ fontSize: 10, color: "#4338ca", fontWeight: 700, marginTop: 2 }}>↳ {f.subAgent}</div>}
                 <div style={{ marginTop: 5 }}>
                   {p.cancelled ? <span style={pill("#fee2e2", "#991b1b", 11)}>❌ ไม่มา</span>
                     : p.movedTo ? <span style={pill("#dbeafe", "#1e3a8a", 11)}>➡ เลื่อนไป {p.movedTo.slice(0, 5)}</span>
