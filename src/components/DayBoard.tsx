@@ -877,6 +877,14 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 
   // ---------- agent settlement ----------
   const [showAgents, setShowAgents] = useState(false);
+  // field mode: the stripped-down view for the person at the counter —
+  // face, names, agent, amount, arrived / paid / no-show — nothing else
+  const [fieldMode, setFieldMode] = useState(false);
+  useEffect(() => { try { setFieldMode(sessionStorage.getItem("tm7-field-mode") === "1"); } catch {} }, []);
+  function setField(v: boolean) { setFieldMode(v); try { sessionStorage.setItem("tm7-field-mode", v ? "1" : "0"); } catch {} }
+  function setPaidHow(p: Person, k: PersonFields["paidHow"]) {
+    patchPerson(p.id, (x) => ({ ...x, fields: { ...x.fields, paidHow: k, paidAmount: k === "cash" || k === "transfer" ? (x.fields.paidAmount || x.fields.amount) : "" } }));
+  }
   const num = (v: string | undefined) => Number(v) || 0;
   const agentGroups = (() => {
     const m = new Map<string, Person[]>();
@@ -970,11 +978,94 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const receivedSum = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
   const pendingCount = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
 
+  if (fieldMode) {
+    const accent = OFFICES[meta.office].summaryAccent;
+    const PAY: { k: PersonFields["paidHow"]; label: string; on: string }[] = [
+      { k: "cash", label: "💵 เงินสด", on: "bg-emerald-600 text-white" },
+      { k: "transfer", label: "📲 โอน", on: "bg-sky-600 text-white" },
+      { k: "agent", label: "🏢 เอเจนซี่", on: "bg-indigo-600 text-white" },
+      { k: "pending", label: "⏳ ยังไม่จ่าย", on: "bg-amber-500 text-white" },
+    ];
+    return (
+      <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6">
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-xl px-3 py-1.5 text-lg font-extrabold text-white" style={{ background: accent }}>{OFFICES[meta.office].emoji} {OFFICES[meta.office].label}</span>
+            <div className="flex items-center gap-1">
+              <button type="button" className={btnCls + " px-2"} onClick={() => shiftDay(-1)}>◀</button>
+              <span className="rounded-lg bg-white px-3 py-1.5 text-base font-bold text-slate-900 ring-1 ring-slate-300">{meta.date}</span>
+              <button type="button" className={btnCls + " px-2"} onClick={() => shiftDay(1)}>▶</button>
+            </div>
+            <select value={meta.office} onChange={(e) => changeOffice(e.target.value as OfficeId)} className={inputCls + " w-40 text-sm"}>
+              {OFFICE_IDS.map((id) => <option key={id} value={id}>{OFFICES[id].label}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            {status && <span className="text-slate-500">{status}</span>}
+            <button type="button" onClick={() => setField(false)} className={btnCls}>🖥 โหมดเต็ม</button>
+          </div>
+        </header>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-lg bg-slate-900 px-3 py-1 font-bold text-white">👥 {active.length} คน</span>
+          <span className="rounded-lg bg-emerald-50 px-3 py-1 font-semibold text-emerald-900">✅ มาแล้ว {active.filter((p) => p.arrived).length}/{active.length}</span>
+          {collect.length > 0 && <span className="rounded-lg bg-amber-50 px-3 py-1 font-semibold text-amber-900">💰 ต้องเก็บ {collect.length} คน · {collectSum.toLocaleString()} บาท</span>}
+          {collect.length > 0 && <span className="rounded-lg bg-sky-50 px-3 py-1 font-semibold text-sky-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
+          {pendingCount > 0 && <span className="rounded-lg bg-red-50 px-3 py-1 font-semibold text-red-900">⏳ ค้าง {pendingCount} คน</span>}
+        </div>
+        {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {!loaded && <div className="py-10 text-center text-slate-500">กำลังโหลด…</div>}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {people.map((p) => {
+            const f = p.fields;
+            const amount = Number(f.amount) || 0;
+            const ghost = !!p.movedTo;
+            return (
+              <div key={p.id} className={`relative flex gap-3 rounded-2xl border p-3 shadow-sm ${p.cancelled ? "border-red-200 bg-red-50/60 opacity-70" : p.arrived ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200 bg-white"} ${ghost ? "opacity-50" : ""}`}>
+                <div className="relative shrink-0">
+                  <SummaryPhoto person={p} />
+                  <span className="absolute -left-2 -top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-extrabold text-white shadow" style={{ background: accent }}>{String(p.order).padStart(2, "0")}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-mono text-lg font-bold leading-tight text-slate-900">{[f.lastName, f.firstName].filter(Boolean).join(" ") || "—"}</div>
+                  <div className="text-xl leading-tight text-slate-900">{f.chineseName || "\u00a0"}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+                    {f.agent && <span className="rounded bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-900">🏢 {f.agent}</span>}
+                    {isRun && <span className="rounded bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">{f.run === "RUN30" ? "🐰 run+30" : "run"}</span>}
+                    {ghost && <span className="rounded bg-blue-50 px-2 py-0.5 font-semibold text-blue-900">➡ เลื่อนไป {p.movedTo}</span>}
+                  </div>
+                  <div className="mt-1 text-base font-extrabold">
+                    {f.pay === "collect" && amount > 0 ? <span className="text-red-700">💰 เก็บ {amount.toLocaleString()} บาท</span>
+                      : f.pay === "paid" ? <span className="text-emerald-700">✅ จ่ายแล้ว</span>
+                      : <span className="text-slate-400">ไม่เก็บ</span>}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <button type="button" onClick={() => toggleArrived(p)} className={p.arrived ? "rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls}>{p.arrived ? "✅ มาแล้ว" : "☐ มาแล้ว?"}</button>
+                    <button type="button" onClick={() => toggleCancelled(p)} className={p.cancelled ? "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls}>{p.cancelled ? "🚫 ไม่มา" : "ไม่มา"}</button>
+                  </div>
+                  {f.pay === "collect" && amount > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {PAY.map((o) => (
+                        <button key={o.k} type="button" onClick={() => setPaidHow(p, o.k)} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${(f.paidHow ?? "pending") === o.k ? o.on : "bg-white text-slate-700 ring-1 ring-slate-300"}`}>{o.label}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {loaded && !people.length && <div className="py-10 text-center text-slate-500">ยังไม่มีคนในวันนี้ — เปิด "โหมดเต็ม" เพื่อลงรูป</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{isRun ? "🚗 Visa Run" : "งานวันนี้"}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{isRun ? "🚗 Visa Run" : "งานวันนี้"}{" "}<button type="button" onClick={() => setField(true)} className="ml-2 align-middle rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white" title="หน้าย่อสำหรับคนหน้างาน: รูป ชื่อ เอเจนซี่ ยอดเก็บ มาแล้ว/จ่ายแล้ว/ไม่มา">👷 โหมดหน้างาน</button></h1>
           <p className="text-sm text-slate-600">{isRun ? "โยนรูปลูกค้าวีซ่ารันลงทีเดียว → แยกคน อ่านข้อมูล จัดคนลงรถ ทำการ์ดรถ summary และ TM7 เฉพาะคนไปต่อ 30 วัน" : "โยนรูปจาก LINE ทั้งวันลงทีเดียว → ระบบแยกคน อ่านข้อมูล ทำฟอร์ม ทำ Excel TM30 และโฟลเดอร์ให้"}</p>
         </div>
         <div className="flex flex-wrap items-end gap-3 text-sm">
