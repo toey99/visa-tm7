@@ -1077,7 +1077,10 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         {loaded && people.length === 0 && (
           <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">ยังไม่มีลูกค้าวันนี้ — ลากรูปลงด้านบน</p>
         )}
-        {people.map((p) => (
+        {/* newest first on screen: the person just dropped in sits right under
+            the drop zone for OCR checking; numbering (order), summary, Excel and
+            PDFs keep the original 01, 02, … sequence */}
+        {[...people].reverse().map((p) => (
           <PersonCard
             key={p.id}
             person={p}
