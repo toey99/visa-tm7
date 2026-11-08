@@ -289,3 +289,65 @@ export async function buildAgentExcel(people: Person[], date: string, officeLabe
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
+
+// ---------- visa-run day sheet for the checkpoint partner (Excel, coloured per car) ----------
+// Mirrors the sheet the partner already receives: one row per customer, rows
+// tinted by car (the car cost depends on how many ride in it), the extras
+// that change the price (30-day extension, overstay days, 🐻 Cambodia
+// history) and the cash the driver collects.
+export type RunSheetRow = {
+  name: string; flight: string; land: string; returnBy: string; expiry: string;
+  carId: string; carLabel: string; detail: string; bear: boolean; cash: number;
+};
+type StyledCell = { v: string | number; t?: "s" | "n"; s?: Record<string, unknown> };
+const CAR_FILL: Record<string, string> = { "1": "FFF2CC", "2": "D9D2E9", "3": "E2EFDA", "4": "F8CBAD" };
+
+export async function buildRunDaySheet(rows: RunSheetRow[], date: string): Promise<Blob> {
+  // xlsx-js-style: SheetJS community build with cell styles (fills, borders, bold)
+  await loadScript("https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js");
+  const XLSX = (window as unknown as { XLSX: XLSXLike & { utils: { aoa_to_sheet(rows: unknown[][]): Record<string, unknown> } } }).XLSX;
+  const border = { top: { style: "thin", color: { rgb: "BFBFBF" } }, bottom: { style: "thin", color: { rgb: "BFBFBF" } }, left: { style: "thin", color: { rgb: "BFBFBF" } }, right: { style: "thin", color: { rgb: "BFBFBF" } } };
+  const head = (v: string): StyledCell => ({ v, t: "s", s: { font: { bold: true }, fill: { fgColor: { rgb: "FCE4D6" } }, border, alignment: { horizontal: "center", vertical: "center", wrapText: true } } });
+  const cell = (v: string | number, fill: string, extra: Record<string, unknown> = {}): StyledCell => ({
+    v, t: typeof v === "number" ? "n" : "s",
+    s: { border, ...(fill ? { fill: { fgColor: { rgb: fill } } } : {}), alignment: { vertical: "center" }, ...extra },
+  });
+  const headers = ["ที่", "ชื่อลูกค้า", "flight ขาไป", "ลงเชียงราย", "ถึงสนามบินก่อน", "วีซ่าหมดวันที่", "รถ", "รายละเอียด", "🐻", "ลูกค้าจ่ายเงินสด"];
+  const aoa: StyledCell[][] = [
+    headers.map(head),
+    [cell(`DAY${date}`, "", { font: { bold: true } }), ...headers.slice(1).map(() => cell("", ""))],
+  ];
+  // rows grouped by car (1..4, then unassigned), board order inside a car
+  const sorted = [...rows].sort((a, b) => (a.carId || "9").localeCompare(b.carId || "9"));
+  let cashSum = 0;
+  sorted.forEach((r, i) => {
+    const fill = CAR_FILL[r.carId] ?? "";
+    cashSum += r.cash;
+    aoa.push([
+      cell(i + 1, fill, { alignment: { horizontal: "center", vertical: "center" } }),
+      cell(r.name, fill),
+      cell(r.flight, fill, { alignment: { horizontal: "center", vertical: "center" } }),
+      cell(r.land, fill, { alignment: { horizontal: "center", vertical: "center" } }),
+      cell(r.returnBy, fill, { alignment: { horizontal: "center", vertical: "center" } }),
+      cell(r.expiry, fill, { alignment: { horizontal: "center", vertical: "center" } }),
+      cell(r.carLabel, fill),
+      cell(r.detail, fill),
+      cell(r.bear ? "🐻" : "", fill, { alignment: { horizontal: "center", vertical: "center" } }),
+      r.cash ? cell(r.cash, fill, { numFmt: "#,##0", alignment: { horizontal: "right", vertical: "center" } }) : cell("", fill),
+    ]);
+  });
+  aoa.push([
+    cell("รวม", "", { font: { bold: true } }), cell(`${rows.length} คน`, "", { font: { bold: true } }), cell("", ""), cell("", ""), cell("", ""), cell("", ""),
+    cell(`${new Set(rows.map((r) => r.carId).filter(Boolean)).size} คัน`, "", { font: { bold: true } }),
+    cell(`ต่อ 30 วัน ${rows.filter((r) => /ต่ออายุ/.test(r.detail)).length} คน`, "", { font: { bold: true } }),
+    cell(rows.filter((r) => r.bear).length ? String(rows.filter((r) => r.bear).length) : "", "", { font: { bold: true }, alignment: { horizontal: "center" } }),
+    cashSum ? cell(cashSum, "", { font: { bold: true }, numFmt: "#,##0", alignment: { horizontal: "right" } }) : cell("", ""),
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [5, 24, 12, 11, 14, 14, 16, 30, 5, 16].map((w) => ({ wch: w }));
+  ws["!merges"] = [{ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "visarun");
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}

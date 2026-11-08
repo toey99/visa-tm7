@@ -30,7 +30,7 @@ import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
-  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
+  billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildRunDaySheet, buildTm30Excel, downloadBlob, downscaleImage, loadScript, mergePdfs, plusDaysDdmmyyyy,
 } from "@/lib/today/clientTools";
 import {
   DEFAULT_CROP, buildPhotoSheetPdf, cropPassportPhoto, drawCrop, findHeadByBackground, loadImage, renderPhoto,
@@ -726,6 +726,30 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     finally { setWorking(false); }
   }
 
+  // ---------- visa-run day sheet for the checkpoint partner (Excel, rows tinted per car) ----------
+  async function runDaySheet() {
+    if (!active.length) { setError("ยังไม่มีคนในบอร์ด"); return; }
+    setError("");
+    try {
+      const rows = active.map((p) => {
+        const f = p.fields;
+        const car = carById(f.car);
+        const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
+        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", ov && ov.days > 0 ? `อยู่เกิน ${ov.days} วัน` : ""].filter(Boolean).join("+");
+        const e = expiryOf(p);
+        const cashAtDriver = f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0;
+        return {
+          name: [f.lastName, f.firstName].filter(Boolean).join(" "),
+          flight: f.flight || meta.flight || "", land: f.landTime || meta.landTime || "", returnBy: f.returnBy || meta.returnBy || "",
+          expiry: e.expiry ? fmtDdmmyyyy(e.expiry) : "",
+          carId: f.car || "", carLabel: car ? `${car.color} ${car.plate.replace(/\D/g, "")}` : "",
+          detail, bear: !!f.cambodia, cash: cashAtDriver,
+        };
+      });
+      downloadBlob(await buildRunDaySheet(rows, meta.date), `visarun_${meta.date.replace(/\//g, "")}_ส่งด่าน.xlsx`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
   // ---------- visa-run expiry report (sent back to the factory / agent in the evening) ----------
   const reportRef = useRef<HTMLDivElement>(null);
   const reportPeople = active.filter((p) => p.fields.report);
@@ -1033,6 +1057,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
           <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
+          {isRun && <button onClick={runDaySheet} disabled={working || !people.length} className={btnCls} title="Excel รายคนส่งให้ด่าน — แถบสีตามคันรถ, ต่อ 30 วัน/อยู่เกิน, 🐻, เงินสดที่คนขับเก็บ">📊 Excel ส่งด่าน</button>}
           <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
           <button onClick={dayZip} disabled={working || !people.length} className={btnCls}>⬇ โฟลเดอร์วันนี้ (zip)</button>
