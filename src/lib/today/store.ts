@@ -59,10 +59,21 @@ export function createDayStore(ns: DayNamespace) {
     return ((await r.json()) as { path: string }).path;
   }
 
+  // MIME from the file extension — the store may hand a file back as
+  // application/octet-stream, and an <img> shows that fine on screen, but the
+  // PNG exporter (html-to-image) turns images into data: URLs and the browser
+  // refuses to draw a data:application/octet-stream image → blank photos in
+  // exported sheets. Always give downloaded blobs a real type.
+  function mimeOf(path: string, fallback: string): string {
+    const ext = (path.split(".").pop() ?? "").toLowerCase();
+    return ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : fallback;
+  }
   async function downloadBlob(path: string): Promise<Blob | null> {
     const r = await fetch(`/api/day/file?path=${encodeURIComponent(path)}`);
     if (!r.ok) return null;
-    return r.blob();
+    const raw = await r.blob();
+    const type = raw.type && raw.type !== "application/octet-stream" ? raw.type : mimeOf(path, "image/jpeg");
+    return raw.type === type ? raw : new Blob([raw], { type });
   }
 
   // Paths already uploaded, keyed by object identity (a Blob is re-uploaded only if it's a new object).

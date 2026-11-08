@@ -27,6 +27,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// prefer a real type from the extension over a generic octet-stream from the store
+function contentTypeFor(path: string, upstream: string | null): string {
+  if (upstream && upstream !== "application/octet-stream") return upstream;
+  const ext = (path.split(".").pop() ?? "").toLowerCase();
+  return ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : "application/octet-stream";
+}
+
 export async function GET(req: NextRequest) {
   const path = safePath(req.nextUrl.searchParams.get("path") ?? "");
   if (!path) return NextResponse.json({ error: "bad path" }, { status: 400 });
@@ -35,7 +42,7 @@ export async function GET(req: NextRequest) {
     if (!r || !r.ok) return NextResponse.json({ error: "not found" }, { status: 404 });
     return new NextResponse(r.body, {
       status: 200,
-      headers: { "Content-Type": r.headers.get("content-type") ?? "application/octet-stream", "Cache-Control": "private, max-age=3600" },
+      headers: { "Content-Type": contentTypeFor(path, r.headers.get("content-type")), "Cache-Control": "private, max-age=3600" },
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "read failed" }, { status: 500 });
