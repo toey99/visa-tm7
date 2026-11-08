@@ -122,6 +122,16 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
   const metaRefDate = useRef("");
   useEffect(() => { if (loaded) metaRefDate.current = meta.date; }, [meta.date, loaded]);
+  const calendarRef = useRef<HTMLInputElement>(null);
+  function openCalendar() {
+    const el = calendarRef.current;
+    if (!el) return;
+    const withPicker = el as HTMLInputElement & { showPicker?: () => void };
+    try { withPicker.showPicker ? withPicker.showPicker() : el.click(); } catch { el.click(); }
+  }
+  // DD/MM/YYYY <-> YYYY-MM-DD for the native date picker
+  const toIso = (d: string) => (/^\d{2}\/\d{2}\/\d{4}$/.test(d) ? `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}` : "");
+  const fromIso = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}` : "");
   function shiftDay(delta: number) {
     const [dd, mm, yy] = metaRefDate.current.split("/").map(Number);
     const d = new Date(yy, mm - 1, dd);
@@ -848,6 +858,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
               <button type="button" className={btnCls + " px-2"} title="วันก่อนหน้า" onClick={() => shiftDay(-1)}>◀</button>
               <input value={meta.date} onChange={(e) => setMeta((m) => ({ ...m, date: formatDateMask(e.target.value) }))} onBlur={(e) => commitDate(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") commitDate((e.target as HTMLInputElement).value); }} className={inputCls + " w-32 text-center"} placeholder="DD/MM/YYYY" />
               <button type="button" className={btnCls + " px-2"} title="วันถัดไป" onClick={() => shiftDay(1)}>▶</button>
+              <button type="button" className={btnCls + " px-2"} title="เลือกจากปฏิทิน" onClick={openCalendar}>📅</button>
+              <input ref={calendarRef} type="date" value={toIso(meta.date)} onChange={(e) => { const v = fromIso(e.target.value); if (v) commitDate(v); }} className="sr-only" tabIndex={-1} aria-hidden />
             </div>
           </label>
           <label className="block">
