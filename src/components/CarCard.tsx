@@ -32,14 +32,24 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
   const slot = RUN_SLOTS.find((s) => s.id === (meta.slot || "morning")) ?? RUN_SLOTS[0];
   const dateTh = dd && mm ? `${dd} ${TH_MONTHS[Number(mm) - 1] ?? mm} ${slot.th}` : "";
   const dateZh = dd && mm ? `${Number(mm)}月${dd}号${slot.zh}` : "";
-  // header values: the day's default, unless every rider shares another one
-  const uniq = (pick: (p: Person) => string, fallback: string) => {
-    const v = Array.from(new Set(people.map((p) => pick(p) || fallback).filter(Boolean)));
-    return v.length === 1 ? v[0] : fallback;
-  };
-  const headFlight = uniq((p) => p.fields.flight, meta.flight);
-  const headLand = uniq((p) => p.fields.landTime, meta.landTime);
-  const headReturn = uniq((p) => p.fields.returnBy, meta.returnBy);
+  // header values: every distinct flight / landing / return among the riders
+  // (each rider falls back to the day's default), listed in rider order —
+  // e.g. "DD102, SL532" with "10:00, 09:30", so the boxes pair up by position
+  const combos: { flight: string; land: string; ret: string }[] = [];
+  for (const p of people) {
+    const c = { flight: p.fields.flight || meta.flight, land: p.fields.landTime || meta.landTime, ret: p.fields.returnBy || meta.returnBy };
+    if (!combos.some((x) => x.flight === c.flight && x.land === c.land && x.ret === c.ret)) combos.push(c);
+  }
+  if (combos.length === 0) combos.push({ flight: meta.flight, land: meta.landTime, ret: meta.returnBy });
+  const joinUniq = (vals: string[]) => Array.from(new Set(vals.filter(Boolean))).join(", ");
+  const headFlight = joinUniq(combos.map((c) => c.flight));
+  const headLand = joinUniq(combos.map((c) => c.land));
+  const headReturn = joinUniq(combos.map((c) => c.ret));
+  const multi = combos.length > 1;
+  // money the driver collects on the day: planned "collect" and not paid yet
+  const toCollect = (p: Person) => p.fields.pay === "collect" && (p.fields.paidHow ?? "pending") === "pending" ? Number(p.fields.amount) || 0 : 0;
+  const collectors = people.filter((p) => toCollect(p) > 0);
+  const collectSum = collectors.reduce((s, p) => s + toCollect(p), 0);
   const accent = car.accent;
   const cols = people.length <= 1 ? 1 : 2;
 
@@ -71,9 +81,12 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "20px 12px", justifyItems: "center" }}>
             {people.map((p, i) => {
               const f = p.fields;
-              const flight = f.flight && f.flight !== headFlight ? f.flight : "";
-              const land = f.landTime && f.landTime !== headLand ? f.landTime : "";
-              const ret = f.returnBy && f.returnBy !== headReturn ? f.returnBy : "";
+              // per-rider note: when the car mixes flights, every rider gets their own line;
+              // otherwise only a rider who differs from the shared header
+              const flight = f.flight && (multi || f.flight !== headFlight) ? f.flight : "";
+              const land = f.landTime && (multi || f.landTime !== headLand) ? f.landTime : "";
+              const ret = f.returnBy && (multi || f.returnBy !== headReturn) ? f.returnBy : "";
+              const money = driver ? toCollect(p) : 0;
               return (
                 <div key={p.id} style={{ textAlign: "center", width: driver ? 262 : 240 }}>
                   <div style={{ position: "relative", display: "inline-block" }}>
@@ -94,6 +107,11 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
                       {flight && `✈ ${flight} `}{land && `ลง ${land} `}{ret && `· กลับก่อน ${ret}`}
                     </div>
                   )}
+                  {money > 0 && (
+                    <div style={{ marginTop: 4, display: "inline-block", background: "#ffeb3b", color: "#111", borderRadius: 8, padding: "3px 12px", fontSize: 18, fontWeight: 800, whiteSpace: "nowrap", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }}>
+                      💰 เก็บ {money.toLocaleString()} บาท
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -105,10 +123,10 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
           {(headFlight || headLand) && (
             <div style={{ ...PANEL, padding: "14px 16px", textAlign: "center" }}>
               <div style={{ fontSize: 11, letterSpacing: 2, color: "#666" }}>✈ FLIGHT · 航班</div>
-              {headFlight && <div style={{ fontSize: 40, fontWeight: 800, color: "#111", letterSpacing: 1, lineHeight: 1.1 }}>{headFlight}</div>}
+              {headFlight && <div style={{ fontSize: headFlight.length > 7 ? 30 : 40, fontWeight: 800, color: "#111", letterSpacing: 1, lineHeight: 1.1 }}>{headFlight}</div>}
               {headLand && (
                 <>
-                  <div style={{ marginTop: 6, display: "inline-block", background: "#ffeb3b", borderRadius: 12, padding: "6px 18px", fontSize: 24, fontWeight: 700, color: "#111", whiteSpace: "nowrap" }}>🛬 เครื่องลง {headLand} น</div>
+                  <div style={{ marginTop: 6, display: "inline-block", background: "#ffeb3b", borderRadius: 12, padding: "6px 18px", fontSize: headLand.length > 5 ? 20 : 24, fontWeight: 700, color: "#111", whiteSpace: "nowrap" }}>🛬 เครื่องลง {headLand} น</div>
                   <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>落地 {headLand}</div>
                 </>
               )}
@@ -116,7 +134,7 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
           )}
           {headReturn && (
             <div style={{ background: "#ffb3b8", borderRadius: 16, padding: "12px 14px", textAlign: "center", boxShadow: "0 2px 10px rgba(0,0,0,.08)" }}>
-              <div style={{ fontSize: 23, fontWeight: 800, color: "#1a1aa6", whiteSpace: "nowrap", lineHeight: 1.2 }}>⏰ กลับถึงสนามบินก่อน {headReturn} น</div>
+              <div style={{ fontSize: headReturn.length > 5 ? 19 : 23, fontWeight: 800, color: "#1a1aa6", whiteSpace: "nowrap", lineHeight: 1.2 }}>⏰ กลับถึงสนามบินก่อน {headReturn} น</div>
               <div style={{ fontSize: 15, color: "#1a1aa6", marginTop: 2 }}>{headReturn} 前回到机场</div>
             </div>
           )}
@@ -167,6 +185,7 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
       {driver && (
         <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative", display: "flex", gap: 14, alignItems: "center" }}>
           <span>👥 {people.length} คน</span>
+          {collectSum > 0 && <span style={{ background: "#ffeb3b", color: "#111", borderRadius: 10, padding: "4px 12px", fontWeight: 800, fontSize: 15 }}>💰 เก็บเงินรวม {collectSum.toLocaleString()} บาท · {collectors.length} คน</span>}
           {/* 🐻 / 🐰 badges on the photos are understood by everyone — no legend text on the driver card */}
           {people.some((p) => p.fields.cambodia) && <span>🐻 {people.filter((p) => p.fields.cambodia).length}</span>}
           {people.some((p) => p.fields.run === "RUN30") && <span>🐰 {people.filter((p) => p.fields.run === "RUN30").length}</span>}
