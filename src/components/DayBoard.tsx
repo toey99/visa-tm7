@@ -25,6 +25,7 @@ import {
 import { daysStore, runStore } from "@/lib/today/store";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
+import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
@@ -1376,7 +1377,7 @@ function PersonCard({
         <F label="จังหวัด"><input value={f.province} onChange={(e) => set("province", e.target.value.toUpperCase())} className={inputCls} /></F>
         <F label="รหัสไปรษณีย์"><input value={f.postalCode} onChange={(e) => set("postalCode", e.target.value)} className={inputCls} /></F>
 
-        <F label="เอเจนซี่ / ผู้ส่ง"><input value={f.agent} onChange={(e) => set("agent", e.target.value)} className={inputCls} list="today-agents" /></F>
+        <F label="เอเจนซี่ / ผู้ส่ง"><AgentPicker value={f.agent} onChange={(v) => set("agent", v)} others={people.map((x) => x.fields.agent)} /></F>
         <F label="เอเจนซี่ย่อย (โน้ตของเอเจนซี่หลัก)"><input value={f.subAgent ?? ""} onChange={(e) => set("subAgent", e.target.value)} className={inputCls} placeholder="ที่เขาโน้ตมา เช่น 小王" /></F>
         <F label="การเงิน">
           <select value={f.pay} onChange={(e) => set("pay", e.target.value as PersonFields["pay"])} className={inputCls}>
@@ -1685,6 +1686,28 @@ const inputHiCls = "w-full rounded-md border border-yellow-400 bg-yellow-50 px-2
 const btnCls = "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 const btnPrimaryCls = "rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300";
 const btnDangerCls = "rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50";
+
+// Dropdown of the main agents (most frequent first) + ลูกค้าตรง + any other
+// name already used today; "อื่น ๆ" opens a text box for a new agent.
+function AgentPicker({ value, onChange, others }: { value: string; onChange: (v: string) => void; others: string[] }) {
+  const known = [...MAIN_AGENTS, DIRECT_CUSTOMER];
+  const extra = Array.from(new Set(others.filter((a) => a && !known.includes(a))));
+  const isKnown = !value || known.includes(value) || extra.includes(value);
+  const [custom, setCustom] = useState(!isKnown);
+  const showText = custom || !isKnown;
+  return (
+    <div className="flex gap-1">
+      <select value={showText ? "__other" : value} onChange={(e) => { const v = e.target.value; if (v === "__other") { setCustom(true); onChange(""); } else { setCustom(false); onChange(v); } }} className={inputCls + (showText ? " w-24 shrink-0" : "")}>
+        <option value="">— เลือก —</option>
+        {MAIN_AGENTS.map((a) => <option key={a} value={a}>{a}</option>)}
+        <option value={DIRECT_CUSTOMER}>👤 {DIRECT_CUSTOMER}</option>
+        {extra.length > 0 && <optgroup label="วันนี้">{extra.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>}
+        <option value="__other">✏️ อื่น ๆ (พิมพ์)</option>
+      </select>
+      {showText && <input autoFocus={custom && !value} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} placeholder="ชื่อเอเจนซี่ใหม่" />}
+    </div>
+  );
+}
 
 function F({ label, children, hi, wide }: { label: string; children: React.ReactNode; hi?: boolean; wide?: boolean }) {
   return (
