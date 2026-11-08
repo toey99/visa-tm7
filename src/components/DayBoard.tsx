@@ -224,7 +224,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       q.set("type", /VOA|ON ARRIVAL/.test(v) ? "15" : /\bTR\b|TOURIST/.test(v) ? "60t" : /NON/.test(v) ? "90" : /30/.test(v) ? "30" : "60");
     }
     if (meta.extensionDays) q.set("ext", meta.extensionDays);
-    q.set("name", [f.firstName, f.lastName].filter(Boolean).join(" "));
+    q.set("name", [f.lastName, f.firstName].filter(Boolean).join(" "));
     if (f.chineseName) q.set("zh", f.chineseName);
     q.set("check", meta.date);
     window.open(`/tools/overstay.html?${q.toString()}`, "_blank");
@@ -1634,7 +1634,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", letterSpacing: 0.3 }}>{[f.firstName, f.lastName].filter(Boolean).join(" ") || "\u00a0"}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", letterSpacing: 0.3 }}>{[f.lastName, f.firstName].filter(Boolean).join(" ") || "\u00a0"}</div>
                 <div style={{ fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || "\u00a0"}</div>
                 {f.subAgent && <div style={{ fontSize: 10, color: "#4338ca", fontWeight: 700, marginTop: 2 }}>↳ {f.subAgent}</div>}
                 <div style={{ marginTop: 5 }}>
