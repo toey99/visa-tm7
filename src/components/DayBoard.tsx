@@ -736,6 +736,10 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     finally { setWorking(false); }
   }
 
+  // 🐢 on the driver card: days each rider is over the admitted-until date (0 = none)
+  const overstayByPerson: Record<string, number> = {};
+  if (isRun) for (const p of active) { const f = p.fields; const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false); if (ov && ov.days > 0) overstayByPerson[p.id] = ov.days; }
+
   // ---------- visa-run day sheet for the checkpoint partner (Excel, rows tinted per car) ----------
   const runSheetRef = useRef<HTMLDivElement>(null);
   const [runSheetRows, setRunSheetRows] = useState<RunSheetRow[] | null>(null);
@@ -747,7 +751,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         const f = p.fields;
         const car = carById(f.car);
         const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
-        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", ov && ov.days > 0 ? `อยู่เกิน ${ov.days} วัน` : ""].filter(Boolean).join("+");
+        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", ov && ov.days > 0 ? `🐢 อยู่เกิน ${ov.days} วัน` : ""].filter(Boolean).join(" + ");
         const e = expiryOf(p);
         const cashAtDriver = f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0;
         return {
@@ -1382,7 +1386,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                     <CarCard ref={(el) => { carRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="customer" />
                   </div>
                   <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "driver" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
-                    <CarCard ref={(el) => { driverRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="driver" />
+                    <CarCard ref={(el) => { driverRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="driver" overstayDays={overstayByPerson} />
                   </div>
                 </div>
               );
