@@ -76,7 +76,6 @@ const CollectCard = forwardRef<HTMLDivElement, { person: Person; meta: DayMeta; 
             {f.passportNo && <span style={{ fontFamily: "'Courier New', ui-monospace, monospace", background: "#f1f5f9", color: "#0f172a", borderRadius: 8, padding: "4px 10px", fontSize: 16, fontWeight: 700, letterSpacing: 1 }}>🛂 {f.passportNo}</span>}
             {f.nationality && <span style={{ background: "#f1f5f9", color: "#334155", borderRadius: 8, padding: "4px 10px", fontSize: 14, fontWeight: 700 }}>{f.nationality}</span>}
           </div>
-          {f.agent && <div style={{ marginTop: 10, fontSize: 14, color: "#4338ca", fontWeight: 700 }}>🏢 {f.agent}{f.subAgent ? ` ↳ ${f.subAgent}` : ""}</div>}
         </div>
       </div>
 
