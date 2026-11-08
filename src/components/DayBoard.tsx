@@ -502,13 +502,22 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   for (let i = 0; i < active.length; i += BATCH) allBatches.push({ k: allBatches.length, from: i + 1, to: Math.min(i + BATCH, active.length), people: active.slice(i, i + BATCH) });
   // which batch the output buttons work on: a specific one, or everything
   const [batchSel, setBatchSel] = useState<number | "all">("all");
-  const selBatches = batchSel === "all" ? allBatches : allBatches.filter((b) => b.k === batchSel);
+  // hand-picked people (☐ เลือก on the cards): while any are ticked, the
+  // output buttons work on exactly those — e.g. the 5 late arrivals that
+  // still need their TM7 after the rest of the day was already printed
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const pickedPeople = active.filter((p) => picked.has(p.id));
+  const picking = pickedPeople.length > 0;
+  const togglePick = (id: string) => setPicked((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const selBatches: Batch[] = picking
+    ? [{ k: -1, from: 0, to: 0, people: pickedPeople }]
+    : batchSel === "all" ? allBatches : allBatches.filter((b) => b.k === batchSel);
   // apply a button's own readiness filter inside the chosen batch(es)
   function groupsFor(filter: (p: Person) => boolean): Batch[] {
     return selBatches.map((b) => ({ ...b, people: b.people.filter(filter) })).filter((b) => b.people.length);
   }
-  // file-name tag: "" when the day fits in one batch
-  const tagOf = (b: Batch) => (allBatches.length <= 1 ? "" : `_ชุด${b.k + 1}(${String(b.from).padStart(2, "0")}-${String(b.to).padStart(2, "0")})`);
+  // file-name tag: "" when the day fits in one batch; "_เลือกNคน" for a hand-picked set
+  const tagOf = (b: Batch) => (b.k < 0 ? `_เลือก${b.people.length}คน` : allBatches.length <= 1 ? "" : `_ชุด${b.k + 1}(${String(b.from).padStart(2, "0")}-${String(b.to).padStart(2, "0")})`);
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function tm7All() {
@@ -1043,7 +1052,20 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {isRun && active.length > 0 && <span className="ml-2 rounded bg-indigo-50 px-2 py-0.5 text-indigo-900">🚗 {carsInUse.length} คัน{unassigned.length ? ` · ยังไม่ลงรถ ${unassigned.length}` : ""} · ไปต่อ 30 วัน {active.filter((p) => p.fields.run === "RUN30").length}</span>}
           {status && <span className="ml-3 text-slate-500">{status}</span>}
         </div>
-        {allBatches.length > 1 && (
+        {picking && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm">
+            <span className="font-semibold text-emerald-900">☑ ทำเอกสารเฉพาะที่เลือก {pickedPeople.length} คน</span>
+            <span className="text-xs text-emerald-800">ปุ่ม TM7 ทุกคน · Excel TM30 · แผ่น A4 รูป · zip จะออกเฉพาะคนที่ติ๊ก — ไฟล์เดียว</span>
+            <button type="button" onClick={() => setPicked(new Set())} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-300">ยกเลิกการเลือก</button>
+          </div>
+        )}
+        {!picking && active.some((p) => !p.tm7Pdf && needsTm7(p)) && active.some((p) => p.tm7Pdf) && (
+          <div className="mb-2 text-xs text-slate-600">
+            💡 มีคนที่ยังไม่มี TM7 อยู่ {active.filter((p) => !p.tm7Pdf && needsTm7(p)).length} คน —{" "}
+            <button type="button" onClick={() => setPicked(new Set(active.filter((p) => !p.tm7Pdf && needsTm7(p)).map((p) => p.id)))} className="font-semibold text-indigo-700 underline">เลือกเฉพาะคนที่ยังไม่มี TM7</button>
+          </div>
+        )}
+        {allBatches.length > 1 && !picking && (
           <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
             <span className="font-semibold text-amber-900">📦 ทำเอกสารชุด:</span>
             {allBatches.map((b) => (
@@ -1216,6 +1238,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
             onMoveDay={() => moveDay(p)}
             onMoveOffice={(o) => moveOffice(p, o)}
             onToggleArrived={() => toggleArrived(p)}
+            picked={picked.has(p.id)}
+            onTogglePick={() => togglePick(p.id)}
             onOverstayCalc={() => openOverstayCalc(p)}
             onToggleCancelled={() => toggleCancelled(p)}
             clothes={clothesList()}
@@ -1304,7 +1328,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onMoveOffice, onToggleArrived, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy, mode, needsTm7,
+  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onMoveOffice, onToggleArrived, picked, onTogglePick, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy, mode, needsTm7,
 }: {
   person: Person;
   people: Person[];
@@ -1320,6 +1344,8 @@ function PersonCard({
   onMoveDay: () => void;
   onMoveOffice: (office: OfficeId) => void;
   onToggleArrived: () => void;
+  picked: boolean;
+  onTogglePick: () => void;
   onOverstayCalc: () => void;
   onToggleCancelled: () => void;
   clothes: string[];
@@ -1376,6 +1402,7 @@ function PersonCard({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={onTogglePick} className={picked ? "rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls} title="เลือกคนนี้เพื่อทำเอกสารเฉพาะกลุ่มที่เลือก (TM7 / TM30 / A4 / zip)">{picked ? "☑ เลือกแล้ว" : "☐ เลือก"}</button>
           <button onClick={onToggleArrived} className={p.arrived ? "rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls} title="ลูกค้ามาถึงหน้างานแล้ว (ขึ้นเครื่องหมายถูกเขียวใน summary)">{p.arrived ? "✅ มาแล้ว" : "☐ มาแล้ว?"}</button>
           {needsTm7 && <button onClick={onTm7} disabled={busy} className={btnCls}>TM7 PDF</button>}
           <button onClick={onPhoto} disabled={busy} className={btnCls}>{p.aiPhoto ? "ทำรูปใหม่" : "✦ ทำรูปพื้นขาว"}</button>
