@@ -742,7 +742,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
   const reportRows: ReportRow[] = reportPeople.map((p) => {
     const e = expiryOf(p);
-    return { id: p.id, name: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "), cn: p.fields.chineseName, passportNo: p.fields.passportNo, entry: e.entry, expiry: e.expiry, tag: e.tag, person: p };
+    return { id: p.id, name: [p.fields.lastName, p.fields.firstName].filter(Boolean).join(" "), cn: p.fields.chineseName, passportNo: p.fields.passportNo, entry: e.entry, expiry: e.expiry, tag: e.tag, person: p };
   });
   const reportDay = parseDdmmyyyy(meta.date);
   const reportHeader = {
@@ -756,7 +756,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const [ledgerState, setLedgerState] = useState("");
   async function saveToLedger(list: Person[]) {
     const records = list.map((p) => { const e = expiryOf(p); return {
-      passportNo: p.fields.passportNo, name: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "), cn: p.fields.chineseName, agent: p.fields.agent, phone: p.fields.phone,
+      passportNo: p.fields.passportNo, name: [p.fields.lastName, p.fields.firstName].filter(Boolean).join(" "), cn: p.fields.chineseName, agent: p.fields.agent, phone: p.fields.phone,
       kind: e.kind, office: meta.office, jobDate: meta.date, entry: e.entry ? fmtDdmmyyyy(e.entry) : "", expiry: e.expiry ? fmtDdmmyyyy(e.expiry) : "",
     }; }).filter((r) => r.passportNo && r.expiry);
     if (!records.length) { setLedgerState("ไม่มีคนที่มีเลขพาสปอร์ต + วันหมดอายุ"); return; }
@@ -827,7 +827,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     // register the bill so it can be re-issued later (kept 1 year on the server)
     void fetch("/api/bills", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
       date: meta.date, office: meta.office, amount,
-      customers: list.map((p) => ({ en: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "), cn: p.fields.chineseName, pp: p.fields.passportNo })),
+      customers: list.map((p) => ({ en: [p.fields.lastName, p.fields.firstName].filter(Boolean).join(" "), cn: p.fields.chineseName, pp: p.fields.passportNo })),
     }) }).catch(() => {});
   }
 
@@ -1063,7 +1063,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                       {list.map((p) => (
                         <tr key={p.id} className="border-t border-slate-100">
                           <td className="py-1 w-8 text-slate-400">{String(p.order).padStart(2, "0")}</td>
-                          <td>{[p.fields.firstName, p.fields.lastName].filter(Boolean).join(" ")} {p.fields.chineseName}</td>
+                          <td>{[p.fields.lastName, p.fields.firstName].filter(Boolean).join(" ")} {p.fields.chineseName}</td>
                           <td className="text-slate-500">{({ pending: "⏳", cash: "💵 เงินสด", transfer: "📲 โอน", agent: "🏢 เอเจนซี่", none: "" } as Record<string, string>)[p.fields.paidHow ?? "none"]}</td>
                           <td className="text-right">{num(p.fields.agentPrice).toLocaleString()}</td>
                           <td className="text-right text-slate-500">−{num(p.fields.cost).toLocaleString()}</td>

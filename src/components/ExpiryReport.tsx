@@ -39,6 +39,10 @@ const FONT = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Ap
 export const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 export const zhDate = (d: Date) => `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 export const thDate = (d: Date) => `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+// the way the immigration stamp prints it: "7 DEC 2026" — shown next to the
+// date so a customer can match the report to the blue stamp in the passport
+const EN_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+export const stampDate = (d: Date) => `${d.getDate()} ${EN_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 
 const ExpiryReport = forwardRef<HTMLDivElement, { rows: ReportRow[]; header: ReportHeader; today: Date }>(function ExpiryReport({ rows, header, today }, ref) {
   // blue / navy / slate theme; the reminder variant goes deep navy
@@ -46,7 +50,7 @@ const ExpiryReport = forwardRef<HTMLDivElement, { rows: ReportRow[]; header: Rep
   const accent2 = header.urgent ? "#3b82f6" : "#60a5fa";
   const bg = "linear-gradient(135deg,#dbeafe 0%,#f1f5f9 45%,#e2e8f0 100%)";
   const withPhotos = rows.some((r) => r.person);
-  const cols = withPhotos ? "40px 64px 1fr 190px 300px" : "40px 1fr 200px 320px";
+  const cols = withPhotos ? "40px 64px 1fr 170px 420px" : "40px 1fr 180px 440px";
   return (
     <div ref={ref} style={{ width: 1000, padding: 22, background: bg, fontFamily: FONT, position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
       <div style={{ position: "absolute", right: -90, top: -90, width: 300, height: 300, borderRadius: "50%", background: accent, opacity: 0.08 }} />
@@ -96,7 +100,11 @@ const ExpiryReport = forwardRef<HTMLDivElement, { rows: ReportRow[]; header: Rep
                       <div style={{ display: "inline-block", borderRadius: 10, padding: "4px 12px", fontSize: 21, fontWeight: 800, letterSpacing: 0.5, boxShadow: "0 1px 3px rgba(0,0,0,.15)", ...leftStyle }}>{fmtDdmmyyyy(r.expiry)}</div>
                       <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{zhDate(r.expiry)}</div>
                     </div>
-                    {leftText && <span style={{ fontSize: 12, fontWeight: 700, color: left !== null && left <= 7 ? "#b91c1c" : "#1e3a8a", background: left !== null && left <= 7 ? "#fee2e2" : "#eff6ff", borderRadius: 8, padding: "3px 8px", whiteSpace: "nowrap" }}>{leftText}</span>}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                      {/* stamp look-alike: what the customer will see printed in the passport */}
+                      <span style={{ fontFamily: "'Courier New', ui-monospace, monospace", fontSize: 15, fontWeight: 700, color: "#1d4ed8", border: "2px dashed #3b82f6", borderRadius: 6, padding: "2px 8px", background: "#eff6ff", letterSpacing: 1, whiteSpace: "nowrap" }}>🛂 {stampDate(r.expiry)}</span>
+                      {leftText && <span style={{ fontSize: 12, fontWeight: 700, color: left !== null && left <= 7 ? "#b91c1c" : "#1e3a8a", background: left !== null && left <= 7 ? "#fee2e2" : "#eff6ff", borderRadius: 8, padding: "3px 8px", whiteSpace: "nowrap" }}>{leftText}</span>}
+                    </div>
                   </>
                 ) : "—"}
               </div>
@@ -109,6 +117,13 @@ const ExpiryReport = forwardRef<HTMLDivElement, { rows: ReportRow[]; header: Rep
       <div style={{ marginTop: 12, padding: "10px 14px", position: "relative", background: "rgba(255,255,255,.7)", borderRadius: 12, borderLeft: `4px solid ${accent}`, fontSize: 12, color: "#1e293b", lineHeight: 1.45 }}>
         <div>⚠️ กรุณาออกนอกประเทศหรือต่อวีซ่า<b>ก่อน</b>วันหมดอายุ — อยู่เกินปรับวันละ 500 บาท และมีผลต่อการเข้าประเทศครั้งต่อไป</div>
         <div style={{ color: "#1e3a8a" }}>⚠️ 请在到期日<b>之前</b>出境或办理延期 — 逾期每天罚款 500 泰铢，并影响下次入境</div>
+        {rows.some((r) => r.expiry) && (
+          <div style={{ marginTop: 4, color: "#1d4ed8", fontWeight: 700 }}>
+            🛂 กรอบเส้นประ = วันที่ตามตราปั๊มในพาสปอร์ต (วัน เดือนอังกฤษ ปี ค.ศ.) · 虚线框 = 护照上蓝色印章的日期写法（日 英文月份 年）
+            {" · "}
+            {Array.from(new Set(rows.filter((r) => r.expiry).map((r) => (r.expiry as Date).getMonth()))).sort((a, b) => a - b).map((m) => `${EN_MONTHS[m]} = ${m + 1}月`).join(" · ")}
+          </div>
+        )}
         {header.note && <div style={{ color: "#64748b", marginTop: 2 }}>{header.note}</div>}
       </div>
     </div>

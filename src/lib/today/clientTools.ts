@@ -246,7 +246,7 @@ export function billUrl(people: Person[], amount: number, opts: { docType?: "cas
     service: opts.service ?? "service_2",
     amount: amount || "",
     customers: people.slice(0, 5).map((p) => ({
-      en: [p.fields.firstName, p.fields.lastName].filter(Boolean).join(" "),
+      en: [p.fields.lastName, p.fields.firstName].filter(Boolean).join(" "),
       cn: p.fields.chineseName,
       pp: p.fields.passportNo,
     })),
@@ -266,7 +266,7 @@ export async function buildAgentExcel(people: Person[], date: string, officeLabe
   for (const p of sorted) {
     const f = p.fields;
     const received = f.paidHow === "cash" || f.paidHow === "transfer" ? n(f.paidAmount || f.amount) : 0;
-    rows.push([date, officeLabel, f.agent || "(ไม่ระบุ)", p.order, [f.firstName, f.lastName].filter(Boolean).join(" "), f.chineseName, f.passportNo,
+    rows.push([date, officeLabel, f.agent || "(ไม่ระบุ)", p.order, [f.lastName, f.firstName].filter(Boolean).join(" "), f.chineseName, f.passportNo,
       f.pay === "collect" ? n(f.amount) : 0, HOW[f.paidHow ?? "none"] ?? "-", received, n(f.agentPrice), Math.max(0, n(f.agentPrice) - received), n(f.cost), n(f.agentPrice) - n(f.cost), f.costNote, f.note]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows as (string | null)[][]);
