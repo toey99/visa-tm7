@@ -762,6 +762,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           expiry: e.expiry ? fmtDdmmyyyy(e.expiry) : "",
           carId: f.car || "", carLabel: car ? `${car.color} ${car.plate.replace(/\D/g, "")}` : "",
           detail, bear: !!f.cambodia, cash: cashAtDriver,
+          fine: f.overstay ? 2000 + 500 * osDays : 0,
         };
       });
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
