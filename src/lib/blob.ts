@@ -36,6 +36,7 @@ export async function blobPut(pathname: string, body: Blob | ArrayBuffer | strin
   });
   if (!r.ok) throw new Error(`Blob upload failed (${r.status}): ${(await r.text()).slice(0, 200)}`);
   const j = (await r.json()) as { url: string; pathname: string; size?: number; uploadedAt?: string };
+  learnBase(j.url, j.pathname);
   return { url: j.url, pathname: j.pathname, size: j.size ?? 0, uploadedAt: j.uploadedAt ?? new Date().toISOString() };
 }
 
@@ -67,28 +68,41 @@ export async function blobDelete(urls: string[]): Promise<void> {
   }
 }
 
-/** Fetch a blob's bytes by pathname (looked up via list, so no URL is stored client-side). */
-export async function blobGetByPath(pathname: string): Promise<Response | null> {
-  // Exact match first; otherwise the newest blob under that prefix (covers a
-  // store that appended a random suffix despite x-add-random-suffix: 0).
-  const all = await blobList(pathname);
-  const found = all.find((b) => b.pathname === pathname) ?? all.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0];
-  if (!found) return null;
-  return blobFetchUrl(found.url);
+// ---- reads ---------------------------------------------------------------
+// Every list() call is an "Advanced Operation" (2,000/month on Hobby — the
+// store gets suspended when that runs out). So reads must NOT go through
+// list(): we build the blob URL ourselves from the store's base URL, which we
+// learn from the first put() (or BLOB_BASE_URL) and remember per instance.
+let baseUrl: string | null = process.env.BLOB_BASE_URL ?? null;
+function learnBase(url: string, pathname: string) {
+  if (!baseUrl && url.endsWith(pathname)) baseUrl = url.slice(0, url.length - pathname.length);
 }
 
-/** Fetch a blob by its store URL. Works for Private stores (token sent) and Public ones alike. */
-export function blobFetchUrl(url: string): Promise<Response> {
-  // Overwritten blobs (index.json is rewritten on every save) can be served
-  // stale from the CDN for up to 60 s. `cache=0` is Vercel Blob's consistent
-  // read for private stores — it always reflects the latest write.
+/** Fetch a blob's bytes by pathname. consistent=true bypasses the CDN (for files that get overwritten, e.g. index.json). */
+export async function blobGetByPath(pathname: string, consistent = false): Promise<Response | null> {
+  if (baseUrl) {
+    const r = await blobFetchUrl(`${baseUrl}${pathname.split("/").map(encodeURIComponent).join("/")}`, consistent);
+    if (r.ok) return r;
+    if (r.status !== 404) return r;
+    return null;
+  }
+  // base URL not known yet (fresh instance, nothing uploaded): one list() to learn it
+  const all = await blobList(pathname);
+  const found = all.find((b) => b.pathname === pathname);
+  if (!found) return null;
+  learnBase(found.url, found.pathname);
+  return blobFetchUrl(found.url, consistent);
+}
+
+/** Fetch a blob by its store URL. consistent=true adds Vercel Blob's `cache=0` (latest write, bypasses CDN). */
+export function blobFetchUrl(url: string, consistent = false): Promise<Response> {
   const u = new URL(url);
-  u.searchParams.set("cache", "0");
+  if (consistent) u.searchParams.set("cache", "0");
   return fetch(u, { headers: { authorization: `Bearer ${token()}` }, cache: "no-store" });
 }
 
 export async function blobGetJson<T>(pathname: string): Promise<T | null> {
-  const r = await blobGetByPath(pathname);
+  const r = await blobGetByPath(pathname, true); // JSON indexes are overwritten → always read the latest
   if (!r || !r.ok) return null;
   return (await r.json()) as T;
 }
