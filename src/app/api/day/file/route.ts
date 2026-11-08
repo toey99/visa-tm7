@@ -7,8 +7,10 @@ import { blobDelete, blobGetByPath, blobList, blobPut } from "@/lib/blob";
 export const runtime = "nodejs";
 const MAX = 15 * 1024 * 1024;
 
+// <ns>/<DDMMYYYY>/[<OfficeId>/]<person>/<file> — the office segment was added
+// when boards were split per office; legacy files have no office segment.
 function safePath(p: string): string | null {
-  return /^(?:days|run)\/\d{8}\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p) ? p : null;
+  return /^(?:days|run)\/\d{8}\/(?:[A-Z][A-Z0-9_]+\/)?[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p) ? p : null;
 }
 
 export async function POST(req: NextRequest) {
