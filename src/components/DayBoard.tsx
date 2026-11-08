@@ -25,6 +25,7 @@ import {
 import { daysStore, runStore } from "@/lib/today/store";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
+import CollectCard from "@/components/CollectCard";
 import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
@@ -757,14 +758,30 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   // ---------- collect-amount image + bill ----------
+  // The card is a React component rendered off-screen: set the target, let it
+  // paint, capture with html-to-image. Falls back to the old passport-page
+  // image if the card could not be captured.
+  const collectRef = useRef<HTMLDivElement>(null);
+  const [collectTarget, setCollectTarget] = useState<Person | null>(null);
   async function collectOne(p: Person, download = true): Promise<Blob | null> {
     const passport = p.files.find((x) => x.kind === "passport");
     const amount = Number(p.fields.amount) || 0;
-    if (!passport) { setError(`${personFolderName(p)}: ไม่มีรูปพาสปอร์ต`); return null; }
     if (!amount) { setError(`${personFolderName(p)}: ยังไม่ใส่ยอดเงิน`); return null; }
-    const blob = await buildCollectImage(passport.blob, amount, p.fields.agent ? p.fields.agent : "");
-    patchPerson(p.id, (x) => ({ ...x, collectImage: blob }));
-    if (download) downloadBlob(blob, `เก็บ-${amount}-${personFolderName(p)}.jpg`);
+    let blob: Blob | null = null;
+    try {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js");
+      const hti = (window as unknown as { htmlToImage: { toBlob: (el: HTMLElement, o: Record<string, unknown>) => Promise<Blob | null> } }).htmlToImage;
+      setCollectTarget(p);
+      await new Promise((r) => setTimeout(r, 450));
+      if (collectRef.current) blob = await hti.toBlob(collectRef.current, { pixelRatio: 2, cacheBust: false, backgroundColor: "#ffffff" });
+    } catch { blob = null; }
+    finally { setCollectTarget(null); }
+    if (!blob) {
+      if (!passport) { setError(`${personFolderName(p)}: ไม่มีรูปพาสปอร์ต`); return null; }
+      blob = await buildCollectImage(passport.blob, amount, p.fields.agent ? p.fields.agent : "");
+    }
+    patchPerson(p.id, (x) => ({ ...x, collectImage: blob as Blob }));
+    if (download) downloadBlob(blob, `เก็บ-${amount}-${personFolderName(p)}.png`);
     return blob;
   }
   async function collectAll() {
@@ -1072,6 +1089,13 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       )}
 
       {error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      {/* off-screen "amount to collect" card, mounted only while being captured */}
+      {collectTarget && (
+        <div style={{ position: "absolute", left: -20000, top: 0 }}>
+          <CollectCard ref={collectRef} person={collectTarget} meta={meta} />
+        </div>
+      )}
 
       <div className="mt-6 space-y-4">
         {loaded && people.length === 0 && (
