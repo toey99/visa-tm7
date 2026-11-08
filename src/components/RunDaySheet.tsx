@@ -21,6 +21,7 @@ const CAR_TINT: Record<string, { bg: string; edge: string }> = {
   "3": { bg: "#e6f4e6", edge: "#6cc070" },   // Vios 1858 — green
   "4": { bg: "#fde4ec", edge: "#f28bb0" },   // Camry 7397 — pink
   "5": { bg: "#ffe8cc", edge: "#f0a040" },   // taxi 236 — orange
+  "6": { bg: "#d9f4f9", edge: "#38bdf8" },   // BYD 2896 — sky
 };
 
 const RunDaySheet = forwardRef<HTMLDivElement, { rows: RunSheetRow[]; date: string }>(function RunDaySheet({ rows, date }, ref) {

@@ -6,7 +6,7 @@
 // for at the airport. Photos live in public/cars/.
 
 export type Car = {
-  id: string;        // stored on the person ("1".."5")
+  id: string;        // stored on the person ("1".."6")
   name: string;      // make/model shown on the card
   plate: string;     // licence plate as printed
   province: string;  // plate province
@@ -23,6 +23,7 @@ export const CARS: Car[] = [
   { id: "3", name: "Toyota Vios", plate: "กล 1858", province: "เชียงราย", color: "สีเงิน", colorZh: "银色", image: "/cars/vios.jpg", seats: 4, accent: "#7c3aed" },
   { id: "4", name: "Toyota Camry", plate: "ขท 7397", province: "เชียงราย", color: "สีดำ", colorZh: "黑色", image: "/cars/camry.jpg", seats: 4, accent: "#dc2626" },
   { id: "5", name: "Toyota Altis แท็กซี่", plate: "ทข 236", province: "เชียงราย", color: "สีเหลือง-แดง", colorZh: "黄红色(出租车)", image: "/cars/taxi236.jpg", seats: 4, accent: "#d97706" },
+  { id: "6", name: "BYD Atto 3", plate: "ก 2896", province: "เชียงราย", color: "สีขาว", colorZh: "白色", image: "/cars/byd2896.jpg", seats: 4, accent: "#0891b2" },
 ];
 
 export function carById(id: string | undefined): Car | undefined {

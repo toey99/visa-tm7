@@ -301,7 +301,7 @@ export type RunSheetRow = {
   fine: number;   // overstay fine when 🐢 is ticked: 2,000 + 500 × days
 };
 type StyledCell = { v: string | number; t?: "s" | "n"; s?: Record<string, unknown> };
-const CAR_FILL: Record<string, string> = { "1": "FFF2CC", "2": "D9D2E9", "3": "E2EFDA", "4": "F8CBAD", "5": "FFE0B2" };
+const CAR_FILL: Record<string, string> = { "1": "FFF2CC", "2": "D9D2E9", "3": "E2EFDA", "4": "F8CBAD", "5": "FFE0B2", "6": "D9F4F9" };
 
 export async function buildRunDaySheet(rows: RunSheetRow[], date: string): Promise<Blob> {
   // xlsx-js-style: SheetJS community build with cell styles (fills, borders, bold)
