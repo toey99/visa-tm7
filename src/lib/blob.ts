@@ -79,7 +79,12 @@ export async function blobGetByPath(pathname: string): Promise<Response | null> 
 
 /** Fetch a blob by its store URL. Works for Private stores (token sent) and Public ones alike. */
 export function blobFetchUrl(url: string): Promise<Response> {
-  return fetch(url, { headers: { authorization: `Bearer ${token()}` }, cache: "no-store" });
+  // Overwritten blobs (index.json is rewritten on every save) can be served
+  // stale from the CDN for up to 60 s. `cache=0` is Vercel Blob's consistent
+  // read for private stores — it always reflects the latest write.
+  const u = new URL(url);
+  u.searchParams.set("cache", "0");
+  return fetch(u, { headers: { authorization: `Bearer ${token()}` }, cache: "no-store" });
 }
 
 export async function blobGetJson<T>(pathname: string): Promise<T | null> {
