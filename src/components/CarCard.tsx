@@ -97,9 +97,9 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
                     {driver && f.run === "RUN30" && (
                       <span title="พาไปต่อ 30 วันหลังกลับจากด่าน" style={{ position: "absolute", bottom: -14, right: -14, width: 64, height: 64, borderRadius: "50%", background: "#fff", border: "4px solid #ea580c", boxShadow: "0 2px 8px rgba(0,0,0,.35)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 40, lineHeight: 1 }}>🐰</span>
                     )}
-                    {driver && (overstayDays[p.id] ?? 0) > 0 && (
-                      <span title={`อยู่เกิน ${overstayDays[p.id]} วัน`} style={{ position: "absolute", bottom: -14, left: -14, height: 56, minWidth: 56, borderRadius: 28, background: "#fff", border: "4px solid #15803d", boxShadow: "0 2px 8px rgba(0,0,0,.35)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "0 10px 0 6px", lineHeight: 1 }}>
-                        <span style={{ fontSize: 34 }}>🐢</span><span style={{ fontSize: 26, fontWeight: 900, color: "#14532d", fontFamily: "'Courier New', ui-monospace, monospace" }}>{overstayDays[p.id]}</span>
+                    {driver && p.id in overstayDays && (
+                      <span title={`overstay${overstayDays[p.id] ? ` ${overstayDays[p.id]} วัน` : ""}`} style={{ position: "absolute", bottom: -14, left: -14, height: 56, minWidth: 56, borderRadius: 28, background: "#fff", border: "4px solid #15803d", boxShadow: "0 2px 8px rgba(0,0,0,.35)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: overstayDays[p.id] ? "0 10px 0 6px" : 0, lineHeight: 1 }}>
+                        <span style={{ fontSize: 34 }}>🐢</span>{overstayDays[p.id] > 0 && <span style={{ fontSize: 26, fontWeight: 900, color: "#14532d", fontFamily: "'Courier New', ui-monospace, monospace" }}>{overstayDays[p.id]}</span>}
                       </span>
                     )}
                     {!driver && f.run === "RUN30" && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#ea580c", color: "#fff", borderRadius: 8, fontSize: 11, fontWeight: 700, padding: "2px 7px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>+30</span>}
@@ -187,7 +187,7 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
           {/* 🐻 / 🐰 badges on the photos are understood by everyone — no legend text on the driver card */}
           {people.some((p) => p.fields.cambodia) && <span>🐻 {people.filter((p) => p.fields.cambodia).length}</span>}
           {people.some((p) => p.fields.run === "RUN30") && <span>🐰 {people.filter((p) => p.fields.run === "RUN30").length}</span>}
-          {people.some((p) => (overstayDays[p.id] ?? 0) > 0) && <span>🐢 {people.filter((p) => (overstayDays[p.id] ?? 0) > 0).length}</span>}
+          {people.some((p) => p.id in overstayDays) && <span>🐢 {people.filter((p) => p.id in overstayDays).length}</span>}
         </div>
       )}
     </div>
