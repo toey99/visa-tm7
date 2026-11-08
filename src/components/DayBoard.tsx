@@ -490,22 +490,45 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   // office has a generator); on the visa-run board only "run + 30 days".
   const needsTm7 = (p: Person) => OFFICES[meta.office].generator !== "none" && (!isRun || p.fields.run === "RUN30");
 
+  // Day outputs (TM7 packet, TM30 Excel, photo sheet, zip) are cut into
+  // batches of at most BATCH people, in board order, so a big day prints and
+  // files in manageable pieces: "ชุด1 (01-20)", "ชุด2 (21-40)", …
+  const BATCH = 20;
+  function batches<T>(list: T[]): T[][] {
+    const out: T[][] = [];
+    for (let i = 0; i < list.length; i += BATCH) out.push(list.slice(i, i + BATCH));
+    return out;
+  }
+  // file-name tag for batch k of n: "" when everything fits in one file
+  function batchTag(k: number, n: number, size: number): string {
+    if (n <= 1) return "";
+    const from = k * BATCH + 1, to = k * BATCH + size;
+    return `_ชุด${k + 1}(${String(from).padStart(2, "0")}-${String(to).padStart(2, "0")})`;
+  }
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   async function tm7All() {
     const ready = active.filter((p) => needsTm7(p) && p.fields.firstName && p.fields.lastName && p.fields.passportNo);
     if (!ready.length) { setError(isRun ? "ยังไม่มีคน 'ไปต่อ 30 วัน' ที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)" : "ยังไม่มีคนที่ข้อมูลครบ (ชื่อ นามสกุล เลขพาสปอร์ต)"); return; }
     setWorking(true); setError("");
-    const blobs: Blob[] = [];
     try {
-      for (let i = 0; i < ready.length; i++) {
-        setStatus(`กำลังทำ TM7 ${i + 1}/${ready.length} — ${personFolderName(ready[i])}`);
-        const blob = await generateTm7(ready[i]);
-        patchPerson(ready[i].id, (x) => ({ ...x, tm7Pdf: blob }));
-        blobs.push(blob);
+      const groups = batches(ready);
+      let done = 0;
+      for (let g = 0; g < groups.length; g++) {
+        const blobs: Blob[] = [];
+        for (const p of groups[g]) {
+          done++;
+          setStatus(`กำลังทำ TM7 ${done}/${ready.length} — ${personFolderName(p)}`);
+          const blob = await generateTm7(p);
+          patchPerson(p.id, (x) => ({ ...x, tm7Pdf: blob }));
+          blobs.push(blob);
+        }
+        setStatus(groups.length > 1 ? `กำลังรวม PDF ชุด ${g + 1}/${groups.length}…` : "กำลังรวม PDF…");
+        const merged = await mergePdfs(blobs);
+        downloadBlob(merged, `TM7-${meta.jobType}-${meta.date.replace(/\//g, "")}-${groups[g].length}คน${batchTag(g, groups.length, groups[g].length)}.pdf`);
+        if (groups.length > 1) await pause(400);
       }
-      setStatus("กำลังรวม PDF…");
-      const merged = await mergePdfs(blobs);
-      downloadBlob(merged, `TM7-${meta.jobType}-${meta.date.replace(/\//g, "")}-${ready.length}คน.pdf`);
-      setStatus(`TM7 ครบ ${ready.length} คน รวมเป็นไฟล์เดียวแล้ว`);
+      setStatus(groups.length > 1 ? `TM7 ครบ ${ready.length} คน แบ่งเป็น ${groups.length} ไฟล์ (ไฟล์ละไม่เกิน ${BATCH} คน)` : `TM7 ครบ ${ready.length} คน รวมเป็นไฟล์เดียวแล้ว`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -608,9 +631,14 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   async function downloadPhotoSheet() {
     setError("");
     try {
-      const blob = await photoSheet();
-      if (!blob) { setError("ยังไม่มีรูปพื้นขาวของใครเลย"); return; }
-      downloadBlob(blob, `photo-sheet_${meta.date.replace(/\//g, "")}.pdf`);
+      const withPhoto = active.filter((p) => p.photo);
+      if (!withPhoto.length) { setError("ยังไม่มีรูปพื้นขาวของใครเลย"); return; }
+      const groups = batches(withPhoto);
+      for (let g = 0; g < groups.length; g++) {
+        const blob = await buildPhotoSheetPdf(groups[g].map((p) => p.photo as Blob));
+        downloadBlob(blob, `photo-sheet_${meta.date.replace(/\//g, "")}${batchTag(g, groups.length, groups[g].length)}.pdf`);
+        if (groups.length > 1) await pause(400);
+      }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
@@ -833,8 +861,12 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     const ready = active.filter((p) => p.fields.firstName && p.fields.passportNo);
     if (!ready.length) { setError("ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ต"); return; }
     try {
-      const blob = await buildTm30Excel(ready, plusDaysDdmmyyyy(10));
-      downloadBlob(blob, `TM30_${meta.date.replace(/\//g, "")}_${ready.length}คน.xls`);
+      const groups = batches(ready);
+      for (let g = 0; g < groups.length; g++) {
+        const blob = await buildTm30Excel(groups[g], plusDaysDdmmyyyy(10));
+        downloadBlob(blob, `TM30_${meta.date.replace(/\//g, "")}_${groups[g].length}คน${batchTag(g, groups.length, groups[g].length)}.xls`);
+        if (groups.length > 1) await pause(400);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -850,8 +882,16 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       const report = await makeExpiryReport().catch(() => null);
       if (report) cars.push({ name: "expiry-report.png", blob: report });
       if (summaryAgents.length > 1) cars.push(...(await makeAgentSummaries().catch(() => [])));
-      const blob = await buildDayZip(active, meta, { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars });
-      downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}.zip`);
+      // one zip per batch of BATCH people; the day-level extras (photo sheet,
+      // summary, car cards, report) ride along in the first zip only
+      const groups = batches(active);
+      for (let g = 0; g < groups.length; g++) {
+        if (groups.length > 1) setStatus(`กำลังสร้าง zip ชุด ${g + 1}/${groups.length}…`);
+        const extras = g === 0 ? { photoSheet: sheet ?? undefined, summary: summary ?? undefined, cars } : { cars: [] };
+        const blob = await buildDayZip(groups[g], meta, extras);
+        downloadBlob(blob, `${meta.date.replace(/\//g, "")}_${meta.jobType}${batchTag(g, groups.length, groups[g].length)}.zip`);
+        if (groups.length > 1) await pause(600);
+      }
       setStatus("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
