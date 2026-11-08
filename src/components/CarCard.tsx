@@ -165,12 +165,11 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         </div>
       </div>}
       {driver && (
-        <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>👥 {people.length} คน · การ์ดสำหรับคนขับ — รับลูกค้าตามรูปและชื่อด้านบน</span>
-          <span style={{ display: "flex", gap: 8 }}>
-            {people.some((p) => p.fields.cambodia) && <span style={{ background: "#fef3c7", color: "#78350f", borderRadius: 10, padding: "4px 12px", fontWeight: 800, fontSize: 14 }}>🐻 = มีประวัติกัมพูชา {people.filter((p) => p.fields.cambodia).length} คน</span>}
-            {people.some((p) => p.fields.run === "RUN30") && <span style={{ background: "#ffedd5", color: "#9a3412", borderRadius: 10, padding: "4px 12px", fontWeight: 800, fontSize: 14 }}>🐰 = กลับจากด่านแล้วพาไปแผนกต่อ 30 วัน {people.filter((p) => p.fields.run === "RUN30").length} คน</span>}
-          </span>
+        <div style={{ marginTop: 10, padding: "0 6px", fontSize: 13, color: "#444", position: "relative", display: "flex", gap: 14, alignItems: "center" }}>
+          <span>👥 {people.length} คน</span>
+          {/* 🐻 / 🐰 badges on the photos are understood by everyone — no legend text on the driver card */}
+          {people.some((p) => p.fields.cambodia) && <span>🐻 {people.filter((p) => p.fields.cambodia).length}</span>}
+          {people.some((p) => p.fields.run === "RUN30") && <span>🐰 {people.filter((p) => p.fields.run === "RUN30").length}</span>}
         </div>
       )}
     </div>
