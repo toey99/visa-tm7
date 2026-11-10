@@ -51,8 +51,8 @@ export const OFFICES = {
     summaryTitle: "ตม.เชียงแสน",
     emoji: "⛰️",
     subtitle: "ด่าน ตม.เชียงแสน",
-    summaryBg: "linear-gradient(135deg,#ffe3c4,#fff4e6 40%,#ffd3a3)",
-    summaryAccent: "#c2410c",
+    summaryBg: "linear-gradient(135deg,#ffe8d6,#fff7f0 40%,#ffd9b3)",
+    summaryAccent: "#f97316",   // bright orange — the visa-run board lives here
     pages: "TM.7 2 หน้า + STM.2 + STM.9 + TM30",
   },
   VFS_BANGKOK: {
