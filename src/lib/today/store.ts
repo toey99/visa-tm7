@@ -300,6 +300,23 @@ export function createDayStore(ns: DayNamespace) {
     scheduleSave();
     return fresh;
   }
+  // Same, but straight onto another office's board for this day (no need to
+  // switch boards first). Replaces the same person there if already present.
+  async function importRefTo(ref: PersonRef, targetOffice: string): Promise<void> {
+    if (!targetOffice || targetOffice === currentOffice) { await importRef(ref); return; }
+    const day = currentDay;
+    const p = await fromRef(ref);
+    const r = await fetch(`/api/day?${q(day, targetOffice)}`, { cache: "no-store" });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
+    const idx = (await r.json()) as Partial<DayIndex>;
+    const refs = idx.people ?? [];
+    const existing = refs.find((x) => x.id === p.id);
+    const order = existing ? existing.order : refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
+    const out = await toRef(day, { ...p, order, movedTo: undefined }, true, targetOffice);
+    const next: DayIndex = { meta: idx.meta, people: [...refs.filter((x) => x.id !== p.id), out], savedAt: new Date().toISOString() };
+    const w = await fetch(`/api/day?${q(day, targetOffice)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+    if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+  }
   // Download loose files (an orphan folder) so the board can re-read them like a fresh drop.
   async function fetchFiles(paths: string[]): Promise<File[]> {
     const out: File[] = [];
@@ -315,7 +332,7 @@ export function createDayStore(ns: DayNamespace) {
   }
 
   return {
-    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice, importRef, fetchFiles,
+    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice, importRef, importRefTo, fetchFiles,
     isSaving, isLoading,
     lastError: () => lastError,
     lastSavedAt: () => lastSavedAt,

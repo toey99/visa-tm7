@@ -19,8 +19,11 @@ const label = (o: string) => (o in OFFICES ? OFFICES[o as OfficeId].label : o ||
 
 export default function RecoverPanel({ ns, date, office, currentIds, onImportRef, onImportFiles, onClose }: {
   ns: "days" | "run"; date: string; office: string; currentIds: Set<string>;
-  onImportRef: (ref: unknown) => Promise<void>; onImportFiles: (paths: string[]) => Promise<void>; onClose: () => void;
+  onImportRef: (ref: unknown, targetOffice: string) => Promise<void>; onImportFiles: (paths: string[]) => Promise<void>; onClose: () => void;
 }) {
+  // where imports go: defaults to the board that is open; can be any office
+  const [target, setTarget] = useState(office);
+  const [done, setDone] = useState<Record<string, string>>({});   // personId → office it was sent to (this session)
   const [data, setData] = useState<{ sources: Source[]; orphans: Orphan[]; total: number } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -49,7 +52,11 @@ export default function RecoverPanel({ ns, date, office, currentIds, onImportRef
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="font-semibold text-amber-900">🧰 กู้ข้อมูลวันที่ {date} — ทุกอย่างที่เซิร์ฟเวอร์ยังเก็บไว้</div>
-          <div className="text-xs text-amber-800">หน้าที่เปิดอยู่: <b>{label(office)}</b> · กด "ดึงมาหน้านี้" เพื่อคัดลอกคนนั้นมาไว้ที่หน้างานนี้ (ของเดิมไม่ถูกลบ)</div>
+          <div className="text-xs text-amber-800">คัดลอกคนไปไว้ที่หน้างาน (ของเดิมไม่ถูกลบ):
+            <select value={target} onChange={(e) => setTarget(e.target.value)} className="ml-1 rounded-md border border-amber-300 bg-white px-2 py-1 text-sm font-semibold text-slate-800">
+              {Object.keys(OFFICES).map((o) => <option key={o} value={o}>{label(o)}{o === office ? " (หน้านี้)" : ""}</option>)}
+            </select>
+          </div>
         </div>
         <div className="flex gap-2">
           <button type="button" onClick={() => void load()} className={btn}>↻</button>
@@ -67,11 +74,11 @@ export default function RecoverPanel({ ns, date, office, currentIds, onImportRef
         return (
           <button type="button" disabled={!!busy} className={btnPrimary + " mt-3 w-full py-3 text-base"}
             onClick={() => run("all", async () => {
-              for (const p of legacyPeople) await onImportRef(p);
+              for (const p of legacyPeople) { await onImportRef(p, target); setDone((d) => ({ ...d, [p.id]: target })); }
               for (const d of orphanDocs) await onImportFiles(d);
               await load();
             })}>
-            {busy === "all" ? "กำลังดึง… อย่าเพิ่งปิดหน้า" : `⬇ ดึงทุกอย่างที่กู้ได้มาหน้านี้ (${legacyPeople.length} คนจากสำเนาเก่า + ${orphanDocs.length} โฟลเดอร์รูปไร้ชื่อ)`}
+            {busy === "all" ? "กำลังดึง… อย่าเพิ่งปิดหน้า" : `⬇ ดึงทุกอย่างที่กู้ได้ไป ${label(target)} (${legacyPeople.length} คนจากสำเนาเก่า + ${orphanDocs.length} โฟลเดอร์รูปไร้ชื่อ)`}
           </button>
         );
       })()}
@@ -90,9 +97,9 @@ export default function RecoverPanel({ ns, date, office, currentIds, onImportRef
                     <span className="font-semibold">{s.source === "legacy" ? "📦 สำเนาเก่า (ก่อนแยกหน้างาน)" : `🏛 หน้างาน ${label(s.source)}`}</span>
                     <span className="ml-2 text-xs text-slate-500">บันทึกเป็น {label(s.office)} · {s.savedAt ? new Date(s.savedAt).toLocaleString("th-TH") : "—"} · {live.length} คน</span>
                   </div>
-                  {importable.length > 0 && s.source !== office && (
-                    <button type="button" disabled={!!busy} onClick={() => run(s.source, async () => { for (const p of importable) await onImportRef(p); })} className={btnPrimary}>
-                      {busy === s.source ? "กำลังดึง…" : `⬇ ดึงทั้งหมด ${importable.length} คนมาหน้านี้`}
+                  {live.length > 0 && s.source !== target && (
+                    <button type="button" disabled={!!busy} onClick={() => run(s.source, async () => { for (const p of live) { await onImportRef(p, target); setDone((d) => ({ ...d, [p.id]: target })); } })} className={btnPrimary}>
+                      {busy === s.source ? "กำลังดึง…" : `⬇ ดึงทั้งหมด ${live.length} คนไป ${label(target)}`}
                     </button>
                   )}
                 </div>
@@ -111,11 +118,15 @@ export default function RecoverPanel({ ns, date, office, currentIds, onImportRef
                             </span>
                           ); })()}
                         </span>
-                        {here
-                          ? ((p.filesPresent ?? 1) > 0 && s.source !== office
-                            ? <button type="button" disabled={!!busy} onClick={() => run(p.id, () => onImportRef(p))} className={btn + " shrink-0 px-2 py-0.5 text-xs"} title="ดึงรูปของคนนี้จากต้นทางมาทับอีกครั้ง">{busy === p.id ? "…" : "🔄 ดึงรูปซ้ำ"}</button>
-                            : <span className="text-xs text-emerald-700">อยู่หน้านี้แล้ว</span>)
-                          : <button type="button" disabled={!!busy} onClick={() => run(p.id, () => onImportRef(p))} className={btn + " shrink-0 px-2 py-0.5 text-xs"}>{busy === p.id ? "…" : "ดึงมาหน้านี้"}</button>}
+                        <span className="flex shrink-0 items-center gap-1">
+                          {done[p.id] && <span className="text-xs text-emerald-700">✓ ไป {label(done[p.id])}</span>}
+                          {!done[p.id] && here && target === office && <span className="text-xs text-emerald-700">อยู่หน้านี้แล้ว</span>}
+                          {s.source !== target && (
+                            <button type="button" disabled={!!busy} onClick={() => run(p.id, async () => { await onImportRef(p, target); setDone((d) => ({ ...d, [p.id]: target })); })} className={btn + " px-2 py-0.5 text-xs"} title={`คัดลอกคนนี้พร้อมรูปไป ${label(target)}`}>
+                              {busy === p.id ? "…" : here && target === office ? "🔄 ดึงรูปซ้ำ" : `→ ${label(target)}`}
+                            </button>
+                          )}
+                        </span>
                       </li>
                     );
                   })}

@@ -1285,7 +1285,10 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           date={meta.date}
           office={meta.office}
           currentIds={new Set(people.map((p) => p.id))}
-          onImportRef={async (ref) => { const p = await store.importRef(ref as PersonRef); setPeople((prev) => [...prev.filter((x) => x.id !== p.id), p]); }}
+          onImportRef={async (ref, target) => {
+            if (target && target !== meta.office) { await store.importRefTo(ref as PersonRef, target); return; }
+            const p = await store.importRef(ref as PersonRef); setPeople((prev) => [...prev.filter((x) => x.id !== p.id), p]);
+          }}
           onImportFiles={async (paths) => { const files = await store.fetchFiles(paths); await handleFiles(files); }}
           onClose={() => setShowRecover(false)}
         />
