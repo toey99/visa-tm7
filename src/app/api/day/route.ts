@@ -63,8 +63,9 @@ export async function DELETE(req: NextRequest) {
   try {
     const office = officeOf(req);
     let blobs = await blobList(folderOf(req, day));
-    if (office) {
-      // also drop the legacy (unsplit) copy if it belonged to this office
+    if (office && req.nextUrl.searchParams.get("legacy") === "1") {
+      // only on explicit request: the legacy (unsplit) copy may hold people from
+      // several offices, so clearing one office's board must not take it along
       const legacy = await blobGetJson<{ meta?: { office?: string } }>(`${nsOf(req)}/${day}/index.json`);
       if (legacy && (legacy.meta?.office ?? "") === office) {
         const all = await blobList(`${nsOf(req)}/${day}/`);

@@ -22,7 +22,8 @@ import {
   personFolderName, todayDdmmyyyy,
   type DayMeta, type DocFile, type DocType, type Person, type PersonFields,
 } from "@/lib/today/types";
-import { daysStore, runStore } from "@/lib/today/store";
+import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
+import RecoverPanel from "@/components/RecoverPanel";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
@@ -74,6 +75,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const [working, setWorking] = useState(false);
   const [photoSettings, setPhotoSettings] = useState<PhotoSettings>(PHOTO_SETTINGS_DEFAULT);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRecover, setShowRecover] = useState(false);
   const [holidays, setHolidays] = useState<string[]>([]);
   const [days, setDays] = useState<{ date: string; files: number }[]>([]);
   const [saveState, setSaveState] = useState("");
@@ -1201,6 +1203,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {isRun && <button onClick={runDaySheet} disabled={working || !people.length} className={btnCls} title="รูปตารางรายคนส่งให้ด่าน — แถบสีตามคันรถ, ต่อ 30 วัน/อยู่เกิน, 🐻, เงินสดที่คนขับเก็บ">📊 ตารางส่งด่าน (PNG)</button>}
           <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
+          <button onClick={() => setShowRecover((v) => !v)} className={btnCls} title="ดูทุกอย่างที่เซิร์ฟเวอร์ยังเก็บไว้ของวันนี้ (ทุกหน้างาน + สำเนาเก่า) แล้วดึงกลับมาหน้านี้">🧰 กู้ข้อมูล</button>
           <button onClick={dayZip} disabled={working || !people.length} className={btnCls}>⬇ โฟลเดอร์วันนี้ (zip)</button>
           <button onClick={clearDay} disabled={working} className={btnDangerCls}>ล้างวัน</button>
         </div>
@@ -1276,6 +1279,17 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         </div>
       )}
 
+      {showRecover && (
+        <RecoverPanel
+          ns={isRun ? "run" : "days"}
+          date={meta.date}
+          office={meta.office}
+          currentIds={new Set(people.map((p) => p.id))}
+          onImportRef={async (ref) => { const p = await store.importRef(ref as PersonRef); setPeople((prev) => [...prev.filter((x) => x.id !== p.id), p]); }}
+          onImportFiles={async (paths) => { const files = await store.fetchFiles(paths); await handleFiles(files); }}
+          onClose={() => setShowRecover(false)}
+        />
+      )}
       {showSettings && (
         <div className="mt-3 grid gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm ring-1 ring-slate-200 lg:grid-cols-3">
           <div className="flex gap-3 lg:col-span-3">

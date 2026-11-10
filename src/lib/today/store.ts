@@ -16,7 +16,7 @@
 import type { DayMeta, DocFile, Person } from "./types";
 
 type FileRef = Omit<DocFile, "blob"> & { path: string };
-type PersonRef = Omit<Person, "files" | "tm7Pdf" | "aiPhoto" | "photo" | "collectImage"> & {
+export type PersonRef = Omit<Person, "files" | "tm7Pdf" | "aiPhoto" | "photo" | "collectImage"> & {
   files: FileRef[];
   tm7Pdf?: string;
   aiPhoto?: string;
@@ -283,12 +283,35 @@ export function createDayStore(ns: DayNamespace) {
     scheduleSave();
   }
 
+  // ---------- recovery ----------
+  // Pull a person found by /api/day/recover (legacy or another office's index)
+  // onto the open board: files are downloaded from wherever they are and
+  // re-uploaded under this office so the copy survives a later clean-up.
+  async function importRef(ref: PersonRef): Promise<Person> {
+    const p = await fromRef(ref);
+    const order = [...peopleCache.values()].reduce((m, x) => Math.max(m, x.order), 0) + 1;
+    const fresh: Person = { ...p, order, movedTo: undefined };
+    await toRef(currentDay, fresh, true);          // force: upload into this office's folder
+    peopleCache.set(fresh.id, fresh);
+    scheduleSave();
+    return fresh;
+  }
+  // Download loose files (an orphan folder) so the board can re-read them like a fresh drop.
+  async function fetchFiles(paths: string[]): Promise<File[]> {
+    const out: File[] = [];
+    for (const path of paths) {
+      const b = await downloadBlob(path);
+      if (b) out.push(new File([b], path.split("/").pop() ?? "file", { type: b.type }));
+    }
+    return out;
+  }
+
   function isSaving(): boolean {
     return !!savingPromise || !!saveTimer;
   }
 
   return {
-    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice,
+    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice, importRef, fetchFiles,
     isSaving, isLoading,
     lastError: () => lastError,
     lastSavedAt: () => lastSavedAt,
