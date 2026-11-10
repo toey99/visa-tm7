@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const sizeOf = new Map<string, number>(blobs.map((b) => [b.pathname, b.size] as [string, number]));
     const recordSources = await Promise.all(recordOffices.map(async (office) => {
       const recs = blobs.filter((b) => b.pathname.startsWith(`${ns}/${day}/${office}/people/`) && b.pathname.endsWith(".json"));
-      const people = (await Promise.all(recs.map((b) => blobGetJson<NonNullable<AnyIndex["people"]>[number]>(b.pathname)))).filter((x): x is NonNullable<typeof x> => !!x);
+      const people = (await Promise.all(recs.map((b) => blobGetJson<NonNullable<AnyIndex["people"]>[number] & { tombstone?: boolean }>(b.pathname)))).filter((x): x is NonNullable<typeof x> => !!x && !x.tombstone);
       const meta = (await blobGetJson<{ meta?: { office?: string } }>(`${ns}/${day}/${office}/manifest.json`))?.meta ?? (await blobGetJson<{ office?: string }>(`${ns}/${day}/${office}/meta.json`));
       const savedAt = recs.reduce((m, b) => (b.uploadedAt > m ? b.uploadedAt : m), "");
       return { path: `${ns}/${day}/${office}/people/`, idx: { meta: meta ?? undefined, savedAt, people } as AnyIndex, source: office };

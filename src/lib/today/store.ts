@@ -42,12 +42,18 @@ export function createDayStore(ns: DayNamespace) {
   const folder = (day: string, office = currentOffice) => `${ns}/${day}/${office ? `${office}/` : ""}`;
   let peopleCache = new Map<string, Person>();
   let metaCache: DayMeta | null = null;
+  // UI listeners: told whenever the server changed what this board holds
+  // (merged save results, another device's edits) so React state follows the cache
+  const listeners = new Set<(s: { people: Person[]; meta: DayMeta | null }) => void>();
+  function subscribe(fn: (s: { people: Person[]; meta: DayMeta | null }) => void): () => void { listeners.add(fn); return () => { listeners.delete(fn); }; }
+  function notify() { const snap = { people: [...peopleCache.values()].sort((a, b) => a.order - b.order), meta: metaCache }; for (const fn of listeners) fn(snap); }
   let dirty = new Set<string>();        // people changed here and not yet saved
   let deletedIds = new Set<string>();   // people removed here and not yet told to the server
   let metaDirty = false;                // day settings changed here and not yet saved
   const now = () => new Date().toISOString();
   let saveTimer: number | undefined;
   let savingPromise: Promise<void> | null = null;
+  let saveRun: object | null = null;
   let lastError = "";
   let lastSavedAt = 0;
   let loading = false;
@@ -96,7 +102,7 @@ export function createDayStore(ns: DayNamespace) {
     if (!blob) return undefined;
     const known = uploaded.get(blob);
     if (missing.has(blob)) return known;                      // download failed earlier: keep pointing at the original file
-    if (known && !force && known.startsWith(`${ns}/${day}/`)) return known;
+    if (known && !force && known.startsWith(folder(day, office))) return known;
     const path = await uploadBlob(`${folder(day, office)}${personId}/${name}.${extOf(blob.type)}`, blob);
     uploaded.set(blob, path);
     return path;
@@ -172,22 +178,22 @@ export function createDayStore(ns: DayNamespace) {
   // changed this person meanwhile, the server merged the two and this is the
   // result. Files that differ from ours are downloaded; otherwise just the
   // fields/flags are taken over. Skipped when the person was edited here again.
-  async function applyServerRecord(rec: PersonRef, sentObj: Person | undefined) {
+  async function applyServerRecord(rec: PersonRef, sentObj: Person | undefined): Promise<boolean> {
     const local = peopleCache.get(rec.id);
-    if (!local || (sentObj && local !== sentObj)) return;           // edited again since — keep ours, it will be saved next
+    if (!local || (sentObj && local !== sentObj)) return false;     // edited again since — keep ours, it will be saved next
     bases.set(rec.id, stripBlobs(rec));
-    const ours = bases.get(rec.id);
     const sameFiles = JSON.stringify(rec.files.map((f) => f.path)) === JSON.stringify(local.files.map((f) => uploaded.get(f.blob) ?? "")) &&
       [rec.tm7Pdf, rec.aiPhoto, rec.photo, rec.collectImage].join("|") === [local.tm7Pdf, local.aiPhoto, local.photo, local.collectImage].map((b) => (b ? uploaded.get(b) ?? "" : "")).join("|");
-    void ours;
     if (sameFiles) {
       const { files: _f, tm7Pdf: _t, aiPhoto: _a, photo: _p, collectImage: _c, ...rest } = rec;
       void _f; void _t; void _a; void _p; void _c;
       peopleCache.set(rec.id, { ...local, ...rest, files: local.files, tm7Pdf: local.tm7Pdf, aiPhoto: local.aiPhoto, photo: local.photo, collectImage: local.collectImage });
     } else {
       const p = await fromRef(rec);
-      if (peopleCache.get(rec.id) === local) peopleCache.set(rec.id, p);
+      if (peopleCache.get(rec.id) !== local) return false;
+      peopleCache.set(rec.id, p);
     }
+    return true;
   }
 
   // ---------- public API (same shape the page used with IndexedDB) ----------
@@ -247,10 +253,12 @@ export function createDayStore(ns: DayNamespace) {
   type SaveResponse = { ok: boolean; people?: PersonRef[]; rejected?: string[]; meta?: DayMeta; metaAt?: string; savedAt?: string };
 
   async function flush(): Promise<void> {
-    if (savingPromise) await savingPromise;
+    while (savingPromise) await savingPromise;              // one save at a time, even when timer + tab-hide + pagehide all call
     const day = currentDay;
     if (!day || loading) return;
-    savingPromise = (async () => {
+    const myRun = {};                                        // identity of this save, for the finally below
+    saveRun = myRun;
+    const mine: Promise<void> = (async () => {
       try {
         // only what changed here: the server merges, so untouched people are left alone
         const ids = [...dirty];
@@ -280,22 +288,33 @@ export function createDayStore(ns: DayNamespace) {
           if (peopleCache.get(id) === sent.get(id)) dirty.delete(id);   // unchanged since we serialised it → saved
         }
         for (const id of dels) deletedIds.delete(id);
-        if (sendMeta) { metaDirty = false; if (res.metaAt) metaAt = res.metaAt; }
-        for (const rec of res.people ?? []) await applyServerRecord(rec, sent.get(rec.id));
+        let changed = false;
+        if (sendMeta) {
+          metaDirty = false;
+          if (res.metaAt) metaAt = res.metaAt;
+          // the server kept newer settings from the other device → show those, not ours
+          if (res.meta && JSON.stringify(res.meta) !== JSON.stringify(metaCache)) { metaCache = res.meta; changed = true; }
+        }
+        for (const rec of res.people ?? []) {
+          const before = peopleCache.get(rec.id);
+          if (await applyServerRecord(rec, sent.get(rec.id)) && peopleCache.get(rec.id) !== before) changed = true;
+        }
         for (const id of res.rejected ?? []) {                 // deleted on another device meanwhile
-          if (peopleCache.get(id) === sent.get(id)) { peopleCache.delete(id); dirty.delete(id); bases.delete(id); }
+          if (peopleCache.get(id) === sent.get(id)) { peopleCache.delete(id); dirty.delete(id); bases.delete(id); changed = true; }
         }
         lastError = "";
         lastSavedAt = Date.now();
+        if (changed) notify();
         if (dirty.size || deletedIds.size || metaDirty) scheduleSave();   // edits that landed during the save
       } catch (e) {
         lastError = "บันทึกไม่สำเร็จ: " + (e instanceof Error ? e.message : String(e));
         console.warn("[today/store] save failed", e);
       } finally {
-        savingPromise = null;
+        if (saveRun === myRun) savingPromise = null;
       }
     })();
-    await savingPromise;
+    savingPromise = mine;
+    await mine;
   }
 
   async function savePerson(p: Person): Promise<void> {
@@ -334,8 +353,12 @@ export function createDayStore(ns: DayNamespace) {
       for (const id of ids) {
         const local = peopleCache.get(id);
         if (dirty.has(id) || deletedIds.has(id)) continue;
-        if (local && m.entries[id].updatedAt <= (local.updatedAt ?? "")) continue;
+        if (local && m.entries[id].updatedAt === (local.updatedAt ?? "")) continue;
         const pr = await fetch(`/api/day?${q(day)}&person=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (pr.status === 404) {                                 // entry without a record (deleted) → drop it here too
+          if (local && !dirty.has(id) && peopleCache.get(id) === local) { peopleCache.delete(id); bases.delete(id); changed = true; }
+          continue;
+        }
         if (!pr.ok) continue;
         const ref = (await pr.json()) as PersonRef;
         if (token !== loadToken) return null;
@@ -349,10 +372,16 @@ export function createDayStore(ns: DayNamespace) {
       }
       const seen = new Set(ids);
       for (const [id, obj] of before) {
-        // gone from the server and untouched here since we asked → removed on the other device
-        if (!seen.has(id) && !dirty.has(id) && peopleCache.get(id) === obj) { peopleCache.delete(id); bases.delete(id); changed = true; }
+        if (seen.has(id) || dirty.has(id) || peopleCache.get(id) !== obj) continue;
+        // not in the manifest: either removed on the other device, or the entry
+        // was lost to a racing save — ask for the record before dropping anyone
+        const pr = await fetch(`/api/day?${q(day)}&person=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (token !== loadToken) return null;
+        if (pr.status === 404 && peopleCache.get(id) === obj && !dirty.has(id)) { peopleCache.delete(id); bases.delete(id); changed = true; }
+        // 200 → record exists, manifest just lags: keep it; the next save's `known` repairs the entry
       }
       if (m.meta && !metaDirty && (m.metaAt ?? "") !== metaAt) { metaCache = m.meta; metaAt = m.metaAt ?? ""; changed = true; }
+      if (changed) notify();
       return changed ? { people: [...peopleCache.values()].sort((a, b) => a.order - b.order), meta: metaCache } : null;
     } finally {
       refreshing = false;
@@ -400,9 +429,10 @@ export function createDayStore(ns: DayNamespace) {
     const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
     // the copy on the target day must start fresh: not a ghost, not arrived
     const ref = await toRef(target, { ...p, order, cancelled: false, movedTo: undefined, arrived: false }, true);
-    const next = { v: 2, people: [ref], savedAt: now() };
+    const next = { v: 2, revive: true, people: [ref], savedAt: now() };
     const w = await fetch(`/api/day?${q(target)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+    if (((await w.json()) as { rejected?: string[] }).rejected?.includes(p.id)) throw new Error("ปลายทางไม่รับรายการนี้ (ถูกลบไว้) — ลองใหม่อีกครั้ง");
     // re-moving a ghost (already moved once): pull the stale copy out of the previous target day
     if (p.movedTo) {
       const prev = dayKeyOf(p.movedTo);
@@ -427,9 +457,10 @@ export function createDayStore(ns: DayNamespace) {
     const refs = idx.people ?? [];
     const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
     const ref = await toRef(day, { ...p, order, tm7Pdf: undefined, cancelled: false, movedTo: undefined, arrived: false }, true, targetOffice);
-    const next = { v: 2, people: [ref], savedAt: now() };
+    const next = { v: 2, revive: true, people: [ref], savedAt: now() };
     const w = await fetch(`/api/day?${q(day, targetOffice)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+    if (((await w.json()) as { rejected?: string[] }).rejected?.includes(p.id)) throw new Error("หน้างานปลายทางไม่รับรายการนี้ — ยังไม่ได้ย้าย ลองใหม่อีกครั้ง");
     await deletePerson(p.id);
   }
 
@@ -462,9 +493,10 @@ export function createDayStore(ns: DayNamespace) {
     const existing = refs.find((x) => x.id === p.id);
     const order = existing ? existing.order : refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
     const out = await toRef(day, { ...p, order, movedTo: undefined }, true, targetOffice);
-    const next = { v: 2, people: [out], savedAt: now() };
+    const next = { v: 2, revive: true, people: [out], savedAt: now() };
     const w = await fetch(`/api/day?${q(day, targetOffice)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
+    if (((await w.json()) as { rejected?: string[] }).rejected?.includes(p.id)) throw new Error("หน้างานปลายทางไม่รับรายการนี้ — ลองใหม่อีกครั้ง");
   }
   // Download loose files (an orphan folder) so the board can re-read them like a fresh drop.
   async function fetchFiles(paths: string[]): Promise<File[]> {
@@ -481,7 +513,7 @@ export function createDayStore(ns: DayNamespace) {
   }
 
   return {
-    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice, importRef, importRefTo, fetchFiles, refreshFromServer,
+    loadDay, flush, savePerson, deletePerson, saveMeta, clearDay, listDays, movePersonToDay, movePersonToOffice, importRef, importRefTo, fetchFiles, refreshFromServer, subscribe,
     isSaving, isLoading,
     lastError: () => lastError,
     lastSavedAt: () => lastSavedAt,

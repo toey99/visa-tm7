@@ -38,7 +38,7 @@ export const runtime = "nodejs";
 
 type PersonRec = { id: string; order: number; updatedAt?: string; fields?: Record<string, unknown>; tombstone?: boolean; deletedAt?: string; [k: string]: unknown };
 type Manifest = { meta?: Record<string, unknown>; metaAt?: string; savedAt: string; entries: Record<string, { updatedAt: string; order: number }> };
-type SaveBody = { v?: number; meta?: Record<string, unknown>; metaAt?: string; people?: PersonRec[]; bases?: Record<string, PersonRec>; deleted?: string[]; known?: string[] };
+type SaveBody = { v?: number; meta?: Record<string, unknown>; metaAt?: string; people?: PersonRec[]; bases?: Record<string, PersonRec>; deleted?: string[]; known?: string[]; revive?: boolean };
 type OldIndex = { meta?: Record<string, unknown>; people?: PersonRec[]; savedAt?: string; migrated?: boolean };
 
 function nsOf(req: NextRequest): string {
@@ -92,15 +92,25 @@ function merge(cur: PersonRec, incoming: PersonRec, base: PersonRec | undefined)
   const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const out: PersonRec = { ...cur };
   for (const k of new Set([...Object.keys(incoming), ...Object.keys(base)])) {
-    if (k === "fields" || k === "updatedAt" || k === "id") continue;
+    if (k === "fields" || k === "files" || k === "updatedAt" || k === "id") continue;
     if (!same(incoming[k], base[k])) out[k] = incoming[k];
   }
-  const f: Record<string, unknown> = { ...(cur.fields ?? {}) };
-  const inF = incoming.fields ?? {}, baseF = base.fields ?? {};
-  for (const k of new Set([...Object.keys(inF), ...Object.keys(baseF)])) {
-    if (!same(inF[k], baseF[k])) f[k] = inF[k];
+  // fields: only the ones this device changed
+  if (incoming.fields) {
+    const f: Record<string, unknown> = { ...(cur.fields ?? {}) };
+    const inF = incoming.fields, baseF = base.fields ?? {};
+    for (const k of new Set([...Object.keys(inF), ...Object.keys(baseF)])) {
+      if (!same(inF[k], baseF[k])) f[k] = inF[k];
+    }
+    out.fields = f;
   }
-  out.fields = f;
+  // files: union by id — this device's additions and removals, the other device's kept
+  type F = { id: string; [k: string]: unknown };
+  const curF = (cur.files as F[] | undefined) ?? [], inFiles = (incoming.files as F[] | undefined) ?? [], baseFiles = (base.files as F[] | undefined) ?? [];
+  const removedHere = new Set(baseFiles.filter((b) => !inFiles.some((x) => x.id === b.id)).map((b) => b.id));
+  const merged: F[] = curF.filter((c) => !removedHere.has(c.id)).map((c) => inFiles.find((x) => x.id === c.id) ?? c);
+  for (const x of inFiles) if (!merged.some((c) => c.id === x.id)) merged.push(x);
+  out.files = merged;
   return out;
 }
 
@@ -129,7 +139,12 @@ async function migrate(req: NextRequest, folder: string, day: string): Promise<M
     const legacy = await blobGetJson<OldIndex>(legacyPath);
     if (legacy && !legacy.migrated && ((legacy.meta?.office as string | undefined) ?? "") === office) { idx = legacy; srcPath = legacyPath; }
   }
-  if (!idx || idx.migrated || (!idx.people?.length && !idx.meta)) return null;
+  if (!idx || idx.migrated || (!idx.people?.length && !idx.meta)) {
+    // nothing to migrate: write an empty manifest so this board never needs list() again
+    const empty: Manifest = { savedAt: stamp(), entries: {} };
+    await writeManifest(folder, empty);
+    return empty;
+  }
   const s = stamp(idx.savedAt ?? "");
   const m: Manifest = { meta: idx.meta, metaAt: idx.meta ? s : undefined, savedAt: s, entries: {} };
   await Promise.all((idx.people ?? []).map(async (p) => {
@@ -159,6 +174,7 @@ export async function GET(req: NextRequest) {
     if (!m) m = await migrate(req, folder, day);
     if (!m) return NextResponse.json({}, noStore);
     if (req.nextUrl.searchParams.get("manifest") === "1") return NextResponse.json(m, noStore);
+    if (!Object.keys(m.entries).length && !m.meta) return NextResponse.json({}, noStore);
     const people = await readRecords(folder, Object.keys(m.entries));
     people.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return NextResponse.json({ meta: m.meta, metaAt: m.metaAt, people, savedAt: m.savedAt }, noStore);
@@ -182,27 +198,34 @@ export async function PUT(req: NextRequest) {
     const out: PersonRec[] = [];
     const rejected: string[] = [];
 
+    // 1) deletions first: the tombstone must be in place before `known` repairs run
+    for (const id of deleted) {
+      delete m.entries[id];
+      await blobPut(recPath(folder, id), JSON.stringify({ id, tombstone: true, deletedAt: stamp(m.entries[id]?.updatedAt ?? m.savedAt) }), "application/json");
+    }
+    // 2) people: merge against the record as it is now
     for (const p of body.people ?? []) {
       const id = safeId(p.id);
       if (!id || deleted.has(id)) continue;
       const entry = m.entries[id];
       const base = body.bases?.[id];
       const cur = await blobGetJson<PersonRec>(recPath(folder, id));
-      if (cur?.tombstone && (!base || (cur.deletedAt ?? "") > (base.updatedAt ?? ""))) {
-        // deleted on another device after this edit's base was loaded: do not bring the person back
-        rejected.push(id);
-        continue;
+      if (cur?.tombstone) {
+        // deleted on another device: a plain edit does not bring the person back —
+        // only a whole copy (move / import, `revive`) or an edit based on a newer record than the deletion
+        const editedAfterDelete = !!base && (base.updatedAt ?? "") > (cur.deletedAt ?? "");
+        if (!(body.revive && !base) && !editedAfterDelete) { rejected.push(id); continue; }
       }
-      const untouched = !cur || cur.tombstone || !entry || (base?.updatedAt && base.updatedAt === cur.updatedAt);
-      let next: PersonRec = untouched ? { ...p, id } : merge(cur!, { ...p, id }, base);
-      const s = stamp(entry?.updatedAt ?? "");
+      const untouched = !cur || !!cur.tombstone || (!!base?.updatedAt && base.updatedAt === cur.updatedAt);
+      let next: PersonRec = untouched || !cur ? { ...p, id } : merge(cur, { ...p, id }, base);
+      const s = stamp(cur?.updatedAt ?? entry?.updatedAt ?? "");
       next = { ...next, updatedAt: s };
       delete next.tombstone; delete next.deletedAt;
       await blobPut(recPath(folder, id), JSON.stringify(next), "application/json");
       m.entries[id] = { updatedAt: s, order: next.order ?? cur?.order ?? 0 };
       out.push(next);
     }
-    // ids this client knows about: repairs a manifest entry lost to a racing save
+    // 3) ids this client knows about: repairs a manifest entry lost to a racing save
     for (const k of body.known ?? []) {
       const id = safeId(k);
       if (id && !m.entries[id] && !deleted.has(id)) {
@@ -210,13 +233,19 @@ export async function PUT(req: NextRequest) {
         if (rec && !rec.tombstone) m.entries[id] = { updatedAt: rec.updatedAt ?? m.savedAt, order: rec.order ?? 0 };
       }
     }
-    for (const id of deleted) {
-      delete m.entries[id];
-      await blobPut(recPath(folder, id), JSON.stringify({ id, tombstone: true, deletedAt: stamp() }), "application/json");
-    }
     if (body.meta) {
       // day settings: a device that loaded older settings cannot roll back newer ones
       if (!m.metaAt || !body.metaAt || body.metaAt >= m.metaAt) { m.meta = body.meta; m.metaAt = stamp(m.metaAt ?? ""); }
+    }
+    // 4) re-read the manifest right before writing and fold in entries another
+    //    save added meanwhile (shrinks the read-modify-write window to milliseconds)
+    const latest = await readManifest(folder);
+    if (latest) {
+      for (const [id, e] of Object.entries(latest.entries)) {
+        if (deleted.has(id)) continue;
+        if (!m.entries[id] || e.updatedAt > m.entries[id].updatedAt) m.entries[id] = e;
+      }
+      if (latest.metaAt && (!m.metaAt || latest.metaAt > m.metaAt)) { m.meta = latest.meta; m.metaAt = latest.metaAt; }
     }
     m.savedAt = stamp(m.savedAt);
     await writeManifest(folder, m);

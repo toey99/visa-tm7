@@ -139,7 +139,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", onLeave);
-    return () => { window.clearInterval(t); window.clearInterval(sync); window.removeEventListener("beforeunload", onLeave); window.removeEventListener("pagehide", onLeave); document.removeEventListener("visibilitychange", onVis); };
+    // the store tells us when a save came back merged with the other device's changes
+    const unsub = store.subscribe(applySync);
+    return () => { unsub(); window.clearInterval(t); window.clearInterval(sync); window.removeEventListener("beforeunload", onLeave); window.removeEventListener("pagehide", onLeave); document.removeEventListener("visibilitychange", onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDay]);
 
