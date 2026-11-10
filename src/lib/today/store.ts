@@ -53,7 +53,6 @@ export function createDayStore(ns: DayNamespace) {
   const now = () => new Date().toISOString();
   let saveTimer: number | undefined;
   let savingPromise: Promise<void> | null = null;
-  let saveRun: object | null = null;
   let lastError = "";
   let lastSavedAt = 0;
   let loading = false;
@@ -253,11 +252,12 @@ export function createDayStore(ns: DayNamespace) {
   type SaveResponse = { ok: boolean; people?: PersonRef[]; rejected?: string[]; meta?: DayMeta; metaAt?: string; savedAt?: string };
 
   async function flush(): Promise<void> {
-    while (savingPromise) await savingPromise;              // one save at a time, even when timer + tab-hide + pagehide all call
+    // one save at a time, even when timer + tab-hide + pagehide all call.
+    // (If the awaited save finished but was not cleared, clear it here —
+    // otherwise this loop would spin forever and freeze the page.)
+    while (savingPromise) { const p = savingPromise; await p; if (savingPromise === p) savingPromise = null; }
     const day = currentDay;
     if (!day || loading) return;
-    const myRun = {};                                        // identity of this save, for the finally below
-    saveRun = myRun;
     const mine: Promise<void> = (async () => {
       try {
         // only what changed here: the server merges, so untouched people are left alone
@@ -309,12 +309,10 @@ export function createDayStore(ns: DayNamespace) {
       } catch (e) {
         lastError = "บันทึกไม่สำเร็จ: " + (e instanceof Error ? e.message : String(e));
         console.warn("[today/store] save failed", e);
-      } finally {
-        if (saveRun === myRun) savingPromise = null;
       }
     })();
     savingPromise = mine;
-    await mine;
+    try { await mine; } finally { if (savingPromise === mine) savingPromise = null; }
   }
 
   async function savePerson(p: Person): Promise<void> {
