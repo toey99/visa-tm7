@@ -87,10 +87,15 @@ export function createDayStore(ns: DayNamespace) {
 
   // Paths already uploaded, keyed by object identity (a Blob is re-uploaded only if it's a new object).
   const uploaded = new WeakMap<Blob, string>();
+  // Failed downloads are kept as empty placeholder blobs so the person still
+  // shows; they are remembered here so a later forced copy (move / import)
+  // never uploads the empty blob over the real file.
+  const missing = new WeakSet<Blob>();
 
   async function ensureUploaded(day: string, personId: string, name: string, blob: Blob | undefined, force = false, office = currentOffice): Promise<string | undefined> {
     if (!blob) return undefined;
     const known = uploaded.get(blob);
+    if (missing.has(blob)) return known;                      // download failed earlier: keep pointing at the original file
     if (known && !force && known.startsWith(`${ns}/${day}/`)) return known;
     const path = await uploadBlob(`${folder(day, office)}${personId}/${name}.${extOf(blob.type)}`, blob);
     uploaded.set(blob, path);
@@ -116,18 +121,37 @@ export function createDayStore(ns: DayNamespace) {
     };
   }
 
+  // at most 6 downloads in flight: a 40-person day opened on two phones at
+  // once otherwise trips the store's per-second read limit → 429s → blanks
+  let inFlight = 0;
+  const waiters: (() => void)[] = [];
+  async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (inFlight >= 6) await new Promise<void>((res) => waiters.push(res));
+    inFlight++;
+    try { return await fn(); } finally { inFlight--; waiters.shift()?.(); }
+  }
+  async function downloadBlobRetry(path: string): Promise<Blob | null> {
+    return withSlot(async () => {
+      const b = await downloadBlob(path);
+      if (b) return b;
+      await new Promise((r) => setTimeout(r, 700));
+      return downloadBlob(path);
+    });
+  }
+
   async function fromRef(r: PersonRef, onOne?: () => void): Promise<Person> {
     const files = await Promise.all(r.files.map(async (f) => {
-      const blob = f.path ? await downloadBlob(f.path) : null;
+      const blob = f.path ? await downloadBlobRetry(f.path) : null;
       onOne?.();
       const { path, ...rest } = f;
       const b = blob ?? new Blob([], { type: rest.mime });
       if (path) uploaded.set(b, path);
+      if (!blob) missing.add(b);
       return { ...rest, blob: b } as DocFile;
     }));
     const pick = async (path?: string) => {
       if (!path) return undefined;
-      const b = await downloadBlob(path);
+      const b = await downloadBlobRetry(path);
       onOne?.();
       if (b) uploaded.set(b, path);
       return b ?? undefined;
@@ -136,6 +160,34 @@ export function createDayStore(ns: DayNamespace) {
     void _f;
     const [a, b2, c, d] = await Promise.all([pick(tm7Pdf), pick(aiPhoto), pick(photo), pick(collectImage)]);
     return { ...rest, files, tm7Pdf: a, aiPhoto: b2, photo: c, collectImage: d };
+  }
+
+  // The record of each person as the server last gave it to us — the "base"
+  // every edit is measured against when the server merges two devices' changes.
+  let bases = new Map<string, PersonRef>();
+  let metaAt = "";   // server version of the day settings we loaded
+  const stripBlobs = (r: PersonRef): PersonRef => JSON.parse(JSON.stringify(r)) as PersonRef;
+
+  // Apply a record the server handed back after a save: if another device had
+  // changed this person meanwhile, the server merged the two and this is the
+  // result. Files that differ from ours are downloaded; otherwise just the
+  // fields/flags are taken over. Skipped when the person was edited here again.
+  async function applyServerRecord(rec: PersonRef, sentObj: Person | undefined) {
+    const local = peopleCache.get(rec.id);
+    if (!local || (sentObj && local !== sentObj)) return;           // edited again since — keep ours, it will be saved next
+    bases.set(rec.id, stripBlobs(rec));
+    const ours = bases.get(rec.id);
+    const sameFiles = JSON.stringify(rec.files.map((f) => f.path)) === JSON.stringify(local.files.map((f) => uploaded.get(f.blob) ?? "")) &&
+      [rec.tm7Pdf, rec.aiPhoto, rec.photo, rec.collectImage].join("|") === [local.tm7Pdf, local.aiPhoto, local.photo, local.collectImage].map((b) => (b ? uploaded.get(b) ?? "" : "")).join("|");
+    void ours;
+    if (sameFiles) {
+      const { files: _f, tm7Pdf: _t, aiPhoto: _a, photo: _p, collectImage: _c, ...rest } = rec;
+      void _f; void _t; void _a; void _p; void _c;
+      peopleCache.set(rec.id, { ...local, ...rest, files: local.files, tm7Pdf: local.tm7Pdf, aiPhoto: local.aiPhoto, photo: local.photo, collectImage: local.collectImage });
+    } else {
+      const p = await fromRef(rec);
+      if (peopleCache.get(rec.id) === local) peopleCache.set(rec.id, p);
+    }
   }
 
   // ---------- public API (same shape the page used with IndexedDB) ----------
@@ -149,6 +201,8 @@ export function createDayStore(ns: DayNamespace) {
     currentOffice = office;
     peopleCache = new Map();
     metaCache = null;
+    bases = new Map();
+    metaAt = "";
     dirty = new Set();
     deletedIds = new Set();
     metaDirty = false;
@@ -157,7 +211,7 @@ export function createDayStore(ns: DayNamespace) {
     try {
       const r = await fetch(`/api/day?${q(day)}`, { cache: "no-store" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
-      const idx = (await r.json()) as Partial<DayIndex>;
+      const idx = (await r.json()) as Partial<DayIndex> & { metaAt?: string };
       const refs = idx.people ?? [];
       const total = refs.reduce((n, p) => n + p.files.length + [p.tm7Pdf, p.aiPhoto, p.photo, p.collectImage].filter(Boolean).length, 0);
       let done = 0;
@@ -165,25 +219,32 @@ export function createDayStore(ns: DayNamespace) {
       const people = await Promise.all(refs.map((ref) => fromRef(ref, tick)));
       if (token !== loadToken) return { people: [], meta: null, stale: true }; // a newer load took over
       people.sort((a, b) => a.order - b.order);
-      for (const p of people) peopleCache.set(p.id, p);
-      metaCache = idx.meta ?? null;
-      return { people, meta: metaCache };
+      for (const p of people) if (!peopleCache.has(p.id)) peopleCache.set(p.id, p);   // an edit made during the load wins
+      for (const ref of refs) bases.set(ref.id, stripBlobs(ref));
+      metaCache = metaDirty ? metaCache : idx.meta ?? null;
+      metaAt = idx.metaAt ?? "";
+      return { people: [...peopleCache.values()].sort((a, b) => a.order - b.order), meta: metaCache };
     } catch (e) {
       if (token !== loadToken) return { people: [], meta: null, stale: true };
       lastError = e instanceof Error ? e.message : String(e);
       return { people: [], meta: null };
     } finally {
-      if (token === loadToken) { loading = false; loadProgress = ""; }
+      if (token === loadToken) {
+        loading = false; loadProgress = "";
+        if (dirty.size || deletedIds.size || metaDirty) scheduleSave();   // edits made while loading
+      }
     }
   }
 
   function scheduleSave() {
-    if (loading) return; // a load is in progress — saving now would write an empty day
+    if (loading) return; // a load is in progress — the load's finally re-arms the save
     if (saveTimer) window.clearTimeout(saveTimer);
     // 2.5 s: every save is a couple of Blob writes (record + manifest), and the
     // Hobby plan has a small monthly budget for those — batch the keystrokes
     saveTimer = window.setTimeout(() => { saveTimer = undefined; void flush(); }, 2500);
   }
+
+  type SaveResponse = { ok: boolean; people?: PersonRef[]; rejected?: string[]; meta?: DayMeta; metaAt?: string; savedAt?: string };
 
   async function flush(): Promise<void> {
     if (savingPromise) await savingPromise;
@@ -196,18 +257,37 @@ export function createDayStore(ns: DayNamespace) {
         const dels = [...deletedIds];
         const sendMeta = metaDirty;
         if (!ids.length && !dels.length && !sendMeta) return;
+        const sent = new Map<string, Person>();                // the exact objects we serialised
         const refs: PersonRef[] = [];
-        for (const id of ids) { const p = peopleCache.get(id); if (p) refs.push(await toRef(day, p)); }
+        const basesOut: Record<string, PersonRef> = {};
+        for (const id of ids) {
+          const p = peopleCache.get(id);
+          if (!p) continue;
+          sent.set(id, p);
+          refs.push(await toRef(day, p));
+          const b = bases.get(id);
+          if (b) basesOut[id] = b;
+        }
         refs.sort((a, b) => a.order - b.order);
         // `known`: every id on this board here, so the server can repair a manifest entry lost to a racing save
-        const idx: DayIndex = { meta: sendMeta ? metaCache ?? undefined : undefined, people: refs, savedAt: now(), deleted: dels, known: [...peopleCache.keys()] };
-        const r = await fetch(`/api/day?${q(day)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(idx) });
+        const body = { v: 2, meta: sendMeta ? metaCache ?? undefined : undefined, metaAt: sendMeta ? metaAt : undefined, people: refs, bases: basesOut, deleted: dels, known: [...peopleCache.keys()] };
+        const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+        const r = await fetch(`/api/day?${q(day)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body), keepalive: hidden });
         if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
-        for (const id of ids) dirty.delete(id);
+        const res = (await r.json()) as SaveResponse;
+        if (day !== currentDay) return;                        // board switched while saving — nothing to apply here
+        for (const id of ids) {
+          if (peopleCache.get(id) === sent.get(id)) dirty.delete(id);   // unchanged since we serialised it → saved
+        }
         for (const id of dels) deletedIds.delete(id);
-        if (sendMeta) metaDirty = false;
+        if (sendMeta) { metaDirty = false; if (res.metaAt) metaAt = res.metaAt; }
+        for (const rec of res.people ?? []) await applyServerRecord(rec, sent.get(rec.id));
+        for (const id of res.rejected ?? []) {                 // deleted on another device meanwhile
+          if (peopleCache.get(id) === sent.get(id)) { peopleCache.delete(id); dirty.delete(id); bases.delete(id); }
+        }
         lastError = "";
         lastSavedAt = Date.now();
+        if (dirty.size || deletedIds.size || metaDirty) scheduleSave();   // edits that landed during the save
       } catch (e) {
         lastError = "บันทึกไม่สำเร็จ: " + (e instanceof Error ? e.message : String(e));
         console.warn("[today/store] save failed", e);
@@ -219,8 +299,7 @@ export function createDayStore(ns: DayNamespace) {
   }
 
   async function savePerson(p: Person): Promise<void> {
-    const stamped = { ...p, updatedAt: now() };
-    peopleCache.set(p.id, stamped);
+    peopleCache.set(p.id, p);
     dirty.add(p.id);
     deletedIds.delete(p.id);
     scheduleSave();
@@ -229,44 +308,55 @@ export function createDayStore(ns: DayNamespace) {
   async function deletePerson(id: string): Promise<void> {
     peopleCache.delete(id);
     dirty.delete(id);
+    bases.delete(id);
     deletedIds.add(id);
     scheduleSave();
   }
 
   // Pull in what another device saved since we loaded: new people, fresher
-  // records (unless we have unsaved edits to that person), and removals.
+  // records (unless we have unsaved edits to that person), removals and day
+  // settings. One small manifest read; records only for what changed.
   // Returns the board as it now stands, or null when nothing changed.
-  async function refreshFromServer(): Promise<Person[] | null> {
-    if (loading || savingPromise || saveTimer || !currentDay) return null;
-    const token = loadToken;
-    const day = currentDay;
-    // one small read: the manifest (ids + updatedAt); records are fetched only for what changed
-    const r = await fetch(`/api/day?${q(day)}&manifest=1`, { cache: "no-store" });
-    if (!r.ok) return null;
-    const m = (await r.json()) as Partial<Manifest>;
-    if (token !== loadToken || loading || !m.entries) return null;
-    let changed = false;
-    const ids = Object.keys(m.entries);
-    for (const id of ids) {
-      const local = peopleCache.get(id);
-      if (dirty.has(id) || deletedIds.has(id)) continue;
-      if (!local || (m.entries[id].updatedAt > (local.updatedAt ?? ""))) {
+  let refreshing = false;
+  async function refreshFromServer(): Promise<{ people: Person[]; meta: DayMeta | null } | null> {
+    if (refreshing || loading || savingPromise || saveTimer || !currentDay) return null;
+    refreshing = true;
+    try {
+      const token = loadToken;
+      const day = currentDay;
+      const before = new Map(peopleCache);                   // what we had when we asked
+      const r = await fetch(`/api/day?${q(day)}&manifest=1`, { cache: "no-store" });
+      if (!r.ok) return null;
+      const m = (await r.json()) as Partial<Manifest> & { metaAt?: string };
+      if (token !== loadToken || loading || !m.entries) return null;
+      let changed = false;
+      const ids = Object.keys(m.entries);
+      for (const id of ids) {
+        const local = peopleCache.get(id);
+        if (dirty.has(id) || deletedIds.has(id)) continue;
+        if (local && m.entries[id].updatedAt <= (local.updatedAt ?? "")) continue;
         const pr = await fetch(`/api/day?${q(day)}&person=${encodeURIComponent(id)}`, { cache: "no-store" });
         if (!pr.ok) continue;
         const ref = (await pr.json()) as PersonRef;
-        if (token !== loadToken || dirty.has(id)) continue;   // edited here meanwhile — keep ours
+        if (token !== loadToken) return null;
+        if (dirty.has(id) || peopleCache.get(id) !== local) continue;   // edited here meanwhile — keep ours
         const p = await fromRef(ref);
-        if (token !== loadToken || dirty.has(id)) continue;
-        peopleCache.set(p.id, p);
+        if (token !== loadToken) return null;
+        if (dirty.has(id) || peopleCache.get(id) !== local) continue;
+        peopleCache.set(id, p);
+        bases.set(id, stripBlobs(ref));
         changed = true;
       }
+      const seen = new Set(ids);
+      for (const [id, obj] of before) {
+        // gone from the server and untouched here since we asked → removed on the other device
+        if (!seen.has(id) && !dirty.has(id) && peopleCache.get(id) === obj) { peopleCache.delete(id); bases.delete(id); changed = true; }
+      }
+      if (m.meta && !metaDirty && (m.metaAt ?? "") !== metaAt) { metaCache = m.meta; metaAt = m.metaAt ?? ""; changed = true; }
+      return changed ? { people: [...peopleCache.values()].sort((a, b) => a.order - b.order), meta: metaCache } : null;
+    } finally {
+      refreshing = false;
     }
-    const seen = new Set(ids);
-    for (const id of [...peopleCache.keys()]) {
-      if (!seen.has(id) && !dirty.has(id)) { peopleCache.delete(id); changed = true; }
-    }
-    if (m.meta && !metaDirty && JSON.stringify(m.meta) !== JSON.stringify(metaCache)) { metaCache = m.meta; changed = true; }
-    return changed ? [...peopleCache.values()].sort((a, b) => a.order - b.order) : null;
   }
 
   async function saveMeta(meta: DayMeta): Promise<void> {
@@ -282,6 +372,7 @@ export function createDayStore(ns: DayNamespace) {
     if (saveTimer) window.clearTimeout(saveTimer);
     peopleCache = new Map();
     metaCache = null;
+    bases = new Map();
     dirty = new Set();
     deletedIds = new Set();
     metaDirty = false;
@@ -309,14 +400,14 @@ export function createDayStore(ns: DayNamespace) {
     const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
     // the copy on the target day must start fresh: not a ghost, not arrived
     const ref = await toRef(target, { ...p, order, cancelled: false, movedTo: undefined, arrived: false }, true);
-    const next: DayIndex = { meta: idx.meta, people: [{ ...ref, updatedAt: now() }], savedAt: now() };
+    const next = { v: 2, people: [ref], savedAt: now() };
     const w = await fetch(`/api/day?${q(target)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
     // re-moving a ghost (already moved once): pull the stale copy out of the previous target day
     if (p.movedTo) {
       const prev = dayKeyOf(p.movedTo);
       if (prev !== target && prev !== currentDay) {
-        await fetch(`/api/day?${q(prev)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ people: [], savedAt: now(), deleted: [p.id] }) });
+        await fetch(`/api/day?${q(prev)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ v: 2, people: [], savedAt: now(), deleted: [p.id] }) });
       }
     }
     // keep a ghost on the original day so the day's summary shows the reschedule
@@ -336,7 +427,7 @@ export function createDayStore(ns: DayNamespace) {
     const refs = idx.people ?? [];
     const order = refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
     const ref = await toRef(day, { ...p, order, tm7Pdf: undefined, cancelled: false, movedTo: undefined, arrived: false }, true, targetOffice);
-    const next: DayIndex = { meta: idx.meta, people: [{ ...ref, updatedAt: now() }], savedAt: now() };
+    const next = { v: 2, people: [ref], savedAt: now() };
     const w = await fetch(`/api/day?${q(day, targetOffice)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
     await deletePerson(p.id);
@@ -371,7 +462,7 @@ export function createDayStore(ns: DayNamespace) {
     const existing = refs.find((x) => x.id === p.id);
     const order = existing ? existing.order : refs.reduce((m, x) => Math.max(m, x.order), 0) + 1;
     const out = await toRef(day, { ...p, order, movedTo: undefined }, true, targetOffice);
-    const next: DayIndex = { meta: idx.meta, people: [{ ...out, updatedAt: now() }], savedAt: now() };
+    const next = { v: 2, people: [out], savedAt: now() };
     const w = await fetch(`/api/day?${q(day, targetOffice)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
     if (!w.ok) throw new Error((await w.json().catch(() => ({ error: `HTTP ${w.status}` }))).error);
   }

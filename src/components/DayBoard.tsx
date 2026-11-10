@@ -122,13 +122,24 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     // pull in what the other device saved (new people, ticks, removals): on
     // every return to the tab, and every 3 min while it stays open — a cheap
     // manifest read each time, records only for what changed
+    const applySync = (res: { people: Person[]; meta: DayMeta | null } | null) => {
+      if (!res) return;
+      setPeople(res.people);
+      // day settings changed on the other device (extension days, flight, …) — keep our date/office
+      if (res.meta) setMeta((prev) => ({ ...prev, ...res.meta, date: prev.date, office: prev.office }));
+    };
     const sync = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      store.refreshFromServer().then((list) => { if (list) setPeople(list); }).catch(() => {});
+      store.refreshFromServer().then(applySync).catch(() => {});
     }, 180_000);
-    const onShow = () => { if (document.visibilityState === "visible") store.refreshFromServer().then((list) => { if (list) setPeople(list); }).catch(() => {}); };
-    document.addEventListener("visibilitychange", onShow);
-    return () => { window.clearInterval(t); window.clearInterval(sync); window.removeEventListener("beforeunload", onLeave); document.removeEventListener("visibilitychange", onShow); };
+    // leaving the tab (iPhone: switching apps) → push pending edits right away; coming back → pull theirs
+    const onVis = () => {
+      if (document.visibilityState === "hidden") { void flush(); return; }
+      store.refreshFromServer().then(applySync).catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onLeave);
+    return () => { window.clearInterval(t); window.clearInterval(sync); window.removeEventListener("beforeunload", onLeave); window.removeEventListener("pagehide", onLeave); document.removeEventListener("visibilitychange", onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDay]);
 
@@ -140,9 +151,21 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     });
   }
 
+  // Switching boards while OCR / photo jobs are still running would file their
+  // results under the new board, so navigation waits for them. A failed save is
+  // confirmed before the unsaved edits are dropped by the load.
+  function canLeaveBoard(): boolean {
+    if (working) { setError("รอให้งานที่กำลังทำ (อ่านเอกสาร/ทำรูป) เสร็จก่อน แล้วค่อยเปลี่ยนวันหรือหน้างาน"); return false; }
+    return true;
+  }
+  async function leaveBoard(then: () => void) {
+    await flush();
+    if (storeError() && !window.confirm(`บันทึกหน้านี้ไม่สำเร็จ (${storeError()})\nถ้าเปลี่ยนตอนนี้ การแก้ไขล่าสุดจะหาย — ไปต่อไหม?`)) return;
+    then();
+  }
   function commitDate(v: string) {
     if (!/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return;
-    if (v !== metaRefDate.current) { void flush().then(() => openDay(v)); }
+    if (v !== metaRefDate.current && canLeaveBoard()) { void leaveBoard(() => openDay(v)); }
   }
   const metaRefDate = useRef("");
   useEffect(() => { if (loaded) metaRefDate.current = meta.date; }, [meta.date, loaded]);
@@ -164,9 +187,9 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   }
 
   function changeOffice(office: OfficeId) {
-    if (office === officeRef.current) return;
+    if (office === officeRef.current || !canLeaveBoard()) return;
     // each office is its own board for the day: save this one, then open the other
-    void flush().then(() => openDay(metaRefDate.current || meta.date, office));
+    void leaveBoard(() => openDay(metaRefDate.current || meta.date, office));
   }
 
   function updateMeta(patch: Partial<DayMeta>) {
@@ -599,7 +622,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     setStatus(`กำลังทำรูป ${personFolderName(p)}… (20–50 วินาที)`);
     try {
       const next = await makePhoto(p);
-      upsertPerson({ ...next, files: peopleRef.current.find((x) => x.id === p.id)?.files ?? next.files });
+      // merge into the CURRENT person — the counter may have ticked/edited them during the 20–50 s
+      patchPerson(p.id, (cur) => ({ ...cur, aiPhoto: next.aiPhoto, photo: next.photo, crop: next.crop, photoMode: next.photoMode, cloth: next.cloth }));
       setStatus("");
     } catch (e) {
       setError(`${personFolderName(p)}: ${e instanceof Error ? e.message : String(e)}`);
@@ -619,7 +643,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         const p = queue.shift()!;
         try {
           const next = await makePhoto(p);
-          upsertPerson({ ...next, files: peopleRef.current.find((x) => x.id === p.id)?.files ?? next.files });
+          // merge into the CURRENT person — the counter may have ticked/edited them during the 20–50 s
+      patchPerson(p.id, (cur) => ({ ...cur, aiPhoto: next.aiPhoto, photo: next.photo, crop: next.crop, photoMode: next.photoMode, cloth: next.cloth }));
         } catch (e) {
           failures.push(`${personFolderName(p)}: ${e instanceof Error ? e.message : String(e)}`);
         }
