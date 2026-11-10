@@ -56,6 +56,25 @@ export default function RecoverPanel({ ns, date, office, currentIds, onImportRef
           <button type="button" onClick={onClose} className={btn}>ปิด</button>
         </div>
       </div>
+      {data && (() => {
+        // one tap: everything that has no board of its own — legacy people not on
+        // this board yet + every orphan folder (re-read). Other offices' own
+        // boards are left alone (they are not lost, just elsewhere).
+        const legacyPeople = data.sources.filter((s) => s.source === "legacy").flatMap((s) => s.people).filter((p) => !p.cancelled && !p.movedTo && !currentIds.has(p.id));
+        const orphanDocs = data.orphans.map((o) => o.files.filter((f) => /\/doc-/.test(f))).filter((d) => d.length);
+        const n = legacyPeople.length + orphanDocs.length;
+        if (!n) return null;
+        return (
+          <button type="button" disabled={!!busy} className={btnPrimary + " mt-3 w-full py-3 text-base"}
+            onClick={() => run("all", async () => {
+              for (const p of legacyPeople) await onImportRef(p);
+              for (const d of orphanDocs) await onImportFiles(d);
+              await load();
+            })}>
+            {busy === "all" ? "กำลังดึง… อย่าเพิ่งปิดหน้า" : `⬇ ดึงทุกอย่างที่กู้ได้มาหน้านี้ (${legacyPeople.length} คนจากสำเนาเก่า + ${orphanDocs.length} โฟลเดอร์รูปไร้ชื่อ)`}
+          </button>
+        );
+      })()}
       {error && <div className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-red-800">{error}</div>}
       {!data && !error && <div className="mt-3 text-slate-500">กำลังค้นหา…</div>}
       {data && (
