@@ -82,6 +82,7 @@ export type Person = {
   arrived?: boolean;            // checked in at the counter (green tick on the summary)
   movedTo?: string;             // DD/MM/YYYY — rescheduled to another day (ghost kept here for the day's record)
   createdAt: number;
+  updatedAt?: string;           // ISO — set on every save; the server keeps the newer record when two devices disagree
 };
 
 export type DayMeta = {

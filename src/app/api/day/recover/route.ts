@@ -19,12 +19,25 @@ export async function GET(req: NextRequest) {
   try {
     const blobs = await blobList(`${ns}/${day}/`);
     const indexPaths = blobs.map((b) => b.pathname).filter((p) => p === `${ns}/${day}/index.json` || new RegExp(`^${ns}/${day}/[A-Z][A-Z0-9_]+/index\\.json$`).test(p));
+    // offices stored as per-person records (current format) — one source per office folder
+    const recordOffices = Array.from(new Set(blobs.map((b) => b.pathname.match(new RegExp(`^${ns}/${day}/([A-Z][A-Z0-9_]+)/people/[^/]+\\.json$`))?.[1]).filter((x): x is string => !!x)));
     const onServer = new Set(blobs.map((b) => b.pathname));
     const sizeOf = new Map<string, number>(blobs.map((b) => [b.pathname, b.size] as [string, number]));
-    const sources = await Promise.all(indexPaths.map(async (path) => {
-      const idx = (await blobGetJson<AnyIndex>(path)) ?? {};
+    const recordSources = await Promise.all(recordOffices.map(async (office) => {
+      const recs = blobs.filter((b) => b.pathname.startsWith(`${ns}/${day}/${office}/people/`) && b.pathname.endsWith(".json"));
+      const people = (await Promise.all(recs.map((b) => blobGetJson<NonNullable<AnyIndex["people"]>[number]>(b.pathname)))).filter((x): x is NonNullable<typeof x> => !!x);
+      const meta = await blobGetJson<{ office?: string }>(`${ns}/${day}/${office}/meta.json`);
+      const savedAt = recs.reduce((m, b) => (b.uploadedAt > m ? b.uploadedAt : m), "");
+      return { path: `${ns}/${day}/${office}/people/`, idx: { meta: meta ?? undefined, savedAt, people } as AnyIndex, source: office };
+    }));
+    const indexSources = await Promise.all(indexPaths.map(async (path) => {
       const seg = path.split("/")[2];
       const source = seg === "index.json" ? "legacy" : seg;
+      // an office that already has records: its old index.json is just the frozen backup — skip it
+      if (source !== "legacy" && recordOffices.includes(source)) return null;
+      return { path, idx: (await blobGetJson<AnyIndex>(path)) ?? {}, source };
+    }));
+    const sources = [...recordSources, ...indexSources.filter((x): x is NonNullable<typeof x> => !!x)].map(({ idx, source }) => {
       return {
         source,                                   // "legacy" or the office folder
         office: idx.meta?.office ?? "",
@@ -36,13 +49,13 @@ export async function GET(req: NextRequest) {
           return { ...p, files: p.files ?? [], filesTotal: paths.length, filesPresent: present };
         }),
       };
-    }));
+    });
     // orphan person folders: files on the server that no index points at
     const referenced = new Set<string>();
     for (const s of sources) for (const p of s.people) { for (const f of p.files) referenced.add(f.path); for (const x of [p.photo, p.aiPhoto, p.tm7Pdf, p.collectImage]) if (x) referenced.add(x); }
     const orphanMap = new Map<string, { where: string; personId: string; files: string[]; updated: string }>();
     for (const b of blobs) {
-      if (b.pathname.endsWith("/index.json") || referenced.has(b.pathname)) continue;
+      if (b.pathname.endsWith("/index.json") || b.pathname.endsWith("/meta.json") || /\/people\/[^/]+\.json$/.test(b.pathname) || referenced.has(b.pathname)) continue;
       const parts = b.pathname.split("/");         // ns / day / (OFFICE /)? personId / file
       const where = OFFICE_RE.test(parts[2]) ? parts[2] : "legacy";
       const personId = where === "legacy" ? parts[2] : parts[3];
