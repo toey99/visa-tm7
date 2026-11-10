@@ -27,7 +27,8 @@ export type PersonRef = Omit<Person, "files" | "tm7Pdf" | "aiPhoto" | "photo" | 
   photo?: string;
   collectImage?: string;
 };
-type DayIndex = { meta?: DayMeta; people: PersonRef[]; savedAt: string; deleted?: string[] };
+type DayIndex = { meta?: DayMeta; people: PersonRef[]; savedAt: string; deleted?: string[]; known?: string[] };
+type Manifest = { meta?: DayMeta; savedAt: string; entries: Record<string, { updatedAt: string; order: number }> };
 
 const dayKeyOf = (date: string) => date.replace(/\//g, "");
 
@@ -43,6 +44,7 @@ export function createDayStore(ns: DayNamespace) {
   let metaCache: DayMeta | null = null;
   let dirty = new Set<string>();        // people changed here and not yet saved
   let deletedIds = new Set<string>();   // people removed here and not yet told to the server
+  let metaDirty = false;                // day settings changed here and not yet saved
   const now = () => new Date().toISOString();
   let saveTimer: number | undefined;
   let savingPromise: Promise<void> | null = null;
@@ -149,6 +151,7 @@ export function createDayStore(ns: DayNamespace) {
     metaCache = null;
     dirty = new Set();
     deletedIds = new Set();
+    metaDirty = false;
     lastError = "";
     loadProgress = "";
     try {
@@ -177,7 +180,9 @@ export function createDayStore(ns: DayNamespace) {
   function scheduleSave() {
     if (loading) return; // a load is in progress — saving now would write an empty day
     if (saveTimer) window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => { saveTimer = undefined; void flush(); }, 800);
+    // 2.5 s: every save is a couple of Blob writes (record + manifest), and the
+    // Hobby plan has a small monthly budget for those — batch the keystrokes
+    saveTimer = window.setTimeout(() => { saveTimer = undefined; void flush(); }, 2500);
   }
 
   async function flush(): Promise<void> {
@@ -189,14 +194,18 @@ export function createDayStore(ns: DayNamespace) {
         // only what changed here: the server merges, so untouched people are left alone
         const ids = [...dirty];
         const dels = [...deletedIds];
+        const sendMeta = metaDirty;
+        if (!ids.length && !dels.length && !sendMeta) return;
         const refs: PersonRef[] = [];
         for (const id of ids) { const p = peopleCache.get(id); if (p) refs.push(await toRef(day, p)); }
         refs.sort((a, b) => a.order - b.order);
-        const idx: DayIndex = { meta: metaCache ?? undefined, people: refs, savedAt: now(), deleted: dels };
+        // `known`: every id on this board here, so the server can repair a manifest entry lost to a racing save
+        const idx: DayIndex = { meta: sendMeta ? metaCache ?? undefined : undefined, people: refs, savedAt: now(), deleted: dels, known: [...peopleCache.keys()] };
         const r = await fetch(`/api/day?${q(day)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(idx) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({ error: `HTTP ${r.status}` }))).error);
         for (const id of ids) dirty.delete(id);
         for (const id of dels) deletedIds.delete(id);
+        if (sendMeta) metaDirty = false;
         lastError = "";
         lastSavedAt = Date.now();
       } catch (e) {
@@ -230,28 +239,33 @@ export function createDayStore(ns: DayNamespace) {
   async function refreshFromServer(): Promise<Person[] | null> {
     if (loading || savingPromise || saveTimer || !currentDay) return null;
     const token = loadToken;
-    const r = await fetch(`/api/day?${q(currentDay)}`, { cache: "no-store" });
+    const day = currentDay;
+    // one small read: the manifest (ids + updatedAt); records are fetched only for what changed
+    const r = await fetch(`/api/day?${q(day)}&manifest=1`, { cache: "no-store" });
     if (!r.ok) return null;
-    const idx = (await r.json()) as Partial<DayIndex>;
-    if (token !== loadToken || loading) return null;
-    const refs = idx.people ?? [];
+    const m = (await r.json()) as Partial<Manifest>;
+    if (token !== loadToken || loading || !m.entries) return null;
     let changed = false;
-    const seen = new Set<string>();
-    for (const ref of refs) {
-      seen.add(ref.id);
-      const local = peopleCache.get(ref.id);
-      if (dirty.has(ref.id) || deletedIds.has(ref.id)) continue;
-      if (!local || ((ref.updatedAt ?? "") > (local.updatedAt ?? ""))) {
+    const ids = Object.keys(m.entries);
+    for (const id of ids) {
+      const local = peopleCache.get(id);
+      if (dirty.has(id) || deletedIds.has(id)) continue;
+      if (!local || (m.entries[id].updatedAt > (local.updatedAt ?? ""))) {
+        const pr = await fetch(`/api/day?${q(day)}&person=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!pr.ok) continue;
+        const ref = (await pr.json()) as PersonRef;
+        if (token !== loadToken || dirty.has(id)) continue;   // edited here meanwhile — keep ours
         const p = await fromRef(ref);
-        if (token !== loadToken) return null;
+        if (token !== loadToken || dirty.has(id)) continue;
         peopleCache.set(p.id, p);
         changed = true;
       }
     }
+    const seen = new Set(ids);
     for (const id of [...peopleCache.keys()]) {
       if (!seen.has(id) && !dirty.has(id)) { peopleCache.delete(id); changed = true; }
     }
-    if (idx.meta && JSON.stringify(idx.meta) !== JSON.stringify(metaCache)) { metaCache = idx.meta; changed = true; }
+    if (m.meta && !metaDirty && JSON.stringify(m.meta) !== JSON.stringify(metaCache)) { metaCache = m.meta; changed = true; }
     return changed ? [...peopleCache.values()].sort((a, b) => a.order - b.order) : null;
   }
 
@@ -259,6 +273,7 @@ export function createDayStore(ns: DayNamespace) {
     const day = dayKeyOf(meta.date);
     if (day !== currentDay) return; // date change is handled by loadDay
     metaCache = meta;
+    metaDirty = true;
     scheduleSave();
   }
 
@@ -269,6 +284,7 @@ export function createDayStore(ns: DayNamespace) {
     metaCache = null;
     dirty = new Set();
     deletedIds = new Set();
+    metaDirty = false;
     await fetch(`/api/day?${q(day)}`, { method: "DELETE" });
   }
 

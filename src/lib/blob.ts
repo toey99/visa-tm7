@@ -106,3 +106,16 @@ export async function blobGetJson<T>(pathname: string): Promise<T | null> {
   if (!r || !r.ok) return null;
   return (await r.json()) as T;
 }
+
+/** Delete blobs by pathname without a list() when the store's base URL is known (del() itself is free). */
+export async function blobDeleteByPath(pathnames: string[]): Promise<void> {
+  if (!pathnames.length) return;
+  if (baseUrl) {
+    await blobDelete(pathnames.map((p) => `${baseUrl}${p.split("/").map(encodeURIComponent).join("/")}`));
+    return;
+  }
+  const all = await blobList(pathnames[0].split("/").slice(0, 2).join("/") + "/");
+  const want = new Set(pathnames);
+  const urls = all.filter((b) => want.has(b.pathname)).map((b) => b.url);
+  if (urls.length) await blobDelete(urls);
+}

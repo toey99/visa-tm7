@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const recordSources = await Promise.all(recordOffices.map(async (office) => {
       const recs = blobs.filter((b) => b.pathname.startsWith(`${ns}/${day}/${office}/people/`) && b.pathname.endsWith(".json"));
       const people = (await Promise.all(recs.map((b) => blobGetJson<NonNullable<AnyIndex["people"]>[number]>(b.pathname)))).filter((x): x is NonNullable<typeof x> => !!x);
-      const meta = await blobGetJson<{ office?: string }>(`${ns}/${day}/${office}/meta.json`);
+      const meta = (await blobGetJson<{ meta?: { office?: string } }>(`${ns}/${day}/${office}/manifest.json`))?.meta ?? (await blobGetJson<{ office?: string }>(`${ns}/${day}/${office}/meta.json`));
       const savedAt = recs.reduce((m, b) => (b.uploadedAt > m ? b.uploadedAt : m), "");
       return { path: `${ns}/${day}/${office}/people/`, idx: { meta: meta ?? undefined, savedAt, people } as AnyIndex, source: office };
     }));
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     for (const s of sources) for (const p of s.people) { for (const f of p.files) referenced.add(f.path); for (const x of [p.photo, p.aiPhoto, p.tm7Pdf, p.collectImage]) if (x) referenced.add(x); }
     const orphanMap = new Map<string, { where: string; personId: string; files: string[]; updated: string }>();
     for (const b of blobs) {
-      if (b.pathname.endsWith("/index.json") || b.pathname.endsWith("/meta.json") || /\/people\/[^/]+\.json$/.test(b.pathname) || referenced.has(b.pathname)) continue;
+      if (b.pathname.endsWith("/index.json") || b.pathname.endsWith("/meta.json") || b.pathname.endsWith("/manifest.json") || /\/people\/[^/]+\.json$/.test(b.pathname) || referenced.has(b.pathname)) continue;
       const parts = b.pathname.split("/");         // ns / day / (OFFICE /)? personId / file
       const where = OFFICE_RE.test(parts[2]) ? parts[2] : "legacy";
       const personId = where === "legacy" ? parts[2] : parts[3];

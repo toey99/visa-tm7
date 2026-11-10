@@ -119,11 +119,13 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     const t = window.setInterval(() => setSaveState(isLoading() ? `กำลังโหลด… ${loadProgress()}` : isSaving() ? "กำลังบันทึก…" : storeError() ? storeError() : lastSavedAt() ? `บันทึกแล้ว ${new Date(lastSavedAt()).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : ""), 1000);
     const onLeave = () => { void flush(); };
     window.addEventListener("beforeunload", onLeave);
-    // every 30 s pull in what the other device saved (new people, ticks, removals)
+    // pull in what the other device saved (new people, ticks, removals): on
+    // every return to the tab, and every 3 min while it stays open — a cheap
+    // manifest read each time, records only for what changed
     const sync = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       store.refreshFromServer().then((list) => { if (list) setPeople(list); }).catch(() => {});
-    }, 30_000);
+    }, 180_000);
     const onShow = () => { if (document.visibilityState === "visible") store.refreshFromServer().then((list) => { if (list) setPeople(list); }).catch(() => {}); };
     document.addEventListener("visibilitychange", onShow);
     return () => { window.clearInterval(t); window.clearInterval(sync); window.removeEventListener("beforeunload", onLeave); document.removeEventListener("visibilitychange", onShow); };
