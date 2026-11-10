@@ -11,7 +11,7 @@
 import { useEffect, useState } from "react";
 import { OFFICES, type OfficeId } from "@/lib/offices";
 
-type RecPerson = { id: string; order?: number; fields?: Record<string, string>; files: { path: string; kind?: string }[]; photo?: string; cancelled?: boolean; movedTo?: string };
+type RecPerson = { id: string; order?: number; fields?: Record<string, string>; files: { path: string; kind?: string }[]; photo?: string; cancelled?: boolean; movedTo?: string; filesTotal?: number; filesPresent?: number };
 type Source = { source: string; office: string; savedAt: string; people: RecPerson[] };
 type Orphan = { where: string; personId: string; files: string[]; updated: string };
 
@@ -105,9 +105,16 @@ export default function RecoverPanel({ ns, date, office, currentIds, onImportRef
                           <span className="font-mono font-semibold">{name(p)}</span>
                           {p.fields?.chineseName && <span className="ml-1 text-slate-600">{p.fields.chineseName}</span>}
                           {p.fields?.agent && <span className="ml-1 text-xs text-indigo-700">🏢 {p.fields.agent}</span>}
-                          <span className="ml-1 text-xs text-slate-400">{p.files.length} ไฟล์</span>
+                          {(() => { const t = p.filesTotal ?? p.files.length; const ok = p.filesPresent ?? t; return (
+                            <span className={`ml-1 text-xs ${ok === t ? "text-slate-400" : ok === 0 ? "text-red-600 font-semibold" : "text-amber-700 font-semibold"}`}>
+                              {ok === t ? `📎 ${t} ไฟล์ ✅` : ok === 0 ? `⚠ ไฟล์หายทั้งหมด (${t})` : `⚠ ไฟล์อยู่ ${ok}/${t}`}
+                            </span>
+                          ); })()}
                         </span>
-                        {here ? <span className="text-xs text-emerald-700">อยู่หน้านี้แล้ว</span>
+                        {here
+                          ? ((p.filesPresent ?? 1) > 0 && s.source !== office
+                            ? <button type="button" disabled={!!busy} onClick={() => run(p.id, () => onImportRef(p))} className={btn + " shrink-0 px-2 py-0.5 text-xs"} title="ดึงรูปของคนนี้จากต้นทางมาทับอีกครั้ง">{busy === p.id ? "…" : "🔄 ดึงรูปซ้ำ"}</button>
+                            : <span className="text-xs text-emerald-700">อยู่หน้านี้แล้ว</span>)
                           : <button type="button" disabled={!!busy} onClick={() => run(p.id, () => onImportRef(p))} className={btn + " shrink-0 px-2 py-0.5 text-xs"}>{busy === p.id ? "…" : "ดึงมาหน้านี้"}</button>}
                       </li>
                     );

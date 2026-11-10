@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
   try {
     const blobs = await blobList(`${ns}/${day}/`);
     const indexPaths = blobs.map((b) => b.pathname).filter((p) => p === `${ns}/${day}/index.json` || new RegExp(`^${ns}/${day}/[A-Z][A-Z0-9_]+/index\\.json$`).test(p));
+    const onServer = new Set(blobs.map((b) => b.pathname));
+    const sizeOf = new Map<string, number>(blobs.map((b) => [b.pathname, b.size] as [string, number]));
     const sources = await Promise.all(indexPaths.map(async (path) => {
       const idx = (await blobGetJson<AnyIndex>(path)) ?? {};
       const seg = path.split("/")[2];
@@ -27,7 +29,12 @@ export async function GET(req: NextRequest) {
         source,                                   // "legacy" or the office folder
         office: idx.meta?.office ?? "",
         savedAt: idx.savedAt ?? "",
-        people: (idx.people ?? []).map((p) => ({ ...p, files: p.files ?? [] })),
+        people: (idx.people ?? []).map((p) => {
+          // which of this person's files are really on the server (and not 0-byte)
+          const paths = [...(p.files ?? []).map((f) => f.path), p.photo, p.aiPhoto, p.tm7Pdf, p.collectImage].filter((x): x is string => !!x);
+          const present = paths.filter((x) => onServer.has(x) && (sizeOf.get(x) ?? 0) > 0).length;
+          return { ...p, files: p.files ?? [], filesTotal: paths.length, filesPresent: present };
+        }),
       };
     }));
     // orphan person folders: files on the server that no index points at

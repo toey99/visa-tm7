@@ -289,8 +289,12 @@ export function createDayStore(ns: DayNamespace) {
   // re-uploaded under this office so the copy survives a later clean-up.
   async function importRef(ref: PersonRef): Promise<Person> {
     const p = await fromRef(ref);
-    const order = [...peopleCache.values()].reduce((m, x) => Math.max(m, x.order), 0) + 1;
-    const fresh: Person = { ...p, order, movedTo: undefined };
+    const existing = peopleCache.get(p.id);
+    const order = existing ? existing.order : [...peopleCache.values()].reduce((m, x) => Math.max(m, x.order), 0) + 1;
+    // re-pull of someone already on the board: keep what was edited here, take the files from the source
+    const fresh: Person = existing
+      ? { ...existing, files: p.files.length ? p.files : existing.files, photo: p.photo ?? existing.photo, aiPhoto: p.aiPhoto ?? existing.aiPhoto, collectImage: p.collectImage ?? existing.collectImage }
+      : { ...p, order, movedTo: undefined };
     await toRef(currentDay, fresh, true);          // force: upload into this office's folder
     peopleCache.set(fresh.id, fresh);
     scheduleSave();
