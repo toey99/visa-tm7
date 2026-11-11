@@ -1050,6 +1050,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {collect.length > 0 && <span className="rounded-lg bg-sky-50 px-3 py-1 font-semibold text-sky-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
           {pendingCount > 0 && <span className="rounded-lg bg-red-50 px-3 py-1 font-semibold text-red-900">⏳ ค้าง {pendingCount} คน</span>}
           {waitingCount > 0 && <span className="rounded-lg bg-violet-50 px-3 py-1 font-semibold text-violet-900">🕓 รอโอน {waitingCount} คน</span>}
+          {active.some((p) => p.fields.pay === "hold") && <span className="rounded-lg bg-violet-600 px-3 py-1 font-semibold text-white">🔒 hold พาสปอร์ต {active.filter((p) => p.fields.pay === "hold").length} คน (รอเอเจนซี่ยืนยันโอน)</span>}
         </div>
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loaded && <div className="py-10 text-center text-slate-500">กำลังโหลด…</div>}
@@ -1077,6 +1078,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                   <div className="mt-1 text-base font-extrabold">
                     {f.pay === "collect" && amount > 0 ? <span className="text-red-700">💰 เก็บ {amount.toLocaleString()} บาท</span>
                       : f.pay === "paid" ? <span className="text-emerald-700">✅ จ่ายแล้ว</span>
+                      : f.pay === "hold" ? <span className="text-violet-800">🔒 รอโอน — hold พาสปอร์ตไว้ก่อน</span>
                       : <span className="text-slate-400">ไม่เก็บ</span>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
@@ -1748,7 +1750,7 @@ function PersonCard({
         <F label="เอเจนซี่ย่อย (โน้ตของเอเจนซี่หลัก)"><input value={f.subAgent ?? ""} onChange={(e) => set("subAgent", e.target.value)} className={inputCls} placeholder="ที่เขาโน้ตมา เช่น 小王" /></F>
         <F label="การเงิน">
           <select value={f.pay} onChange={(e) => set("pay", e.target.value as PersonFields["pay"])} className={inputCls}>
-            <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="nocollect">ไม่เก็บ</option>
+            <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="hold">🔒 รอโอน (hold พาสปอร์ต)</option><option value="nocollect">ไม่เก็บ</option>
           </select>
         </F>
         <F label="เก็บหน้างาน (บาท)"><input value={f.amount} onChange={(e) => set("amount", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="4000" /></F>
@@ -1932,7 +1934,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                 : f.paidHow === "waiting" ? { bg: "#ede9fe", fg: "#4c1d95", t: `🕓 ${who}รอโอน${amt}`.trim() }
                 : f.paidHow === "agent" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `🏢 ${who}จ่ายที่เอเจนซี่` }
                 : { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() })
-              : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
+              : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` }
+              : f.pay === "hold" ? { bg: "#7c3aed", fg: "#ffffff", t: `🔒 ${who}รอโอน · hold พาส` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
             const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, undefined, !isRun);
             return (
               <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1, minWidth: 0 }}>
@@ -1984,6 +1987,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           {people.some((p) => p.arrived) && <span style={pill("#16a34a", "#fff", 13)}>✓ มาแล้ว {people.filter((p) => p.arrived).length}/{people.length}</span>}
           {pendingN > 0 && <span style={pill("#ffe66d", "#4a3b00", 13)}>💰 ต้องเก็บ {pendingN} คน รวม {sum.toLocaleString()} บาท</span>}
           {waitingN > 0 && <span style={pill("#ede9fe", "#4c1d95", 13)}>🕓 รอโอน {waitingN} คน {waitingSum.toLocaleString()} บาท</span>}
+          {people.some((p) => p.fields.pay === "hold") && <span style={pill("#7c3aed", "#ffffff", 13)}>🔒 hold พาสปอร์ต {people.filter((p) => p.fields.pay === "hold").length} คน — รอเอเจนซี่ยืนยันโอน</span>}
           {received > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</span>}
           {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
           {overstays > 0 && <span style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</span>}

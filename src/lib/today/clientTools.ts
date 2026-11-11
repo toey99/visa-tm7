@@ -267,7 +267,7 @@ export async function buildAgentExcel(people: Person[], date: string, officeLabe
     const f = p.fields;
     const received = f.paidHow === "cash" || f.paidHow === "transfer" ? n(f.paidAmount || f.amount) : 0;
     rows.push([date, officeLabel, f.agent || "(ไม่ระบุ)", p.order, [f.lastName, f.firstName].filter(Boolean).join(" "), f.chineseName, f.passportNo,
-      f.pay === "collect" ? n(f.amount) : 0, HOW[f.paidHow ?? "none"] ?? "-", received, n(f.agentPrice), Math.max(0, n(f.agentPrice) - received), n(f.cost), n(f.agentPrice) - n(f.cost), f.costNote, f.note]);
+      f.pay === "collect" ? n(f.amount) : 0, f.pay === "hold" ? "รอโอน — hold พาสปอร์ต" : HOW[f.paidHow ?? "none"] ?? "-", received, n(f.agentPrice), Math.max(0, n(f.agentPrice) - received), n(f.cost), n(f.agentPrice) - n(f.cost), f.costNote, f.note]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows as (string | null)[][]);
   ws["!cols"] = [12, 12, 16, 6, 22, 10, 14, 10, 14, 10, 12, 14, 10, 10, 24, 20].map((w) => ({ wch: w }));

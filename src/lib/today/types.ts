@@ -44,7 +44,7 @@ export type PersonFields = {
   // bookkeeping for the day
   agent: string;
   subAgent: string;             // the main agent's own downstream agent / note — shown on their per-agent summary                // who sent the case
-  pay: "collect" | "paid" | "nocollect";
+  pay: "collect" | "paid" | "nocollect" | "hold";   // hold = agent is waiting for the customer's transfer → keep the passport until the agent confirms
   amount: string;               // THB to collect at the counter
   paidHow: "pending" | "cash" | "transfer" | "waiting" | "agent" | "none";  // what actually happened at the counter ("waiting" = will transfer later, not received yet)
   paidAmount: string;           // THB actually received by us (cash/transfer)
