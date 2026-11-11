@@ -260,7 +260,7 @@ export function billUrl(people: Person[], amount: number, opts: { docType?: "cas
 export async function buildAgentExcel(people: Person[], date: string, officeLabel: string): Promise<Blob> {
   const XLSX = await getXLSX();
   const n = (v: string) => Number(v) || 0;
-  const HOW: Record<string, string> = { pending: "ยังไม่จ่าย", cash: "เงินสดหน้างาน", transfer: "โอน", agent: "จ่ายที่เอเจนซี่", none: "-" };
+  const HOW: Record<string, string> = { pending: "ยังไม่จ่าย", cash: "เงินสดหน้างาน", transfer: "โอน", waiting: "รอโอน (ยังไม่ได้รับ)", agent: "จ่ายที่เอเจนซี่", none: "-" };
   const rows: (string | number | null)[][] = [["วันที่", "หน้างาน", "เอเจนซี่", "ลำดับ", "ชื่อ", "ชื่อจีน", "พาสปอร์ต", "แผนเก็บ", "วิธีจ่ายจริง", "รับเงินจริง", "ราคาเอเจนซี่", "เรียกเก็บเอเจนซี่", "ต้นทุน", "กำไร", "รายการต้นทุน", "หมายเหตุ"]];
   const sorted = [...people].sort((a, b) => (a.fields.agent || "").localeCompare(b.fields.agent || "") || a.order - b.order);
   for (const p of sorted) {

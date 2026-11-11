@@ -1012,12 +1012,14 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const collectSum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
   const receivedSum = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
   const pendingCount = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
+  const waitingCount = collect.filter((p) => p.fields.paidHow === "waiting").length;
 
   if (fieldMode) {
     const accent = OFFICES[meta.office].summaryAccent;
     const PAY: { k: PersonFields["paidHow"]; label: string; on: string }[] = [
       { k: "cash", label: "💵 เงินสด", on: "bg-emerald-600 text-white" },
       { k: "transfer", label: "📲 โอน", on: "bg-sky-600 text-white" },
+      { k: "waiting", label: "🕓 รอโอน", on: "bg-violet-600 text-white" },
       { k: "agent", label: "🏢 เอเจนซี่", on: "bg-indigo-600 text-white" },
       { k: "pending", label: "⏳ ยังไม่จ่าย", on: "bg-amber-500 text-white" },
     ];
@@ -1047,6 +1049,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {collect.length > 0 && <span className="rounded-lg bg-amber-50 px-3 py-1 font-semibold text-amber-900">💰 ต้องเก็บ {collect.length} คน · {collectSum.toLocaleString()} บาท</span>}
           {collect.length > 0 && <span className="rounded-lg bg-sky-50 px-3 py-1 font-semibold text-sky-900">รับแล้ว {receivedSum.toLocaleString()} บาท</span>}
           {pendingCount > 0 && <span className="rounded-lg bg-red-50 px-3 py-1 font-semibold text-red-900">⏳ ค้าง {pendingCount} คน</span>}
+          {waitingCount > 0 && <span className="rounded-lg bg-violet-50 px-3 py-1 font-semibold text-violet-900">🕓 รอโอน {waitingCount} คน</span>}
         </div>
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loaded && <div className="py-10 text-center text-slate-500">กำลังโหลด…</div>}
@@ -1271,7 +1274,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                         <tr key={p.id} className="border-t border-slate-100">
                           <td className="py-1 w-8 text-slate-400">{String(p.order).padStart(2, "0")}</td>
                           <td>{[p.fields.lastName, p.fields.firstName].filter(Boolean).join(" ")} {p.fields.chineseName}</td>
-                          <td className="text-slate-500">{({ pending: "⏳", cash: "💵 เงินสด", transfer: "📲 โอน", agent: "🏢 เอเจนซี่", none: "" } as Record<string, string>)[p.fields.paidHow ?? "none"]}</td>
+                          <td className="text-slate-500">{({ pending: "⏳", cash: "💵 เงินสด", transfer: "📲 โอน", waiting: "🕓 รอโอน", agent: "🏢 เอเจนซี่", none: "" } as Record<string, string>)[p.fields.paidHow ?? "none"]}</td>
                           <td className="text-right">{num(p.fields.agentPrice).toLocaleString()}</td>
                           <td className="text-right text-slate-500">−{num(p.fields.cost).toLocaleString()}</td>
                           <td className="text-slate-500">{p.fields.costNote}</td>
@@ -1650,6 +1653,7 @@ function PersonCard({
           {([
             ["cash", "💵 เงินสด", "bg-emerald-600 text-white"],
             ["transfer", "📲 โอน", "bg-sky-600 text-white"],
+            ["waiting", "🕓 รอโอน", "bg-violet-600 text-white"],
             ["agent", "🏢 จ่ายที่เอเจนซี่", "bg-indigo-600 text-white"],
             ["pending", "⏳ ยังไม่จ่าย", "bg-amber-500 text-white"],
           ] as const).map(([k, label, active]) => (
@@ -1880,6 +1884,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   const sum = collect.reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
   const received = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
   const pendingN = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
+  const waitingN = collect.filter((p) => p.fields.paidHow === "waiting").length;
+  const waitingSum = collect.filter((p) => p.fields.paidHow === "waiting").reduce((s, p) => s + (Number(p.fields.amount) || 0), 0);
   const overstays = people.filter((p) => (overstayInfo(p.fields.arrivalDate, p.fields.admittedUntil, p.fields.visaType, meta.date, undefined, !isRun)?.days ?? 0) > 0).length;
   const accent = o.summaryAccent;
   const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
@@ -1923,6 +1929,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
             const tag = f.pay === "collect"
               ? (f.paidHow === "cash" ? { bg: "#d2f4dd", fg: "#14532d", t: `💵 ${who}รับเงินสดแล้ว${got}` }
                 : f.paidHow === "transfer" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `📲 ${who}โอนแล้ว${got}` }
+                : f.paidHow === "waiting" ? { bg: "#ede9fe", fg: "#4c1d95", t: `🕓 ${who}รอโอน${amt}`.trim() }
                 : f.paidHow === "agent" ? { bg: "#cfe9ff", fg: "#0b3d6b", t: `🏢 ${who}จ่ายที่เอเจนซี่` }
                 : { bg: "#ffe66d", fg: "#4a3b00", t: `💰 ${who}เก็บ${amt}`.trim() })
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
@@ -1976,6 +1983,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           <span style={pill("#fff", accent, 13)}>👥 {people.length} คน</span>
           {people.some((p) => p.arrived) && <span style={pill("#16a34a", "#fff", 13)}>✓ มาแล้ว {people.filter((p) => p.arrived).length}/{people.length}</span>}
           {pendingN > 0 && <span style={pill("#ffe66d", "#4a3b00", 13)}>💰 ต้องเก็บ {pendingN} คน รวม {sum.toLocaleString()} บาท</span>}
+          {waitingN > 0 && <span style={pill("#ede9fe", "#4c1d95", 13)}>🕓 รอโอน {waitingN} คน {waitingSum.toLocaleString()} บาท</span>}
           {received > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</span>}
           {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
           {overstays > 0 && <span style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</span>}

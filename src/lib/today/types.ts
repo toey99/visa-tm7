@@ -46,7 +46,7 @@ export type PersonFields = {
   subAgent: string;             // the main agent's own downstream agent / note — shown on their per-agent summary                // who sent the case
   pay: "collect" | "paid" | "nocollect";
   amount: string;               // THB to collect at the counter
-  paidHow: "pending" | "cash" | "transfer" | "agent" | "none";  // what actually happened at the counter
+  paidHow: "pending" | "cash" | "transfer" | "waiting" | "agent" | "none";  // what actually happened at the counter ("waiting" = will transfer later, not received yet)
   paidAmount: string;           // THB actually received by us (cash/transfer)
   agentPrice: string;           // THB to invoice the agent for this person
   cost: string;                 // THB actually paid out (fee, fine, VIP, embassy letter...)
