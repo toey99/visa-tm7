@@ -59,6 +59,7 @@ export type PersonFields = {
   landTime: string;             // HH:MM landing time when it differs from the day's
   returnBy: string;             // HH:MM "back at the airport before" when it differs from the day's
   cambodia: boolean;            // passport shows Cambodia entries/exits → 🐻 on the driver card so the Lao side is cleared correctly
+  vip: boolean;                 // VIP lane at the office (customer pays +500) → 👑 on the card and the summary
   overstay: boolean;            // passport shows an overstay (ticked by hand from the stamps) → 🐢 on the driver card; fine 2,000 + 500/day
   overstayDays: string;         // days over, typed by hand (shown after the 🐢)
   report: boolean;              // include in the evening "visa expiry" infographic sent back to the factory / agent
@@ -140,6 +141,7 @@ export const EMPTY_FIELDS: PersonFields = {
   landTime: "",
   returnBy: "",
   cambodia: false,
+  vip: false,
   overstay: false,
   overstayDays: "",
   report: false,

@@ -1066,6 +1066,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                   <div className="truncate font-mono text-lg font-bold leading-tight text-slate-900">{[f.lastName, f.firstName].filter(Boolean).join(" ") || "—"}</div>
                   <div className="text-xl leading-tight text-slate-900">{f.chineseName || "\u00a0"}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+                    {f.vip && <span className="rounded bg-yellow-300 px-2 py-0.5 font-extrabold text-yellow-900">👑 VIP +500</span>}
                     {f.agent && <span className="rounded bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-900">🏢 {f.agent}</span>}
                     {isRun && <span className="rounded bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">{f.run === "RUN30" ? "🐰 run+30" : "run"}</span>}
                     {ghost && <span className="rounded bg-blue-50 px-2 py-0.5 font-semibold text-blue-900">➡ เลื่อนไป {p.movedTo}</span>}
@@ -1077,6 +1078,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     <button type="button" onClick={() => toggleArrived(p)} className={p.arrived ? "rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls}>{p.arrived ? "✅ มาแล้ว" : "☐ มาแล้ว?"}</button>
+                    <button type="button" onClick={() => patchPerson(p.id, (x) => ({ ...x, fields: { ...x.fields, vip: !x.fields.vip } }))} className={p.fields.vip ? "rounded-lg bg-yellow-400 px-3 py-1.5 text-sm font-extrabold text-yellow-950" : btnCls} title="VIP จ่ายเพิ่ม 500">👑{p.fields.vip ? " VIP" : ""}</button>
                     <button type="button" onClick={() => toggleCancelled(p)} className={p.cancelled ? "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls}>{p.cancelled ? "🚫 ไม่มา" : "ไม่มา"}</button>
                   </div>
                   {f.pay === "collect" && amount > 0 && (
@@ -1549,6 +1551,7 @@ function PersonCard({
             <div className="text-base font-semibold text-slate-900">
               {[f.lastName, f.firstName].filter(Boolean).join(" ") || <span className="text-slate-400">ยังไม่มีชื่อ</span>}
               {f.chineseName && <span className="ml-2 text-slate-600">{f.chineseName}</span>}
+              {f.vip && <span className="ml-2 rounded bg-yellow-300 px-2 py-0.5 text-xs font-extrabold text-yellow-900">👑 VIP +500</span>}
               {isRun && car && <span className="ml-2 rounded px-2 py-0.5 text-xs font-semibold text-white" style={{ background: car.accent }}>🚗 {car.id} {car.plate}</span>}
               {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">🐰 +30 วัน</span>}
               {isRun && f.cambodia && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">🐻 กัมพูชา</span>}
@@ -1576,6 +1579,7 @@ function PersonCard({
             <option value="">🏢 ย้ายหน้างาน…</option>
             {OFFICE_IDS.filter((id) => id !== meta.office).map((id) => <option key={id} value={id}>{OFFICES[id].label}</option>)}
           </select>
+          <button onClick={() => set("vip", !f.vip)} className={f.vip ? "rounded-lg bg-yellow-400 px-3 py-1.5 text-sm font-extrabold text-yellow-950" : btnCls} title="ช่องทาง VIP ที่หน้างาน — ลูกค้าจ่ายเพิ่ม 500">👑 VIP</button>
           <button onClick={onToggleCancelled} className={btnCls} title="ลูกค้าไม่มา: คงไว้เป็นประวัติ แต่ไม่นับยอด ไม่ออกฟอร์ม">{p.cancelled ? "↩ กลับมา" : "🚫 ไม่มา"}</button>
           <button onClick={() => { if (window.confirm("ลบคนนี้?")) onRemove(); }} className={btnDangerCls}>ลบ</button>
         </div>
@@ -1940,6 +1944,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                   <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
                   {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
                   {isRun && carById(f.car) && <span style={{ position: "absolute", top: -6, right: -6, background: carById(f.car)!.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>🚗{f.car}</span>}
+                  {f.vip && <span style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, fontSize: 26, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.45))" }}>👑</span>}
                   {isRun && f.cambodia && <span style={{ position: "absolute", top: 18, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐻</span>}
                   {isRun && f.overstay && <span style={{ position: "absolute", top: 44, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐢</span>}
                   {isRun && f.run === "RUN30" && <span style={{ position: "absolute", bottom: -6, left: -6, background: "#ea580c", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>+30</span>}
@@ -1974,6 +1979,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           {received > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</span>}
           {collect.length === 0 && people.length > 0 && <span style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</span>}
           {overstays > 0 && <span style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</span>}
+          {people.some((p) => p.fields.vip) && <span style={pill("#fde047", "#713f12", 13)}>👑 VIP {people.filter((p) => p.fields.vip).length} คน · +{(people.filter((p) => p.fields.vip).length * 500).toLocaleString()} บาท</span>}
           {isRun && <span style={pill("#e0e7ff", "#3730a3", 13)}>🚗 {CARS.filter((c) => people.some((p) => p.fields.car === c.id)).length} คัน</span>}
           {isRun && people.some((p) => p.fields.run === "RUN30") && <span style={pill("#ffedd5", "#9a3412", 13)}>📄 ไปต่อ 30 วัน {people.filter((p) => p.fields.run === "RUN30").length}</span>}
           {shown.some((p) => p.cancelled) && <span style={pill("#fee2e2", "#991b1b", 13)}>❌ ไม่มา {shown.filter((p) => p.cancelled).length}</span>}
