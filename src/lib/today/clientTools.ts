@@ -375,10 +375,20 @@ async function waitForImages(el: HTMLElement): Promise<void> {
     try { await img.decode(); } catch { /* broken image — nothing to wait for */ }
   }));
 }
+// iOS WebKit also draws box-shadow / drop-shadow inside that foreignObject as
+// hard, offset grey blocks (no blur), which showed up on phone exports as a
+// grey slab beside every photo and an "arrow" behind the badges. While the
+// node is being captured we flatten every shadow (globals.css: [data-export]).
 export async function captureNode(el: HTMLElement, pixelRatio = 2): Promise<Blob | null> {
   const hti = await getHtmlToImage();
   await waitForImages(el);
   const opts = { pixelRatio, cacheBust: false, backgroundColor: "#ffffff" };
-  try { await hti.toCanvas(el, opts); } catch { /* warm-up only */ }
-  return hti.toBlob(el, opts);
+  el.setAttribute("data-export", "1");
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+  try {
+    try { await hti.toCanvas(el, opts); } catch { /* warm-up only */ }
+    return await hti.toBlob(el, opts);
+  } finally {
+    el.removeAttribute("data-export");
+  }
 }

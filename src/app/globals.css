@@ -24,3 +24,11 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* While a sheet is being exported with html-to-image: iOS WebKit renders shadows
+   inside the capture as hard grey blocks, so flatten them for the capture only. */
+[data-export="1"], [data-export="1"] * {
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
