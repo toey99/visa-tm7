@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         // where the pictures go: 90-day board (no target) or a day board for one office
         const t = body.target as { ns?: string; office?: string } | null | undefined;
         if (t === null) delete g.target;
-        else if (t && (t.ns === "days" || t.ns === "run") && typeof t.office === "string" && /^[A-Z][A-Z0-9_]+$/.test(t.office)) g.target = { ns: t.ns, office: t.office };
+        else if (t && (t.ns === "days" || t.ns === "run" || t.ns === "slips") && typeof t.office === "string" && /^[A-Z][A-Z0-9_]+$/.test(t.office)) g.target = { ns: t.ns, office: t.office };
       } else delete cfg.groups[body.groupId];
       await saveConfig(cfg);
       return NextResponse.json({ ok: true, groups: cfg.groups }, noStore);

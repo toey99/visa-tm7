@@ -184,6 +184,7 @@ export default function D90Page() {
               <option value="">📥 หน้างานวันนี้ / วีซ่ารัน…</option>
               {(Object.keys(OFFICES) as OfficeId[]).map((o) => <option key={o} value={`days:${o}`}>{OFFICES[o].emoji} ต่อวีซ่า {OFFICES[o].label}</option>)}
               <option value="run:CHIANG_SAEN">🚗 วีซ่ารัน (เชียงแสน)</option>
+              <option value="slips:ARTAO">🧾 สลิปโอน อาเต่า</option>
             </select>
             <BtnBase disabled={busy} tone="rose" onClick={() => void post({ action: "group", groupId: id, allow: false })}>ไม่ใช่</BtnBase>
           </span>
@@ -338,7 +339,7 @@ export default function D90Page() {
       {allowedGroups.length > 0 && (
         <p className="mt-10 text-center text-xs text-slate-400">
           กล่องรับงาน: {allowedGroups.map(([id, g], i) => (
-            <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"}{g.target ? ` → ${g.target.ns === "run" ? "🚗 วีซ่ารัน" : `📥 ${OFFICES[g.target.office as OfficeId]?.label ?? g.target.office}`}` : " → 📋 90 วัน"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
+            <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"}{g.target ? ` → ${g.target.ns === "slips" ? "🧾 สลิปโอน" : g.target.ns === "run" ? "🚗 วีซ่ารัน" : `📥 ${OFFICES[g.target.office as OfficeId]?.label ?? g.target.office}`}` : " → 📋 90 วัน"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
           ))}
           <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>สรุปส่ง</b> = ใบที่ได้กลับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
         </p>

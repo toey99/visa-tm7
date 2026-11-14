@@ -19,6 +19,9 @@ import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary,
 import { boardSummary, intakeImage, loadState, parseCommand, targetDate, type InboxTarget } from "@/lib/inbox/board";
 import { blobPut as blobPutJson } from "@/lib/blob";
 import { OFFICES, type OfficeId } from "@/lib/offices";
+import { readSlipImage } from "@/lib/slips/ocr";
+import { claimTransfer, listSlips, loadSlipState, saveSlip, saveSlipState, slipImgPath } from "@/lib/slips/store";
+import { SLIP_BOOKS, addDays, bkkDay as slipDay, counted, dayShort, dayTh, formula, isSlipBook, money, parseDay, roundFor, summaryText, total, type SlipBookId, type SlipItem } from "@/lib/slips/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -66,6 +69,12 @@ async function handle(ev: LineEvent): Promise<void> {
 
   if (ev.type !== "message" || !ev.message) return;
   const target = cfg.groups[groupId]?.target;
+  if (target && target.ns === "slips" && isSlipBook(target.office)) {
+    if (ev.message.type === "image") return handleSlipImage(ev, target.office);
+    if (ev.message.type === "text") return handleSlipText(ev, target.office);
+    if (ev.message.type === "sticker") return closeSlipRound(ev, target.office, "");   // a sticker = "ตัดจบ", the way the day is closed by hand
+    return;
+  }
   if (target && (target.ns === "days" || target.ns === "run") && target.office in OFFICES) {
     const t: InboxTarget = { ns: target.ns, office: target.office as OfficeId };
     if (ev.message.type === "image") return handleBoardImage(ev, groupId, t);
@@ -183,4 +192,105 @@ async function handleText(ev: LineEvent): Promise<void> {
     return `⏳ ${head}\nยังไม่ได้ใบ (รอมา ${daysWaiting(p.ts, now)} วัน)`;
   });
   return lineReply(ev.replyToken, lines.join("\n\n"));
+}
+
+// ---------- transfer-slip room (🧾 สลิปโอน <agency>) ----------
+const SLIPS_URL = "https://tm7.toyka.net/slips";
+const SLIP_HELP = [
+  "🧾 ห้องสลิป",
+  "• forward สลิปโอนเข้ามา → บอทอ่านยอดและรวมยอดของรอบวันให้",
+  "• สรุป · สรุป 13/11 · สรุป เมื่อวาน → รายการสลิปของรอบนั้น",
+  "• ตัดจบ (หรือส่งสติกเกอร์) → ปิดรอบวัน สลิปที่มาหลังจากนี้ขึ้นเป็นรอบวันถัดไป",
+  "• เปิดรอบ → ยกเลิกการตัดจบล่าสุด",
+  `• แก้ยอด / ย้ายวัน / ลบ: ${SLIPS_URL}`,
+].join("\n");
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function handleSlipImage(ev: LineEvent, book: SlipBookId): Promise<void> {
+  const m = ev.message!;
+  if (m.contentProvider && m.contentProvider.type !== "line") return;
+  const bytes = await lineGetContent(m.id);
+  const mime = sniffImageMime(new Uint8Array(bytes.slice(0, 16)));
+  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+  const ts = ev.timestamp || Date.now();
+  const img = slipImgPath(book, slipDay(ts).slice(0, 7).replace("-", ""), m.id, ext);
+  await blobPut(img, bytes, mime);
+
+  const state = await loadSlipState(book);
+  const item: SlipItem = { id: m.id, ts, day: roundFor(state, ts), img, isSlip: true, amount: 0, paidDate: "", paidTime: "", sender: "", bank: "", receiver: "", ref: "" };
+  let failed = false;
+  try {
+    Object.assign(item, await readSlipImage(bytes, mime));
+  } catch (e) {
+    failed = true;
+    item.note = "AI อ่านไม่สำเร็จ";
+    console.error("[line webhook] slip read failed", m.id, e);
+  }
+  let dup: { id: string; day: string } | null = null;
+  if (!failed && item.isSlip) {
+    dup = await claimTransfer(book, item).catch(() => null);
+    if (dup) item.dupOf = dup.id;
+  }
+  await saveSlip(book, item);
+
+  if (failed) return lineReply(ev.replyToken, `⚠️ อ่านสลิปนี้ไม่สำเร็จ — เก็บรูปไว้ในรอบ ${dayShort(item.day)} แล้ว ยังไม่นับยอด ใส่ยอดเองได้ที่ ${SLIPS_URL}`);
+  if (!item.isSlip) return lineReply(ev.replyToken, `ℹ️ รูปนี้ไม่ใช่สลิปโอน — เก็บรูปไว้ ไม่นับยอด`);
+  if (dup) return lineReply(ev.replyToken, `⚠️ สลิปซ้ำ — ใบนี้ (${money(item.amount)} บาท) เคยส่งแล้วในรอบ ${dayShort(dup.day)} ไม่นับเพิ่ม`);
+  if (!item.amount) return lineReply(ev.replyToken, `⚠️ อ่านยอดเงินจากสลิปไม่ได้ — เก็บรูปไว้ในรอบ ${dayShort(item.day)} แล้ว ใส่ยอดเองได้ที่ ${SLIPS_URL}`);
+
+  // slips forwarded together are separate calls: let the others land before adding up
+  await pause(1200);
+  let items: SlipItem[] = [item];
+  try { items = await listSlips(book, item.day); } catch { /* the running total is a convenience; the slip itself is saved */ }
+  if (!items.some((i) => i.id === item.id)) items.push(item);
+  const ok = items.filter(counted);
+  const when = [item.paidDate ? item.paidDate.slice(0, 5) : "", item.paidTime].filter(Boolean).join(" ");
+  const late = item.paidDate && item.day !== `${item.paidDate.slice(6)}-${item.paidDate.slice(3, 5)}-${item.paidDate.slice(0, 2)}` ? ` (โอนวันที่ ${item.paidDate.slice(0, 5)})` : "";
+  return lineReply(ev.replyToken, [
+    `🧾 ${money(item.amount)} บาท${when ? ` · โอน ${when}` : ""}${item.sender ? ` · ${item.sender}` : ""}${item.bank ? ` (${item.bank})` : ""}`,
+    `รอบ ${dayShort(item.day)}${late} · ${SLIP_BOOKS[book].label} · ${ok.length} ใบ รวม ${money(total(items))}`,
+  ].join("\n"));
+}
+
+async function closeSlipRound(ev: LineEvent, book: SlipBookId, dayArg: string): Promise<void> {
+  const now = ev.timestamp || Date.now();
+  const state = await loadSlipState(book);
+  const day = parseDay(dayArg, now) || roundFor(state, now);
+  state.closed[day] = now;
+  await saveSlipState(book, state);
+  const items = await listSlips(book, day);
+  return lineReply(ev.replyToken, [
+    `✅ ตัดจบรอบ ${dayTh(day)} · ${SLIP_BOOKS[book].label}\nเงินโอน ${items.filter(counted).length} ใบ\n${formula(items)}`,
+    `สลิปที่ส่งหลังจากนี้นับเป็นรอบ ${dayShort(roundFor(state, now))} · ถ้ากดผิดพิมพ์ “เปิดรอบ”`,
+  ]);
+}
+
+async function handleSlipText(ev: LineEvent, book: SlipBookId): Promise<void> {
+  const text = (ev.message?.text ?? "").trim();
+  const now = ev.timestamp || Date.now();
+  let m: RegExpMatchArray | null;
+  if ((m = text.match(/^(?:ตัดจบ|ปิดรอบ|ปิดยอด|close)(?:\s+(\S+))?$/i))) return closeSlipRound(ev, book, m[1] ?? "");
+  if ((m = text.match(/^(?:เปิดรอบ|เปิด|ยกเลิกตัดจบ|reopen)(?:\s+(\S+))?$/i))) {
+    const state = await loadSlipState(book);
+    const day = parseDay(m[1] ?? "", now) || Object.entries(state.closed).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (!day || !state.closed[day]) return lineReply(ev.replyToken, "ไม่มีรอบที่ตัดจบไว้ให้เปิด");
+    delete state.closed[day];
+    await saveSlipState(book, state);
+    return lineReply(ev.replyToken, `🔓 เปิดรอบ ${dayTh(day)} อีกครั้ง — สลิปที่ส่งตอนนี้นับเป็นรอบ ${dayShort(roundFor(state, now))}`);
+  }
+  if ((m = text.match(/^(?:สรุป|summary|总结)(?:\s+(\S+))?$/i))) {
+    const state = await loadSlipState(book);
+    let day = parseDay(m[1] ?? "", now);
+    let items: SlipItem[];
+    if (day) items = await listSlips(book, day);
+    else {
+      // no day named: the open round, or — right after closing, when it is still empty — the round just closed
+      day = roundFor(state, now);
+      items = await listSlips(book, day);
+      const prev = addDays(day, -1);
+      if (!items.length && state.closed[prev]) { day = prev; items = await listSlips(book, day); }
+    }
+    return lineReply(ev.replyToken, summaryText(book, day, items, state.closed[day]));
+  }
+  if (/^(ช่วย|help|\?|？)$/i.test(text)) return lineReply(ev.replyToken, SLIP_HELP);
 }

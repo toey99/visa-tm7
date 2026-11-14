@@ -28,8 +28,9 @@ export type D90Item = {
   note?: string;
 };
 
-// target: where this group's pictures go — unset = the 90-day board; otherwise a day board (extension / visa run) for one office
-export type D90Group = { name: string; status: "pending" | "allowed"; ts: number; target?: { ns: "days" | "run"; office: string } };
+// target: where this group's pictures go — unset = the 90-day board; "days"/"run" = a day board (extension / visa run) for one office;
+// "slips" = the transfer-slip room of one agency book (office holds the book id, e.g. ARTAO)
+export type D90Group = { name: string; status: "pending" | "allowed"; ts: number; target?: { ns: "days" | "run" | "slips"; office: string } };
 
 export type D90Case = {
   passport: D90Item;
