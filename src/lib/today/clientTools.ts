@@ -379,6 +379,21 @@ async function waitForImages(el: HTMLElement): Promise<void> {
 // hard, offset grey blocks (no blur), which showed up on phone exports as a
 // grey slab beside every photo and an "arrow" behind the badges. While the
 // node is being captured we flatten every shadow (globals.css: [data-export]).
+/** A small JPEG of a captured PNG (LINE wants a ≤1 MB preview next to the full picture). */
+export async function jpegPreview(png: Blob, maxWidth = 1000, quality = 0.8): Promise<Blob> {
+  const url = URL.createObjectURL(png);
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("preview decode failed")); img.src = url; });
+    const scale = Math.min(1, maxWidth / img.naturalWidth);
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("preview failed"))), "image/jpeg", quality));
+  } finally { URL.revokeObjectURL(url); }
+}
 export async function captureNode(el: HTMLElement, pixelRatio = 2): Promise<Blob | null> {
   const hti = await getHtmlToImage();
   await waitForImages(el);

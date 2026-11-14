@@ -34,6 +34,7 @@ import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/Expir
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
 import {
   billUrl, buildAgentExcel, buildCollectImage, buildDayZip, buildTm30Excel, captureNode, downloadBlob, type RunSheetRow, downscaleImage, mergePdfs, plusDaysDdmmyyyy,
+  jpegPreview,
 } from "@/lib/today/clientTools";
 import {
   DEFAULT_CROP, buildPhotoSheetPdf, cropPassportPhoto, drawCrop, findHeadByBackground, loadImage, renderPhoto,
@@ -804,6 +805,45 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     finally { setWorking(false); }
   }
 
+  // ---------- send pictures to the board's LINE group ----------
+  // The bot posts them in the group tagged for this board; from there one tap
+  // forwards them to the driver / the agent — no download, no upload.
+  async function sendImagesToLine(items: { name: string; blob: Blob }[], caption: string) {
+    if (!items.length) { setError("ยังไม่มีรูปให้ส่ง"); return; }
+    setLineBusy("send"); setError(""); setStatus("กำลังส่งเข้า LINE…");
+    try {
+      const fd = new FormData();
+      fd.set("ns", isRun ? "run" : "days"); fd.set("day", meta.date.replace(/\//g, "")); fd.set("office", meta.office); fd.set("caption", caption);
+      for (const [i, it] of items.entries()) {
+        fd.set(`img_${i}`, new File([it.blob], it.name, { type: it.blob.type || "image/png" }));
+        try { fd.set(`prev_${i}`, new File([await jpegPreview(it.blob)], it.name.replace(/\.png$/i, "") + "-p.jpg", { type: "image/jpeg" })); } catch { /* full picture doubles as preview */ }
+      }
+      const r = await fetch("/api/line/send-images", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setStatus(`📲 ส่ง ${j.count} รูปเข้า LINE แล้ว (${(j.groups as string[]).join(", ")})`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setLineBusy(""); }
+  }
+  async function sendCarCardsToLine(which: "customer" | "driver") {
+    if (!carsInUse.length) { setError("ยังไม่ได้จัดใครลงรถเลย"); return; }
+    setWorking(true);
+    try {
+      const cards = await makeCarCards([which]);
+      await sendImagesToLine(cards, `${which === "driver" ? "🧑‍✈️ การ์ดคนขับ" : "🚗 การ์ดลูกค้า"} · ${OFFICES[meta.office].label} ${meta.date} · ${cards.length} คัน`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setWorking(false); }
+  }
+  async function sendSummaryToLine() {
+    setWorking(true);
+    try {
+      const blob = await makeSummary();
+      if (!blob) throw new Error("ทำรูป summary ไม่สำเร็จ");
+      await sendImagesToLine([{ name: "summary.png", blob }], `📋 Summary · ${OFFICES[meta.office].label} ${meta.date}${summaryAgent ? ` · ${summaryAgent}` : ""} · ${active.length} คน`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setWorking(false); }
+  }
+
   // 🐢 on the driver card: ticked by hand on the person (overstay history seen
   // in the passport); the number after the turtle is the day count typed in
   const overstayByPerson: Record<string, number> = {};
@@ -1157,7 +1197,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                   🏢 {a} · มาแล้ว {active.filter((p) => p.fields.agent === a && p.arrived).length}/{active.filter((p) => p.fields.agent === a).length}
                 </button>
               ))}
-              <button onClick={downloadSummary} disabled={working} className={btnPrimaryCls + " ml-auto"}>⬇ ส่งรูป Summary{summaryAgent ? ` · ${summaryAgent}` : ""}</button>
+              <button onClick={sendSummaryToLine} disabled={working || !!lineBusy} className={btnCls + " ml-auto"}>📲 → LINE</button>
+              <button onClick={downloadSummary} disabled={working} className={btnPrimaryCls}>⬇ ส่งรูป Summary{summaryAgent ? ` · ${summaryAgent}` : ""}</button>
             </div>
             <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
               <SummarySheet ref={summaryRef} people={summaryAgent ? people.filter((p) => p.fields.agent === summaryAgent) : people} meta={meta} mode={mode} agentFilter={summaryAgent} />
@@ -1281,10 +1322,13 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           {OFFICES[meta.office].generator !== "none" && <button onClick={tm7All} disabled={working || !people.length} className={btnPrimaryCls}>{isRun ? "⬇ TM7 คนไปต่อ 30 วัน (PDF เดียว)" : "⬇ TM7 ทุกคน (PDF เดียว)"}</button>}
           {isRun && <button onClick={() => downloadCarCards("customer")} disabled={working || !people.length} className={btnPrimaryCls} title="มีจุดนัดพบประตู 2 — ส่งให้ลูกค้า">🚗 การ์ดลูกค้า (ทุกคัน)</button>}
           {isRun && <button onClick={() => downloadCarCards("driver")} disabled={working || !people.length} className={btnPrimaryCls} title="ไม่มีจุดนัดพบ รูปหน้าใหญ่ — ส่งให้คนขับ">🧑‍✈️ การ์ดคนขับ (ทุกคัน)</button>}
+          {isRun && <button onClick={() => sendCarCardsToLine("driver")} disabled={working || !!lineBusy || !people.length} className={btnCls} title="บอทโพสต์การ์ดคนขับทุกคันเข้ากลุ่ม LINE ของวีซ่ารัน → forward ให้คนขับได้เลย">📲 การ์ดคนขับ → LINE</button>}
+          {isRun && <button onClick={() => sendCarCardsToLine("customer")} disabled={working || !!lineBusy || !people.length} className={btnCls} title="บอทโพสต์การ์ดลูกค้าทุกคันเข้ากลุ่ม LINE ของวีซ่ารัน → forward ให้ลูกค้า/เอเจนซี่">📲 การ์ดลูกค้า → LINE</button>}
           <button onClick={downloadExpiryReport} disabled={working || !reportPeople.length} className={btnCls} title="รูปสรุปชื่อ/พาสปอร์ต/วันเข้า/วันหมดอายุ ของคนที่ติ๊ก 📅 — ส่งกลับโรงงาน/เอเจนซี่ตอนเย็น">📅 สรุปหมดอายุ ({reportPeople.length})</button>
           <button onClick={photosAll} disabled={working || !people.length} className={btnPrimaryCls}>✦ ทำรูปพื้นขาวทุกคน</button>
           <button onClick={downloadPhotoSheet} disabled={working || !people.some((p) => p.photo)} className={btnCls}>⬇ แผ่น A4 รูป (PDF)</button>
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnPrimaryCls}>⬇ Summary (PNG){summaryAgent ? ` · ${summaryAgent}` : ""}</button>
+          <button onClick={sendSummaryToLine} disabled={working || !!lineBusy || !people.length} className={btnCls} title="บอทโพสต์รูป summary นี้เข้ากลุ่ม LINE ของหน้างานนี้">📲 Summary → LINE</button>
           {summaryAgents.length > 1 && <button onClick={downloadAgentSummaries} disabled={working} className={btnCls} title="ออก summary คนละรูปต่อเอเจนซี่หลัก เห็นเฉพาะลูกค้าของเขา พร้อมโน้ตเอเจนซี่ย่อย">⬇ Summary แยกเอเจนซี่ ({summaryAgents.length})</button>}
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>

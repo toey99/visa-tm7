@@ -63,6 +63,21 @@ export async function linePush(to: string, text: string): Promise<{ ok: true } |
   }
 }
 
+/** Push up to five ready-made messages (text / image) to a group. */
+export async function linePushMessages(to: string, messages: Array<Record<string, unknown>>): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  try {
+    const r = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken()}`, "content-type": "application/json" },
+      body: JSON.stringify({ to, messages: messages.slice(0, 5) }),
+    });
+    if (r.ok) return { ok: true };
+    return { ok: false, status: r.status, error: (await r.text()).slice(0, 200) };
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function lineGroupName(groupId: string): Promise<string> {
   try {
     const r = await fetch(`https://api.line.me/v2/bot/group/${encodeURIComponent(groupId)}/summary`, {
