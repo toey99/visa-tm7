@@ -8,8 +8,10 @@
 // record of each round — pictures, amounts, the "13,000+47,000 = …" line for
 // the daily closing note — and the place to fix what the AI got wrong.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SLIP_BOOKS, addDays, bkkTime, byArrival, counted, dayTh, formula, money, total, type SlipBookId, type SlipItem } from "@/lib/slips/types";
+import SlipSheet from "@/components/SlipSheet";
+import { captureNode, downloadBlob } from "@/lib/today/clientTools";
 
 type Data = { book: SlipBookId; day: string; round: string; closed: Record<string, number>; items: SlipItem[] };
 const BOOK: SlipBookId = "ARTAO";
@@ -23,6 +25,8 @@ export default function SlipsPage() {
   const [status, setStatus] = useState("");
   const [zoom, setZoom] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});   // amounts being typed
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async (d: string) => {
     setBusy(true); setError("");
@@ -63,6 +67,17 @@ export default function SlipsPage() {
   const closedAt = data ? data.closed[data.day] : undefined;
   const isRound = !!data && data.day === data.round;
 
+  // one picture: every slip of the round + the table + the total
+  async function exportSheet() {
+    if (!data || !sheetRef.current) return;
+    setExporting(true); setError("");
+    try {
+      const blob = await captureNode(sheetRef.current, 2);
+      if (blob) downloadBlob(blob, `slips_${data.day.replace(/-/g, "")}_${SLIP_BOOKS[BOOK].label}.png`);
+      flash("ได้รูปสรุปรอบแล้ว");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    setExporting(false);
+  }
   async function copyLine() {
     try { await navigator.clipboard.writeText(`เงินโอน\n${line}`); flash("คัดลอกแล้ว"); } catch { setError("คัดลอกไม่ได้ — กดค้างที่ข้อความเพื่อคัดลอกเอง"); }
   }
@@ -102,6 +117,7 @@ export default function SlipsPage() {
               <p className="mt-1 break-words text-lg font-bold text-slate-800">{line}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button type="button" onClick={() => void copyLine()} className="rounded-full bg-sky-400 px-3 py-1 text-sm font-semibold text-white">📋 คัดลอกบรรทัดนี้</button>
+                <button type="button" disabled={exporting || !items.length} onClick={() => void exportSheet()} className="rounded-full bg-violet-500 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">{exporting ? "กำลังทำรูป…" : "🖼 รูปสรุปรอบ (ทุกสลิป+ตาราง)"}</button>
                 {closedAt
                   ? <button type="button" disabled={busy} onClick={() => void post({ action: "reopen" }, "เปิดรอบแล้ว")} className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 disabled:opacity-50">🔓 เปิดรอบอีกครั้ง</button>
                   : <button type="button" disabled={busy} onClick={() => { if (window.confirm(`ตัดจบรอบ ${dayTh(data.day)}? สลิปที่มาหลังจากนี้จะขึ้นเป็นรอบวันถัดไป`)) void post({ action: "close" }, "ตัดจบแล้ว"); }} className="rounded-full bg-pink-400 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">✅ ตัดจบรอบนี้</button>}
@@ -160,6 +176,15 @@ export default function SlipsPage() {
         })}
       </div>
       {data && items.length > 0 && <p className="mt-4 text-right text-sm font-semibold text-slate-700">รวมที่นับ {money(total(items))} บาท</p>}
+
+      {data && items.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่างรูปสรุปรอบ</h2>
+          <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
+            <SlipSheet ref={sheetRef} book={SLIP_BOOKS[BOOK].label} day={data.day} items={items} closedAt={closedAt} />
+          </div>
+        </div>
+      )}
 
       {zoom && (
         <button type="button" onClick={() => setZoom("")} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
