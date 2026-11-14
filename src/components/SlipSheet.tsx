@@ -14,7 +14,9 @@ import { bkkTime, counted, dayTh, formula, money, total, type SlipItem } from "@
 const FONT = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
 const fileUrl = (path: string) => `/api/slips/file?path=${encodeURIComponent(path)}`;
 
-const SlipSheet = forwardRef<HTMLDivElement, { book: string; day: string; items: SlipItem[]; closedAt?: number }>(function SlipSheet({ book, day, items, closedAt }, ref) {
+// `srcOf` gives each slip its own data: URL — html-to-image otherwise served
+// the same picture for every thumbnail when they came from the file route.
+const SlipSheet = forwardRef<HTMLDivElement, { book: string; day: string; items: SlipItem[]; closedAt?: number; srcOf?: (it: SlipItem) => string }>(function SlipSheet({ book, day, items, closedAt, srcOf }, ref) {
   const list = items.filter(counted);
   const skipped = items.filter((i) => !counted(i));
   const accent = "#0d9488";
@@ -45,7 +47,7 @@ const SlipSheet = forwardRef<HTMLDivElement, { book: string; day: string; items:
             <div key={it.id} style={{ textAlign: "center" }}>
               <div style={{ position: "relative", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden", height: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={fileUrl(it.img)} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                <img src={srcOf ? srcOf(it) : fileUrl(it.img)} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                 <span style={{ position: "absolute", top: 6, left: 6, width: 26, height: 26, borderRadius: "50%", background: accent, color: "#fff", fontSize: 13, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
               </div>
               <div style={{ marginTop: 6, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>{money(it.amount)}</div>
@@ -76,10 +78,7 @@ const SlipSheet = forwardRef<HTMLDivElement, { book: string; day: string; items:
         {skipped.length > 0 && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>ไม่นับ {skipped.length} ใบ ({skipped.map((s) => (s.dupOf ? "ซ้ำ" : !s.isSlip ? "ไม่ใช่สลิป" : "ตัดออก")).join(", ")})</div>}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, padding: "0 6px", fontSize: 11, color: "#475569" }}>
-        <span>ยอดจากสลิปที่ส่งเข้าห้องสลิป · กรุณาตรวจกับรายการธนาคารอีกครั้ง</span>
-        <span style={{ fontWeight: 700, color: accent }}>ABC · Alliance Border Consulting</span>
-      </div>
+      <div style={{ marginTop: 10, padding: "0 6px", fontSize: 11, color: "#475569" }}>ยอดจากสลิปที่ส่งเข้าห้องสลิป · กรุณาตรวจกับรายการธนาคารอีกครั้ง</div>
     </div>
   );
 });

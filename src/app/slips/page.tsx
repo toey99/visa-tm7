@@ -27,6 +27,26 @@ export default function SlipsPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});   // amounts being typed
   const sheetRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  // each slip picture as its own data: URL for the round sheet (see SlipSheet)
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const need = (data?.items ?? []).filter((it) => counted(it) && !thumbs[it.img]);
+      for (const it of need) {
+        try {
+          const r = await fetch(fileUrl(it.img), { cache: "force-cache" });
+          if (!r.ok) continue;
+          const b = await r.blob();
+          const url = await new Promise<string>((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = rej; fr.readAsDataURL(b); });
+          if (!alive) return;
+          setThumbs((t) => ({ ...t, [it.img]: url }));
+        } catch { /* leave it to the plain URL */ }
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   const load = useCallback(async (d: string) => {
     setBusy(true); setError("");
@@ -70,6 +90,8 @@ export default function SlipsPage() {
   // one picture: every slip of the round + the table + the total
   async function exportSheet() {
     if (!data || !sheetRef.current) return;
+    const missing = items.filter((it) => counted(it) && !thumbs[it.img]).length;
+    if (missing) { setError(`รูปสลิปยังโหลดไม่ครบ (${missing} ใบ) รอสักครู่แล้วกดใหม่`); return; }
     setExporting(true); setError("");
     try {
       const blob = await captureNode(sheetRef.current, 2);
@@ -181,7 +203,7 @@ export default function SlipsPage() {
         <div className="mt-8">
           <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่างรูปสรุปรอบ</h2>
           <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
-            <SlipSheet ref={sheetRef} book={SLIP_BOOKS[BOOK].label} day={data.day} items={items} closedAt={closedAt} />
+            <SlipSheet ref={sheetRef} book={SLIP_BOOKS[BOOK].label} day={data.day} items={items} closedAt={closedAt} srcOf={(it) => thumbs[it.img] ?? fileUrl(it.img)} />
           </div>
         </div>
       )}
