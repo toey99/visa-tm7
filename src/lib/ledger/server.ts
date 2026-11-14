@@ -161,7 +161,8 @@ const withEdits = (c: DayComputed, e: DayEdits, carryIn: number): DayLedger => {
  */
 export async function ledgerRange(book: LedgerBook, to: string, cfg?: LedgerConfig): Promise<{ config: LedgerConfig; days: DayLedger[] }> {
   const config = cfg ?? (await loadLedgerConfig(book));
-  const start = config.opening.day <= to ? config.opening.day : to;
+  const start = config.opening.day;
+  if (to < start) return { config, days: [] };   // before the book opens: nothing to show, nothing to freeze
   const freezeBefore = addDays(bkkToday(), -1);   // < yesterday → freeze
   const out: DayLedger[] = [];
   let carry = config.opening.amount;

@@ -46,6 +46,7 @@ export default function LedgerPage() {
       const j = (await r.json()) as Resp;
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       setData(j);
+      if (j.config?.opening?.day && day < j.config.opening.day) setDay(j.config.opening.day);   // the book opens later than the day shown → jump there
       return j;
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); return null; }
     finally { setBusy(""); }
