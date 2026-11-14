@@ -234,6 +234,32 @@ export function pendingListZh(board: D90Board): string {
   return [`90天报道 · 待出单 ${open.length} 人`, ...blocks].join("\n\n");
 }
 
+/** numbered list of every job received on one Bangkok day (YYYY-MM-DD): English name, Chinese name, passport no. */
+export function daySummary(board: D90Board, day: string): string {
+  const list = board.cases.filter((c) => bkkDay(c.passport.ts) === day);
+  const head = `📥 รับงาน 90 วัน · ${dayLabelTh(day)} · ${list.length} คน\n90天报到 · ${dayLabelZh(day)} · 共${list.length}人`;
+  if (!list.length) return head;
+  const rows = list.map((c, i) => `${i + 1}. ${[c.passport.name || "⚠️ (อ่านชื่อไม่ออก)", c.passport.cn, c.passport.passportNo].filter(Boolean).join(" ")}`);
+  return `${head}\n\n${rows.join("\n")}`;
+}
+
+/** "สรุป", "สรุป 13", "สรุป 13/11", "สรุป เมื่อวาน" → the Bangkok day asked for (default today); null when it isn't a summary request */
+export function summaryDay(text: string, now: number): string | null {
+  const m = text.trim().match(/^(?:สรุป|总结|汇总|summary)\s*(.*)$/i);
+  if (!m) return null;
+  const rest = m[1].trim();
+  const today = bkkDay(now);
+  if (/^(เมื่อวาน|昨天|yesterday)/i.test(rest)) return bkkDay(now - 86400000);
+  const d = rest.match(/^(\d{1,2})(?:[\/.\-](\d{1,2}))?/);
+  if (!d) return today;
+  const [y, mo] = today.split("-").map(Number);
+  const day = +d[1], month = d[2] ? +d[2] : mo;
+  if (day < 1 || day > 31 || month < 1 || month > 12) return today;
+  // a month later than this one can only mean last year
+  const year = month > mo ? y - 1 : y;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function searchCases(board: D90Board, q: string): D90Case[] {
   const tokens = nameTokens(q), pp = ppKey(q), zh = cjkOnly(q);
   if (hasCjk(q)) return zh ? board.cases.filter((c) => cjkOnly(c.passport.cn ?? "").includes(zh)) : [];

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCases, caseForSlip, isOldSlip, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
+import { buildCases, caseForSlip, daySummary, isOldSlip, summaryDay, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
 
 const T0 = Date.UTC(2026, 10, 14, 2, 0, 0); // 14 Nov 2026 09:00 Bangkok
 const item = (p: Partial<D90Item> & { id: string }): D90Item => ({
@@ -162,4 +162,20 @@ test("a visa page that shows the passport number goes to that passport wherever 
   assert.deepEqual(moved.cases[0].pages.map((p) => p.id), ["3", "4"]);
   const cut = buildCases([...items.slice(0, 3), { ...items[3], linkTo: "-" }]);
   assert.deepEqual(cut.loose.map((p) => p.id), ["4"]);
+});
+
+test("day summary: numbered English + Chinese name + passport no., for the day asked", () => {
+  const b = buildCases([
+    item({ id: "1", name: "LI ZHONG", cn: "李忠", passportNo: "AA236515" }),
+    item({ id: "2", name: "NGUYEN THI HOA", passportNo: "BA1515215", ts: T0 + 3600_000 }),
+    item({ id: "3", name: "WANG JIANGPING", cn: "王江平", passportNo: "SA51515151", ts: T0 + 86400000 }),
+  ]);
+  assert.equal(daySummary(b, "2026-11-14"),
+    "📥 รับงาน 90 วัน · 14 พ.ย. 2026 · 2 คน\n90天报到 · 11月14日 · 共2人\n\n1. LI ZHONG 李忠 AA236515\n2. NGUYEN THI HOA BA1515215");
+  assert.equal(summaryDay("สรุป", T0), "2026-11-14");
+  assert.equal(summaryDay("สรุป เมื่อวาน", T0), "2026-11-13");
+  assert.equal(summaryDay("สรุป 9", T0), "2026-11-09");
+  assert.equal(summaryDay("สรุป 30/10", T0), "2026-10-30");
+  assert.equal(summaryDay("สรุป 28/12", T0), "2025-12-28");
+  assert.equal(summaryDay("?li zhong", T0), null);
 });

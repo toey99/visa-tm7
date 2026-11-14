@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, searchCases,
+  bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daySummary, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, searchCases,
   type D90Case, type D90Group, type D90Item,
 } from "@/lib/d90/types";
 
@@ -196,6 +196,7 @@ export default function D90Page() {
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-500">
                 <span className="rounded-full bg-violet-100 px-3 py-0.5 text-violet-700">รับงาน {dayLabelTh(day)}</span>
                 <span>{list.length} คน</span>
+                <button type="button" onClick={() => void copyText(daySummary(board, day), "คัดลอกสรุปรับงานแล้ว")} className="ml-auto rounded-full border border-violet-200 bg-white px-2.5 py-0.5 text-xs font-medium text-violet-700">📋 คัดลอกสรุป</button>
               </h2>
               <div className="space-y-2">
                 {list.map((c) => {
@@ -317,7 +318,7 @@ export default function D90Page() {
           กล่องรับงาน: {allowedGroups.map(([id, g], i) => (
             <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
           ))}
-          <br />ถามบอทในกลุ่มได้: พิมพ์ <b>?ชื่อ</b> เช่น ?li zhong
+          <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
         </p>
       )}
 
