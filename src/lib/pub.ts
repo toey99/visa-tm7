@@ -12,7 +12,7 @@ function key(): string {
 const b64u = (b: Buffer) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64u = (s: string) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 
-export const PUB_PATH = /^(?:days|run)\/\d{8}\/[A-Z][A-Z0-9_]+\/out\/[A-Za-z0-9_.-]+\.(?:png|jpg|jpeg)$/;
+export const PUB_PATH = /^(?:(?:days|run)\/\d{8}\/[A-Z][A-Z0-9_]+|ledger\/[A-Z]+)\/out\/[A-Za-z0-9_.-]+\.(?:png|jpg|jpeg)$/;
 
 export function signPath(path: string): string {
   if (!PUB_PATH.test(path)) throw new Error("not a publishable path");

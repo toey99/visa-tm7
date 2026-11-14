@@ -9,7 +9,9 @@
 // Hand adjustments and a note per day; close the day to freeze it; copy or
 // push the closing text to the agent's LINE group.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ClosingNote from "@/components/ClosingNote";
+import { captureNode, downloadBlob, jpegPreview } from "@/lib/today/clientTools";
 import {
   addDays, bkkToday, closingText, dayTh, money, PRICE_LABELS, signed, type Adjustment, type DayLedger, type LedgerConfig, type Prices,
 } from "@/lib/ledger/types";
@@ -29,6 +31,7 @@ export default function LedgerPage() {
   const [adjs, setAdjs] = useState<Adjustment[]>([]);
   const [newLabel, setNewLabel] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  const noteRef = useRef<HTMLDivElement>(null);
 
   const d = useMemo(() => data?.days.find((x) => x.day === day) ?? null, [data, day]);
   useEffect(() => { if (d) { setNote(d.note); setAdjs(d.adjustments); } }, [d]);
@@ -63,12 +66,40 @@ export default function LedgerPage() {
     try { await navigator.clipboard.writeText(closingText(BOOK, d)); setBusy("ก๊อปข้อความแล้ว วางใน LINE ได้เลย"); setTimeout(() => setBusy(""), 2000); }
     catch { setError("ก๊อปไม่ได้ — เบราว์เซอร์ไม่อนุญาต"); }
   }
+  async function makePng(): Promise<Blob | null> {
+    const el = noteRef.current; if (!el) return null;
+    return captureNode(el);
+  }
+  async function exportPng() {
+    if (!d) return;
+    setBusy("กำลังทำรูป…"); setError("");
+    try { const b = await makePng(); if (!b) throw new Error("ทำรูปไม่สำเร็จ"); downloadBlob(b, `ตัดยอดอาเต่า_${dayTh(day).replace(/\//g, "")}.png`); setBusy(""); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(""); }
+  }
   async function sendLine() {
     if (!d) return;
-    if (!confirm(`ส่งยอดตัดจบ ${dayTh(day)} เข้ากลุ่ม LINE ของอาเต่า?`)) return;
-    const j = await call({ day, note, send: true }, "กำลังส่งเข้า LINE…");
-    if (j?.sent) { setBusy("ส่งเข้า LINE แล้ว ✅"); setTimeout(() => setBusy(""), 2500); }
+    if (!confirm(`ส่งรูปตัดยอด ${dayTh(day)} เข้ากลุ่ม LINE ของอาเต่า?`)) return;
+    setBusy("กำลังส่งเข้า LINE…"); setError("");
+    try {
+      if (note !== d.note) await call({ day, note }, "กำลังบันทึก…");
+      const b = await makePng(); if (!b) throw new Error("ทำรูปไม่สำเร็จ");
+      const fd = new FormData();
+      fd.set("book", BOOK); fd.set("day", day);
+      fd.set("img", new File([b], "closing.png", { type: "image/png" }));
+      try { fd.set("prev", new File([await jpegPreview(b)], "closing-p.jpg", { type: "image/jpeg" })); } catch { /* full picture doubles as preview */ }
+      const r = await fetch("/api/ledger/send", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setBusy("ส่งรูปเข้า LINE แล้ว ✅"); setTimeout(() => setBusy(""), 2500);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(""); }
   }
+
+  const [previewScale, setPreviewScale] = useState(0.5);
+  const [noteHeight, setNoteHeight] = useState(0);
+  useEffect(() => {
+    const fit = () => { const w = Math.min(window.innerWidth - 40, 720); setPreviewScale(w / 720); setNoteHeight(noteRef.current?.offsetHeight ?? 0); };
+    fit(); window.addEventListener("resize", fit); return () => window.removeEventListener("resize", fit);
+  }, [d, note]);
 
   const days = data?.days ?? [];
   const recent = days.slice(-10).reverse();
@@ -139,12 +170,21 @@ export default function LedgerPage() {
           </Card>
 
           <div className="mb-4 flex flex-wrap gap-2">
-            <button className="btn-primary" onClick={() => void copyText()}>📋 ข้อความตัดจบ</button>
-            <button className="btn-primary" onClick={() => void sendLine()}>📲 ตัดจบ → LINE</button>
+            <button className="btn-primary" onClick={() => void exportPng()}>🖼 รูปตัดยอด</button>
+            <button className="btn-primary" onClick={() => void sendLine()}>📲 รูปตัดยอด → LINE</button>
+            <button className="btn" onClick={() => void copyText()}>📋 ก๊อปข้อความ</button>
             {!d.closedAt && <button className="btn" onClick={() => void saveEdits({ close: true })}>🔒 ปิดยอดวัน</button>}
           </div>
 
-          <pre className="mb-4 whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{closingText(BOOK, d)}</pre>
+          {/* on-screen preview scaled to fit; the full-size copy below (off-screen) is what gets captured */}
+          <div className="mb-4 w-full overflow-hidden rounded-xl border border-slate-200" style={{ aspectRatio: `720 / ${noteHeight || 720}` }}>
+            <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: 720 }}>
+              <ClosingNote text={closingText(BOOK, d)} negative={d.carryOut < 0} />
+            </div>
+          </div>
+          <div style={{ position: "absolute", left: -10000, top: 0 }} aria-hidden>
+            <ClosingNote ref={noteRef} text={closingText(BOOK, d)} negative={d.carryOut < 0} />
+          </div>
         </>
       )}
 

@@ -116,6 +116,7 @@ export type DayLedger = DayComputed & {
 
 export const money = (n: number) => (Math.round(n) === n ? n.toLocaleString("en-US") : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 export const signed = (n: number) => (n < 0 ? `−${money(-n)}` : `+${money(n)}`);
+export const dayShort = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 export const dayTh = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
 export const addDays = (day: string, n: number) => new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10) + n)).toISOString().slice(0, 10);
 export const bkkToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
@@ -124,7 +125,7 @@ export const bkkToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString
 export function closingText(book: LedgerBook, d: DayLedger): string {
   const L: string[] = [];
   const f = (n: number) => money(n);
-  L.push(`${dayTh(d.day)} · ${LEDGER_BOOKS[book].label}`);
+  L.push(dayTh(d.day));
   L.push("");
   const payParts: string[] = [];
 
@@ -154,14 +155,24 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
 
   const run = d.charges.filter((c) => c.src === "run");
   if (run.length) {
-    L.push(""); L.push(`วนด่าน ${d.day.slice(8, 10)}/${Number(d.day.slice(5, 7))}`);
+    L.push(""); L.push(`วนด่าน ${Number(d.day.slice(8, 10))}/${Number(d.day.slice(5, 7))}`);
+    const n30 = run.filter((c) => c.items.some((i) => i.label.startsWith("🐰"))).length;
+    const nKh = run.filter((c) => c.items.some((i) => i.label.startsWith("🐻"))).length;
+    L.push(`รวม ${run.length} คน${n30 ? ` ต่อ 30 วัน ${n30} คน` : ""}${nKh ? ` กัมพูชา ${nKh} คน` : ""}`);
+    const groups = new Map<number, number>();          // base price → count
+    const parts: string[] = [];
+    for (const c of run) groups.set(c.items[0].amount, (groups.get(c.items[0].amount) ?? 0) + 1);
+    for (const [price, n] of [...groups].sort((a, b) => b[0] - a[0])) { L.push(`${price}*${n} = ${f(price * n)}`); parts.push(f(price * n)); }
+    const extraSum = (prefix: string) => run.reduce((s, c) => s + c.items.filter((i) => i.label.startsWith(prefix)).reduce((t, i) => t + i.amount, 0), 0);
+    const s30 = extraSum("🐰"), sKh = extraSum("🐻");
+    if (n30) { L.push(`${s30 / n30}*${n30} = ${f(s30)}`); parts.push(f(s30)); }
+    if (nKh) { L.push(`${sKh / nKh}*${nKh} = ${f(sKh)}`); parts.push(f(sKh)); }
     for (const c of run) {
-      const base = c.items.filter((i) => !i.label.startsWith("overstay") && !i.label.startsWith("ค่าปรับ")).reduce((s, i) => s + i.amount, 0);
-      const over = c.amount - base;
-      L.push(`${c.name}${c.flags ? " " + c.flags : ""} ${over ? `${f(base)}+ค่าover${f(over)}=${f(c.amount)}` : f(c.amount)}`);
+      const over = c.items.filter((i) => i.label.startsWith("overstay") || i.label.startsWith("ค่าปรับ")).reduce((s, i) => s + i.amount, 0);
+      if (over) { L.push(`${c.name} ค่าover ${f(over)}`); parts.push(f(over)); }
     }
     const sum = run.reduce((s, c) => s + c.amount, 0);
-    L.push(`รวมวนด่าน ${f(sum)}`); payParts.push(f(sum));
+    L.push(parts.length > 1 ? `รวม ${parts.join("+")} = ${f(sum)}` : `รวม ${f(sum)}`); payParts.push(f(sum));
   }
 
   const minus = d.adjustments.filter((a) => a.amount < 0);
@@ -179,8 +190,10 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
     for (const c of direct) { const ch = d.charges.find((x) => `direct-${x.id}` === c.id); const o = ch ? (ch.src === "run" ? "เชียงแสน" : OFFICE_NOTE[ch.office] ?? ch.office) : "หน้างาน"; byOff.set(o, [...(byOff.get(o) ?? []), c.amount]); }
     for (const [o, amts] of byOff) {
       const sum = amts.reduce((s, a) => s + a, 0);
-      const same = amts.every((a) => a === amts[0]);
-      L.push(amts.length > 1 ? (same ? `${o} ${f(amts[0])}*${amts.length} = ${f(sum)}` : `${o} ${amts.map(f).join("+")} = ${f(sum)}`) : `${o} ${f(sum)}`);
+      const byAmt = new Map<number, number>();
+      for (const a of amts) byAmt.set(a, (byAmt.get(a) ?? 0) + 1);
+      const terms = [...byAmt].sort((a, b) => b[0] - a[0]).map(([a, n]) => (n > 1 ? `${a}*${n}` : f(a)));
+      L.push(amts.length > 1 ? (terms.length > 1 ? `${o} ${terms.map((t) => `(${t})`).join("+")} = ${f(sum)}` : `${o} ${terms[0]} = ${f(sum)}`) : `${o} ${f(sum)}`);
       recvParts.push(f(sum));
     }
   }
@@ -188,13 +201,15 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
   if (slips.length) { const sum = slips.reduce((s, c) => s + c.amount, 0); L.push("เงินโอน✅"); L.push(slips.length > 1 ? `${slips.map((c) => f(c.amount)).join("+")} = ${f(sum)}` : f(sum)); recvParts.push(f(sum)); }
   const plus = d.adjustments.filter((a) => a.amount > 0);
   for (const a of plus) { L.push(`${a.label || "ปรับยอด"} ${f(a.amount)}`); recvParts.push(f(a.amount)); }
-  if (d.carryIn >= 0) { L.push(`${dayTh(addDays(d.day, -1))} คงเหลือ ${f(d.carryIn)} บาท✅`); recvParts.push(f(d.carryIn)); }
-  else L.push(`${dayTh(addDays(d.day, -1))} ค้างชำระ ${f(-d.carryIn)} บาท`);
-  const recv = d.creditTotal + plus.reduce((s, a) => s + a.amount, 0) + Math.max(0, d.carryIn);
-  L.push(""); L.push("รับรวม"); L.push(recvParts.length > 1 ? `${recvParts.join("+")} = ${f(recv)}` : f(recv));
+  const prev = dayShort(addDays(d.day, -1));
+  if (d.carryIn >= 0) { L.push(`${prev} คงเหลือ ${f(d.carryIn)} บาท✅`); recvParts.push(f(d.carryIn)); }
+  else L.push(`${prev} คงเหลือ -${f(-d.carryIn)} บาท⛔`);
+  const recv = d.creditTotal + plus.reduce((s, a) => s + a.amount, 0) + d.carryIn;
+  L.push(""); L.push("รับรวม");
+  L.push(d.carryIn < 0 ? `(${recvParts.join("+")})-${f(-d.carryIn)} = ${f(recv)}` : recvParts.length > 1 ? `${recvParts.join("+")} = ${f(recv)}` : f(recv));
 
-  L.push(""); L.push(`รวมยอดคงเหลือ ${d.carryOut >= 0 ? "✅" : "⚠️ ค้างชำระ"}`);
-  L.push(d.carryIn < 0 ? `${f(recv)}-${f(pay)}-${f(-d.carryIn)} = ${f(d.carryOut)}` : `${f(recv)}-${f(pay)} = ${f(d.carryOut)}`);
+  L.push(""); L.push("รวมยอดคงเหลือ");
+  L.push(`${f(recv)}-${f(pay)} = ${d.carryOut < 0 ? `-${f(-d.carryOut)} ติดลบ⛔` : `${f(d.carryOut)}✅`}`);
   if (d.note.trim()) { L.push(""); L.push(`หมายเหตุ: ${d.note.trim()}`); }
   return L.join("\n");
 }
