@@ -69,6 +69,7 @@ function editDistanceAtMost1(a: string, b: string): boolean {
 }
 
 const PAGE_WINDOW_MS = 3 * 60 * 1000;
+const ID_WINDOW_MS = 30 * 60 * 1000;
 const NEW_SLIP_MIN_DAYS = 45;
 
 function dueMs(ddmmyyyy: string): number {
@@ -80,8 +81,8 @@ function dueMs(ddmmyyyy: string): number {
  * Customers often send their PREVIOUS 90-day slip together with the passport.
  * That one must never close the job. A fresh slip's next date is ~90 days
  * ahead; a previous slip's date is the one falling due now. When the date
- * can't be read, a slip that arrives in the same batch as a passport is
- * taken to be the previous one.
+ * can't be read, a slip that arrives in the same batch as a passport (before
+ * or after it) is taken to be the previous one.
  */
 export function isOldSlip(s: D90Item, items: D90Item[]): boolean {
   if (typeof s.old === "boolean") return s.old;
@@ -89,7 +90,7 @@ export function isOldSlip(s: D90Item, items: D90Item[]): boolean {
   const due = dueMs(s.nextDue);
   if (!Number.isNaN(due)) return due - s.ts < NEW_SLIP_MIN_DAYS * 86400000;
   return items.some((p) => p.kind === "passport" && p.groupId === s.groupId
-    && ((!!s.setId && p.setId === s.setId) || (p.ts <= s.ts && s.ts - p.ts <= PAGE_WINDOW_MS)));
+    && ((!!s.setId && p.setId === s.setId) || Math.abs(s.ts - p.ts) <= PAGE_WINDOW_MS));
 }
 
 export function buildCases(items: D90Item[]): D90Board {
@@ -97,22 +98,56 @@ export function buildCases(items: D90Item[]): D90Board {
   const cases: D90Case[] = sorted.filter((i) => i.kind === "passport").map((p) => ({ passport: p, pages: [], slip: null, how: "" }));
   const byId = new Map(cases.map((c) => [c.passport.id, c]));
 
-  // extra pages (and previous slips) → same image set, else the passport sent just before in the same group
+  // ---- extra pages (entry stamp, visa, e-visa, previous slip) ----------------
+  // Customers send them in any order, so position alone is not trusted:
+  //   1. a hand link                       2. the passport no. / name printed on the page (visa, e-visa, slip)
+  //   3. the only passport in the same LINE image set, or in the same burst of pictures
+  //   4. several passports in one burst: follow the burst's own pattern — if it
+  //      starts with a passport, pages follow their passport; otherwise each
+  //      page goes to the passport nearest to it in the sequence
   const loose: D90Item[] = [];
   const oldSlips = new Set(sorted.filter((i) => i.kind === "slip" && isOldSlip(i, sorted)));
-  for (const o of sorted.filter((i) => i.kind === "other" || oldSlips.has(i))) {
-    let home = o.setId ? cases.find((c) => c.passport.setId === o.setId) : undefined;
-    if (!home) {
-      for (const c of cases) {
-        if (c.passport.groupId !== o.groupId || c.passport.ts > o.ts) continue;
-        if (o.ts - c.passport.ts <= PAGE_WINDOW_MS) home = c; // keeps the latest one before it
+  const isPage = (i: D90Item) => i.kind === "other" || oldSlips.has(i);
+  const bursts: D90Item[][] = [];
+  const lastOfGroup = new Map<string, D90Item[]>();
+  for (const it of sorted) {
+    if (it.kind !== "passport" && !isPage(it)) continue;
+    const cur = lastOfGroup.get(it.groupId);
+    if (cur && it.ts - cur[cur.length - 1].ts <= PAGE_WINDOW_MS) cur.push(it);
+    else { const nb = [it]; bursts.push(nb); lastOfGroup.set(it.groupId, nb); }
+  }
+  for (const burst of bursts) {
+    const passIdx = burst.map((it, k) => (it.kind === "passport" ? k : -1)).filter((k) => k >= 0);
+    burst.forEach((o, k) => {
+      if (!isPage(o)) return;
+      if (o.linkTo === "-") { loose.push(o); return; }
+      let home = o.linkTo ? byId.get(o.linkTo) : undefined;
+      if (!home && (ppKey(o.passportNo) || nameKey(o.name))) {
+        const near = cases
+          .filter((c) => c.passport.groupId === o.groupId && Math.abs(c.passport.ts - o.ts) <= ID_WINDOW_MS)
+          .sort((x, y) => Math.abs(x.passport.ts - o.ts) - Math.abs(y.passport.ts - o.ts));
+        const pp = ppKey(o.passportNo), nk = nameKey(o.name), lk = letterKey(o.name);
+        home = (pp ? near.find((c) => ppKey(c.passport.passportNo) === pp) : undefined)
+          ?? (nk ? near.find((c) => nameKey(c.passport.name) === nk || letterKey(c.passport.name) === lk) : undefined);
       }
-    }
-    if (!home && o.kind === "slip" && nameKey(o.name)) {
-      // a previous slip sent on its own: the latest job under the same name
-      home = [...cases].reverse().find((c) => nameKey(c.passport.name) === nameKey(o.name) || letterKey(c.passport.name) === letterKey(o.name));
-    }
-    if (home) home.pages.push(o); else loose.push(o);
+      if (!home && o.setId) {
+        const same = burst.filter((it) => it.kind === "passport" && it.setId === o.setId);
+        if (same.length === 1) home = byId.get(same[0].id);
+      }
+      if (!home && passIdx.length === 1) home = byId.get(burst[passIdx[0]].id);
+      if (!home && passIdx.length > 1) {
+        const before = passIdx.filter((i) => i < k).pop();
+        const after = passIdx.find((i) => i > k);
+        let pick = before ?? after;
+        if (burst[0].kind !== "passport" && before !== undefined && after !== undefined && after - k < k - before) pick = after;
+        if (pick !== undefined) home = byId.get(burst[pick].id);
+      }
+      if (!home && o.kind === "slip" && nameKey(o.name)) {
+        // a previous slip sent on its own: the latest job under the same name
+        home = [...cases].reverse().find((c) => nameKey(c.passport.name) === nameKey(o.name) || letterKey(c.passport.name) === letterKey(o.name));
+      }
+      if (home) home.pages.push(o); else loose.push(o);
+    });
   }
 
   // slips → manual link, passport number, exact name, spacing-insensitive name, one-letter slip

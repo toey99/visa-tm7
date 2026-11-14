@@ -24,7 +24,7 @@ Fields (UPPERCASE English; "" when not printed or unreadable — never guess):
 - "passportNo": the passport number if printed on this picture.
 - "nationality": English demonym (CHINESE, VIETNAMESE, MALAYSIAN, INDONESIAN, MYANMAR …).
 - "nextDue": slips only — the date in the "notify your address again on" box, as DD/MM/YYYY in the Gregorian calendar (a Buddhist-era year such as 2570 means 2027).
-For kind "other" leave every field "".`;
+For kind "other": if the page is a visa sticker, e-visa or similar that clearly prints the holder's name and/or passport number, fill "surname" (whole name as printed), "passportNo" and "nationality"; an entry-stamp page or anything without them gets "" everywhere. "chineseName" and "nextDue" stay "" for kind "other".`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -73,10 +73,10 @@ export async function readD90Image(bytes: ArrayBuffer, mimeType: string): Promis
   const due = clean(j.nextDue);
   return {
     kind,
-    name: kind === "other" ? "" : name,
+    name,
     cn: kind === "passport" ? (j.chineseName ?? "").replace(/[^\u3400-\u9fff·]/g, "") : "",
-    passportNo: kind === "other" ? "" : clean(j.passportNo).replace(/[^A-Z0-9]/g, ""),
-    nationality: kind === "other" ? "" : clean(j.nationality),
+    passportNo: clean(j.passportNo).replace(/[^A-Z0-9]/g, ""),
+    nationality: clean(j.nationality),
     nextDue: kind === "slip" && /^\d{2}\/\d{2}\/\d{4}$/.test(due) ? due : "",
   };
 }

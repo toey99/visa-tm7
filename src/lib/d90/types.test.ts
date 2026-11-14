@@ -124,3 +124,42 @@ test("unreadable date: a slip in the passport's batch is the previous one, a lat
   assert.ok(isOpen(forced.cases[0]));
   assert.deepEqual(forced.cases[0].pages.map((x) => x.id), ["3"]);
 });
+
+test("pages sent BEFORE their passport still land on it", () => {
+  // one customer: stamp, visa, then the passport
+  const one = buildCases([
+    item({ id: "1", kind: "other", ts: T0 }),
+    item({ id: "2", kind: "other", ts: T0 + 1000 }),
+    item({ id: "3", name: "LI ZHONG", ts: T0 + 2000 }),
+  ]);
+  assert.deepEqual(one.cases[0].pages.map((p) => p.id), ["1", "2"]);
+  assert.equal(one.loose.length, 0);
+
+  // two customers forwarded together, each as stamp → passport → visa
+  const two = buildCases([
+    item({ id: "1", kind: "other", ts: T0 }),
+    item({ id: "2", name: "A B", ts: T0 + 1000 }),
+    item({ id: "3", kind: "other", ts: T0 + 2000 }),
+    item({ id: "4", kind: "other", ts: T0 + 3000 }),
+    item({ id: "5", name: "C D", ts: T0 + 4000 }),
+    item({ id: "6", kind: "other", ts: T0 + 5000 }),
+  ]);
+  assert.deepEqual(two.cases[0].pages.map((p) => p.id), ["1", "3"]);
+  assert.deepEqual(two.cases[1].pages.map((p) => p.id), ["4", "6"]);
+});
+
+test("a visa page that shows the passport number goes to that passport wherever it sits; hand moves win", () => {
+  const items = [
+    item({ id: "1", name: "A B", passportNo: "E11111111", ts: T0 }),
+    item({ id: "2", name: "C D", passportNo: "E22222222", ts: T0 + 1000 }),
+    item({ id: "3", kind: "other", passportNo: "E11111111", ts: T0 + 2000 }),  // A B's visa, sent after C D's passport
+    item({ id: "4", kind: "other", ts: T0 + 3000 }),
+  ];
+  const b = buildCases(items);
+  assert.deepEqual(b.cases[0].pages.map((p) => p.id), ["3"]);
+  assert.deepEqual(b.cases[1].pages.map((p) => p.id), ["4"]);
+  const moved = buildCases([...items.slice(0, 3), { ...items[3], linkTo: "1" }]);
+  assert.deepEqual(moved.cases[0].pages.map((p) => p.id), ["3", "4"]);
+  const cut = buildCases([...items.slice(0, 3), { ...items[3], linkTo: "-" }]);
+  assert.deepEqual(cut.loose.map((p) => p.id), ["4"]);
+});

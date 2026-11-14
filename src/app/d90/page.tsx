@@ -127,6 +127,9 @@ export default function D90Page() {
     return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   })();
 
+  // the picture being viewed, when it is a page attached to someone's job
+  const zoomPage = zoom ? board.cases.flatMap((c) => c.pages).find((o) => o.img === zoom) : undefined;
+
   const groups = Object.entries(data?.groups ?? {});
   const pendingGroups = groups.filter(([, g]) => g.status === "pending");
   const allowedGroups = groups.filter(([, g]) => g.status === "allowed");
@@ -293,6 +296,10 @@ export default function D90Page() {
               <ThumbBase onZoom={setZoom} it={o} size={64} />
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-slate-500">{o.kind === "slip" ? `📎 ใบ 90 วันใบเก่า · ${o.name || "ไม่มีชื่อ"}${o.nextDue ? ` · ${o.nextDue}` : ""} · ` : ""}{dayLabelTh(bkkDay(o.ts))} {bkkTime(o.ts)} น.{o.note ? ` · ${o.note}` : ""}</div>
+                <select disabled={busy} value="" onChange={(e) => { if (e.target.value) void update(o.id, o.kind === "slip" ? { linkTo: e.target.value, old: true } : { linkTo: e.target.value }, "แนบแล้ว"); }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-sm">
+                  <option value="">แนบกับงานของ…</option>
+                  {[...board.cases].reverse().slice(0, 60).map((c) => <option key={c.passport.id} value={c.passport.id}>{c.passport.name || "(ไม่มีชื่อ)"} {c.passport.cn ?? ""} · {dayLabelTh(bkkDay(c.passport.ts))}</option>)}
+                </select>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   <BtnBase disabled={busy} tone="pink" onClick={() => void update(o.id, { kind: "passport" })}>เป็นหน้า passport</BtnBase>
                   <BtnBase disabled={busy} tone="emerald" onClick={() => void update(o.id, { kind: "slip", old: false })}>เป็นใบ 90 วันใบใหม่</BtnBase>
@@ -318,7 +325,10 @@ export default function D90Page() {
         <div className="fixed inset-0 z-50 flex flex-col bg-black/85" onClick={() => setZoom("")}>
           <div className="flex justify-between p-3 text-sm text-white">
             <span>กดค้างที่รูปเพื่อบันทึก / แชร์</span>
-            <span className="rounded-full bg-white/20 px-3 py-1">✕ ปิด</span>
+            <span className="flex gap-2">
+              {zoomPage && <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); setZoom(""); setTab("loose"); void update(zoomPage.id, zoomPage.kind === "slip" ? { linkTo: "-", old: true } : { linkTo: "-" }, "ย้ายไปแท็บ “รูปอื่น” แล้ว — เลือกงานที่ถูกได้ที่นั่น"); }} className="rounded-full bg-white/20 px-3 py-1">✂️ ไม่ใช่ของคนนี้</button>}
+              <span className="rounded-full bg-white/20 px-3 py-1">✕ ปิด</span>
+            </span>
           </div>
           <div className="flex min-h-0 flex-1 items-center justify-center p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
