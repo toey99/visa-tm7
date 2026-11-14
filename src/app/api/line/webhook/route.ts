@@ -3,7 +3,8 @@
 //
 // • picture in an allowed group → saved, read by AI, filed as passport / slip / other, one-line reply
 // • text "?name" in an allowed group → the bot answers with that customer's status
-// • text "สรุป" (optionally a day: "สรุป 13/11", "สรุป เมื่อวาน") → numbered list of the jobs received that day
+// • text "สรุป" (optionally a day: "สรุป 13/11", "สรุป เมื่อวาน") → numbered list of the jobs received that day;
+//   "สรุปส่ง" (same day options) → the jobs whose new slip came back that day
 // • a group that isn't allowed yet is only remembered as "pending"; nothing it sends is stored
 //   or read until someone signed in presses "อนุญาต" on /d90.
 import { NextRequest, NextResponse } from "next/server";
@@ -11,7 +12,7 @@ import { blobPut } from "@/lib/blob";
 import { lineGetContent, lineGroupName, lineReply, verifyLineSignature, type LineEvent } from "@/lib/d90/line";
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
-import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, searchCases, summaryDay, type D90Item } from "@/lib/d90/types";
+import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -114,8 +115,11 @@ async function handleImage(ev: LineEvent, groupId: string): Promise<void> {
 
 async function handleText(ev: LineEvent): Promise<void> {
   const text = (ev.message?.text ?? "").trim();
-  const day = summaryDay(text, Date.now()); // "สรุป" → today's intake list
-  if (day) return lineReply(ev.replyToken, daySummary(buildCases(await peekItems()), day));
+  const ask = summaryRequest(text, Date.now()); // "สรุป" → received that day, "สรุปส่ง" → slips returned that day
+  if (ask) {
+    const b = buildCases(await peekItems());
+    return lineReply(ev.replyToken, ask.type === "out" ? returnSummary(b, ask.day) : daySummary(b, ask.day));
+  }
   if (!/^[?？]/.test(text)) return; // only answers when asked: "?li zhong"
   const q = text.slice(1).trim();
   const board = buildCases(await peekItems());

@@ -243,11 +243,42 @@ export function daySummary(board: D90Board, day: string): string {
   return `${head}\n\n${rows.join("\n")}`;
 }
 
+/** numbered list of every job whose NEW slip came back on one Bangkok day — what goes back to the customer */
+export function returnSummary(board: D90Board, day: string): string {
+  const list = board.cases.filter((c) => c.slip && bkkDay(c.slip.ts) === day);
+  const orphans = board.orphanSlips.filter((s) => bkkDay(s.ts) === day);
+  const head = `✅ ส่งงาน 90 วัน · ${dayLabelTh(day)} · ${list.length} คน\n90天报到已完成 · ${dayLabelZh(day)} · 共${list.length}人`;
+  const rows = list.map((c, i) => {
+    const who = [c.passport.name || "⚠️ (อ่านชื่อไม่ออก)", c.passport.cn, c.passport.passportNo].filter(Boolean).join(" ");
+    const due = dueZh(c.slip!.nextDue);
+    return `${i + 1}. ${who}${due ? ` · 下次报到 ${due}` : ""}`;
+  });
+  const tail = orphans.length ? `⚠️ ใบที่ยังไม่จับคู่ ${orphans.length} ใบ (ยังไม่นับ): ${orphans.map((s) => s.name || "ไม่มีชื่อ").join(", ")}` : "";
+  return [head, rows.join("\n"), tail].filter(Boolean).join("\n\n");
+}
+
+/**
+ * What a text in the inbox group asks for:
+ *   "สรุป" → jobs received ("in"), "สรุปส่ง" / "ส่งงาน" → slips returned ("out");
+ *   either may name a day: "สรุปส่ง 13", "สรุป 13/11", "สรุป เมื่อวาน". Default today.
+ */
+export function summaryRequest(text: string, now: number): { type: "in" | "out"; day: string } | null {
+  const t = text.trim();
+  const out = t.match(/^(?:สรุป\s*ส่ง(?:งาน)?|ส่งงาน|สรุป\s*ใบ|已完成|完成)\s*(.*)$/i);
+  if (out) return { type: "out", day: dayFrom(out[1], now) };
+  const day = summaryDay(t, now);
+  return day ? { type: "in", day } : null;
+}
+
 /** "สรุป", "สรุป 13", "สรุป 13/11", "สรุป เมื่อวาน" → the Bangkok day asked for (default today); null when it isn't a summary request */
 export function summaryDay(text: string, now: number): string | null {
   const m = text.trim().match(/^(?:สรุป|总结|汇总|summary)\s*(.*)$/i);
   if (!m) return null;
-  const rest = m[1].trim();
+  return dayFrom(m[1], now);
+}
+
+function dayFrom(restRaw: string, now: number): string {
+  const rest = restRaw.trim();
   const today = bkkDay(now);
   if (/^(เมื่อวาน|昨天|yesterday)/i.test(rest)) return bkkDay(now - 86400000);
   const d = rest.match(/^(\d{1,2})(?:[\/.\-](\d{1,2}))?/);

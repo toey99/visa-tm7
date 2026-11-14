@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCases, caseForSlip, daySummary, isOldSlip, summaryDay, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
+import { buildCases, caseForSlip, daySummary, isOldSlip, returnSummary, summaryDay, summaryRequest, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
 
 const T0 = Date.UTC(2026, 10, 14, 2, 0, 0); // 14 Nov 2026 09:00 Bangkok
 const item = (p: Partial<D90Item> & { id: string }): D90Item => ({
@@ -178,4 +178,27 @@ test("day summary: numbered English + Chinese name + passport no., for the day a
   assert.equal(summaryDay("สรุป 30/10", T0), "2026-10-30");
   assert.equal(summaryDay("สรุป 28/12", T0), "2025-12-28");
   assert.equal(summaryDay("?li zhong", T0), null);
+});
+
+test("return summary: jobs whose new slip came back that day, with the next report date; unmatched slips flagged", () => {
+  const D = 86400000;
+  const b = buildCases([
+    item({ id: "1", name: "LI ZHONG", cn: "李忠", passportNo: "AA236515" }),
+    item({ id: "2", name: "NGUYEN THI HOA", passportNo: "BA1515215", ts: T0 + 1000 }),
+    item({ id: "3", name: "WANG JIANGPING", cn: "王江平", ts: T0 + 2000 }),
+    item({ id: "4", kind: "slip", name: "LI ZHONG", nextDue: "12/02/2027", ts: T0 + D }),
+    item({ id: "5", kind: "slip", name: "NGUYEN THI HOA", nextDue: "12/02/2027", ts: T0 + D + 1000 }),
+    item({ id: "6", kind: "slip", name: "SOMEBODY NEW", nextDue: "12/02/2027", ts: T0 + D + 2000 }),
+  ]);
+  assert.equal(returnSummary(b, "2026-11-15"),
+    "✅ ส่งงาน 90 วัน · 15 พ.ย. 2026 · 2 คน\n90天报到已完成 · 11月15日 · 共2人\n\n" +
+    "1. LI ZHONG 李忠 AA236515 · 下次报到 2027年02月12日\n2. NGUYEN THI HOA BA1515215 · 下次报到 2027年02月12日\n\n" +
+    "⚠️ ใบที่ยังไม่จับคู่ 1 ใบ (ยังไม่นับ): SOMEBODY NEW");
+  assert.equal(returnSummary(b, "2026-11-14"), "✅ ส่งงาน 90 วัน · 14 พ.ย. 2026 · 0 คน\n90天报到已完成 · 11月14日 · 共0人");
+  assert.deepEqual(summaryRequest("สรุปส่ง", T0), { type: "out", day: "2026-11-14" });
+  assert.deepEqual(summaryRequest("สรุปส่งงาน เมื่อวาน", T0), { type: "out", day: "2026-11-13" });
+  assert.deepEqual(summaryRequest("สรุป ส่ง 9/11", T0), { type: "out", day: "2026-11-09" });
+  assert.deepEqual(summaryRequest("สรุป", T0), { type: "in", day: "2026-11-14" });
+  assert.deepEqual(summaryRequest("สรุป 13", T0), { type: "in", day: "2026-11-13" });
+  assert.equal(summaryRequest("ขอบคุณค่ะ", T0), null);
 });

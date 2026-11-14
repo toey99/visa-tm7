@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daySummary, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, searchCases,
+  bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daySummary, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, returnSummary, searchCases,
   type D90Case, type D90Group, type D90Item,
 } from "@/lib/d90/types";
 
@@ -182,6 +182,7 @@ export default function D90Page() {
           {([["open", `⏳ รอใบ (${openCases.length})`], ["done", `✅ เสร็จแล้ว (${doneCases.length})`], ["slips", `🧾 ใบไม่จับคู่ (${board.orphanSlips.length})`], ["loose", `🖼 รูปอื่น (${board.loose.length})`]] as [Tab, string][]).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full px-3 py-1.5 font-medium ${tab === k ? "bg-pink-500 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600"}`}>{label}</button>
           ))}
+          {tab === "done" && <button type="button" onClick={() => void copyText(returnSummary(board, bkkDay(Date.now())), "คัดลอกสรุปส่งงานวันนี้แล้ว")} className="ml-auto rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700">📋 สรุปส่งงานวันนี้</button>}
           {tab === "open" && openCases.length > 0 && <button type="button" onClick={() => void copyPending()} className="ml-auto rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 font-medium text-sky-700">📋 คัดลอกรายการค้าง (中文)</button>}
         </div>
       )}
@@ -318,7 +319,7 @@ export default function D90Page() {
           กล่องรับงาน: {allowedGroups.map(([id, g], i) => (
             <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
           ))}
-          <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
+          <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>สรุปส่ง</b> = ใบที่ได้กลับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
         </p>
       )}
 
