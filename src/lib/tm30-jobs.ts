@@ -24,9 +24,9 @@ export type Tm30Job = {
   id: string;
   createdAt: string;
   updatedAt: string;
-  ns: "days" | "run";
+  ns: "days" | "run" | "d90";  // d90 = a list from the 90-day board: people are board items, receipts are kept with the job
   day: string;                 // DDMMYYYY
-  office: string;              // OfficeId
+  office: string;              // OfficeId ("D90" for the 90-day board)
   label: string;               // shown on the board and in the extension, e.g. "IT 14/11/2026 ชุด1"
   people: Tm30JobPerson[];
   status: Tm30JobStatus;
@@ -41,6 +41,8 @@ const QUEUE = "tm30jobs/queue.json";
 const KEEP_MS = 3 * 86400 * 1000;
 const MAX_JOBS = 60;
 export const xlsPath = (id: string) => `tm30jobs/${id}.xls`;
+/** d90 jobs only: where one person's receipt is kept until the job is purged */
+export const receiptPath = (id: string, passport: string) => `tm30jobs/${id}/${passport}.pdf`;
 export const ACTIVE: Tm30JobStatus[] = ["queued", "working", "review", "confirmed", "saving", "downloading"];
 export const cleanPassport = (s: unknown) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20);
 
@@ -55,7 +57,7 @@ async function writeQueue(q: Tm30Queue): Promise<void> {
   const keep = sorted.filter((j) => new Date(j.createdAt).getTime() >= cutoff).slice(-MAX_JOBS);
   const gone = sorted.filter((j) => !keep.includes(j));
   await blobPut(QUEUE, JSON.stringify({ ...q, jobs: keep }), "application/json");
-  if (gone.length) await blobDeleteByPath(gone.map((j) => xlsPath(j.id))).catch(() => undefined);
+  if (gone.length) await blobDeleteByPath(gone.flatMap((j) => [xlsPath(j.id), ...(j.ns === "d90" ? (j.done ?? []).map((p) => receiptPath(j.id, p)) : [])])).catch(() => undefined);
 }
 
 /** Read–change–write one job. Returns the job as stored, or null when it does not exist. */
@@ -119,6 +121,14 @@ export async function fileReceipt(jobId: string, passportRaw: string, pdf: Array
   const who = job.people.find((p) => cleanPassport(p.passportNo) === passport);
   const personId = who ? safeId(who.id) : null;
   if (!who || !personId) return { ok: false, status: 404, error: `passport ${passport} is not in this job` };
+
+  // 90-day list: no day-board card to file onto — keep the receipt with the job
+  // (the board offers them back as one merged PDF to pass on to the officer)
+  if (job.ns === "d90") {
+    await blobPut(receiptPath(jobId, passport), pdf, "application/pdf");
+    await updateJob(jobId, (j) => { j.done = Array.from(new Set([...(j.done ?? []), passport])); });
+    return { ok: true, name: who.name };
+  }
 
   const folder = boardFolder(job.ns, job.day, job.office);
   const cur = await blobGetJson<PersonRec>(recPath(folder, personId));

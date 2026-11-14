@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const meta = JSON.parse(String(fd.get("meta") ?? "{}")) as Partial<Tm30Job>;
     if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "file required" }, { status: 400 });
     if (file.size > MAX_XLS) return NextResponse.json({ error: "file too large" }, { status: 413 });
-    const ns = meta.ns === "run" ? "run" : "days";
+    const ns = meta.ns === "run" ? "run" : meta.ns === "d90" ? "d90" : "days";
     const day = String(meta.day ?? "");
     const office = String(meta.office ?? "");
     if (!/^\d{8}$/.test(day) || !/^[A-Z][A-Z0-9_]{1,30}$/.test(office)) return NextResponse.json({ error: "day and office required" }, { status: 400 });

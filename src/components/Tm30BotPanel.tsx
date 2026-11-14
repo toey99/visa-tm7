@@ -22,20 +22,26 @@ export type Tm30Group = { tag: string; people: Person[] };
 const ACTIVE: JobStatus[] = ["queued", "working", "review", "confirmed", "saving", "downloading"];
 const clean = (s: string) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-export default function Tm30BotPanel({ ns, date, office, officeLabel, getGroups, disabled, onFiled, onError }: {
-  ns: "days" | "run";
+export default function Tm30BotPanel({ ns, date, office, officeLabel, getGroups, disabled, onFiled, onError, hint, mergedPdf }: {
+  ns: "days" | "run" | "d90";
   date: string;                       // DD/MM/YYYY
   office: string;
   officeLabel: string;
-  getGroups: () => Tm30Group[];       // the batches the output buttons are currently set to
+  getGroups: () => Tm30Group[] | Promise<Tm30Group[]>;   // the batches the output buttons are currently set to
   disabled?: boolean;
   onFiled: () => void;                // receipts landed on the board → pull them in
   onError: (msg: string) => void;
+  hint?: string;                      // the line next to the send button
+  mergedPdf?: boolean;                // 90-day lists: offer the receipts back as one PDF to share / download
 }) {
   const day = date.replace(/\//g, "");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [botSeenAt, setBotSeenAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // merged receipt PDFs, fetched as soon as a job finishes so "share" can open the
+  // phone's share sheet straight from the tap (iOS refuses it after a slow fetch)
+  const [merged, setMerged] = useState<Record<string, File>>({});
+  const fetching = useRef(new Set<string>());
   const filed = useRef(-1);
   const onFiledRef = useRef(onFiled);
   useEffect(() => { onFiledRef.current = onFiled; }, [onFiled]);
@@ -65,8 +71,41 @@ export default function Tm30BotPanel({ ns, date, office, officeLabel, getGroups,
     return () => { window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [anyActive, load]);
 
+  useEffect(() => {
+    if (!mergedPdf) return;
+    for (const j of jobs) {
+      const key = `${j.id}:${j.done?.length ?? 0}`;
+      if (j.status !== "done" || !(j.done?.length) || fetching.current.has(key)) continue;
+      fetching.current.add(key);
+      fetch(`/api/tm30/pdf?id=${encodeURIComponent(j.id)}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((b) => { if (b) setMerged((m) => ({ ...m, [j.id]: new File([b], `TM30_${j.done?.length ?? 0}คน_${j.day}.pdf`, { type: "application/pdf" }) })); else fetching.current.delete(key); })
+        .catch(() => { fetching.current.delete(key); });
+    }
+  }, [jobs, mergedPdf]);
+
+  function saveFile(f: File) {
+    const url = URL.createObjectURL(f);
+    const a = document.createElement("a");
+    a.href = url; a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  async function shareFile(f: File) {
+    const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+    try {
+      if (nav.share && nav.canShare?.({ files: [f] })) await nav.share({ files: [f], title: f.name });
+      else saveFile(f);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;   // share sheet closed
+      saveFile(f);
+    }
+  }
+
   async function send() {
-    const groups = getGroups();
+    let groups: Tm30Group[];
+    setBusy(true);                                        // building the batch can take a few seconds (90-day lists re-read each passport)
+    try { groups = await getGroups(); } catch (e) { onError(e instanceof Error ? e.message : String(e)); return; } finally { setBusy(false); }
     if (!groups.length) { onError("ยังไม่มีคนที่มีชื่อและเลขพาสปอร์ตให้ส่งเข้า TM30"); return; }
     const n = groups.reduce((s, g) => s + g.people.length, 0);
     if (!window.confirm(`ส่ง ${n} คน${groups.length > 1 ? ` (${groups.length} ชุด)` : ""} ให้บอทอัปเข้าเว็บ TM30?\n\nบอทจะอัป Excel แล้วหยุดรอ — ต้องกด "ยืนยันบันทึก" ที่นี่อีกครั้งก่อนจะแจ้งจริง`)) return;
@@ -116,7 +155,7 @@ export default function Tm30BotPanel({ ns, date, office, officeLabel, getGroups,
         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${botOnline ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
           {botOnline ? "● บอทที่บ้านออนไลน์" : "○ ยังไม่เห็นบอท"}
         </span>
-        <span className="text-xs text-pink-900/70">ใช้ชุด/คนที่เลือกเหมือนปุ่ม Excel TM30 · บอทจะรอให้กดยืนยันก่อนแจ้งจริง</span>
+        <span className="text-xs text-pink-900/70">{hint ?? "ใช้ชุด/คนที่เลือกเหมือนปุ่ม Excel TM30 · บอทจะรอให้กดยืนยันก่อนแจ้งจริง"}</span>
       </div>
 
       {jobs.map((j) => {
@@ -152,7 +191,18 @@ export default function Tm30BotPanel({ ns, date, office, officeLabel, getGroups,
             )}
             {(j.status === "confirmed" || j.status === "saving") && <p className="mt-1 text-sky-700">💾 บอทกำลังบันทึกบนเว็บ TM30…</p>}
             {j.status === "downloading" && <p className="mt-1 text-sky-700">📄 กำลังเอาใบรับแจ้งขึ้นบอร์ด {doneN}/{j.people.length}{j.message ? ` · ${j.message}` : ""}</p>}
-            {j.status === "done" && <p className="mt-1 text-emerald-700">✅ เสร็จ — ใบรับแจ้งขึ้นบอร์ด {doneN}/{j.people.length} คน{j.message ? ` · ${j.message}` : ""}</p>}
+            {j.status === "done" && <p className="mt-1 text-emerald-700">✅ เสร็จ — {mergedPdf ? "ได้ใบรับแจ้ง" : "ใบรับแจ้งขึ้นบอร์ด"} {doneN}/{j.people.length} คน{j.message ? ` · ${j.message}` : ""}</p>}
+            {mergedPdf && j.status === "done" && doneN > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" disabled={!merged[j.id]} onClick={() => merged[j.id] && void shareFile(merged[j.id])} className="rounded-lg bg-sky-400 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
+                  {merged[j.id] ? `📤 แชร์ PDF รวม ${doneN} คน (ส่ง LINE)` : "กำลังรวมไฟล์…"}
+                </button>
+                <button type="button" disabled={!merged[j.id]} onClick={() => merged[j.id] && saveFile(merged[j.id])} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-sky-700 ring-1 ring-sky-200 disabled:opacity-50">⬇ โหลดไฟล์รวม</button>
+                <span className="text-xs text-slate-500">แยกรายคน: {j.people.filter((p) => (j.done ?? []).includes(clean(p.passportNo))).map((p, i) => (
+                  <a key={p.id} href={`/api/tm30/pdf?id=${encodeURIComponent(j.id)}&passport=${encodeURIComponent(clean(p.passportNo))}`} target="_blank" rel="noreferrer" className="mr-1 underline">{i + 1}.{p.passportNo}</a>
+                ))}</span>
+              </div>
+            )}
             {j.status === "error" && <p className="mt-1 text-rose-700">⚠️ บอทหยุด: {j.message || "ไม่ทราบสาเหตุ"} (ขึ้นบอร์ดแล้ว {doneN}/{j.people.length})</p>}
             {j.status === "cancelled" && <p className="mt-1 text-slate-500">ยกเลิกแล้ว{j.message ? ` · ${j.message}` : ""}</p>}
 

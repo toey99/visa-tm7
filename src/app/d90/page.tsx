@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { OFFICES, type OfficeId } from "@/lib/offices";
+import D90Tm30Panel from "@/components/D90Tm30Panel";
 import {
   bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daySummary, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, returnSummary, searchCases,
   type D90Case, type D90Group, type D90Item,
@@ -166,6 +167,9 @@ export default function D90Page() {
 
       {error && <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</p>}
       {status && <p className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">{status}</p>}
+
+      {/* the officer's list of passport numbers → TM.30 through the bot → one merged PDF to send back */}
+      {data && <D90Tm30Panel cases={board.cases} onError={setError} />}
 
       {data && !data.lineReady && (
         <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">ยังไม่ได้ตั้งค่า LINE: เพิ่ม <b>LINE_CHANNEL_SECRET</b> และ <b>LINE_CHANNEL_ACCESS_TOKEN</b> ใน Vercel แล้ว Redeploy</p>
