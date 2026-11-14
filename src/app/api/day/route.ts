@@ -32,16 +32,14 @@
 //     client sends every id it knows (`known`) with each save, so the next
 //     save from either device repairs it; the record itself was never at risk.
 import { NextRequest, NextResponse } from "next/server";
-import { blobDelete, blobGetJson, blobList, blobPut } from "@/lib/blob";
+import { blobDelete, blobGetJson, blobList } from "@/lib/blob";
+import { loadManifest, readRecords, recPath, safeId, saveToBoard, type PersonRec } from "@/lib/day-server";
 
 export const runtime = "nodejs";
 
-type PersonRec = { id: string; order: number; updatedAt?: string; fields?: Record<string, unknown>; tombstone?: boolean; deletedAt?: string; [k: string]: unknown };
-type Manifest = { meta?: Record<string, unknown>; metaAt?: string; savedAt: string; entries: Record<string, { updatedAt: string; order: number }> };
-type SaveBody = { v?: number; meta?: Record<string, unknown>; metaAt?: string; people?: PersonRec[]; bases?: Record<string, PersonRec>; deleted?: string[]; known?: string[]; revive?: boolean };
 type OldIndex = { meta?: Record<string, unknown>; people?: PersonRec[]; savedAt?: string; migrated?: boolean };
 
-function nsOf(req: NextRequest): string {
+function nsOf(req: NextRequest): "days" | "run" {
   return req.nextUrl.searchParams.get("ns") === "run" ? "run" : "days";
 }
 function dayKey(req: NextRequest): string | null {
@@ -56,107 +54,6 @@ function folderOf(req: NextRequest, day: string): string {
   const o = officeOf(req);
   return o ? `${nsOf(req)}/${day}/${o}/` : `${nsOf(req)}/${day}/`;
 }
-const safeId = (id: unknown) => typeof id === "string" && /^[A-Za-z0-9_.-]{1,80}$/.test(id) && id !== "people" ? id : null;
-const recPath = (folder: string, id: string) => `${folder}people/${id}.json`;
-
-// Server-side version stamp: ISO time, strictly greater than anything this
-// instance handed out before and than `notBefore` (the board's previous
-// version), so ordering never depends on a phone's clock.
-let lastStamp = "";
-function stamp(notBefore = ""): string {
-  const floor = lastStamp > notBefore ? lastStamp : notBefore;
-  let t = Date.now();
-  const floorT = floor ? new Date(floor).getTime() : 0;
-  if (Number.isFinite(floorT) && t <= floorT) t = floorT + 1;
-  const s = new Date(t).toISOString();
-  lastStamp = s;
-  return s;
-}
-
-async function readManifest(folder: string): Promise<Manifest | null> {
-  return blobGetJson<Manifest>(`${folder}manifest.json`);
-}
-async function writeManifest(folder: string, m: Manifest): Promise<void> {
-  await blobPut(`${folder}manifest.json`, JSON.stringify(m), "application/json");
-}
-async function readRecords(folder: string, ids: string[]): Promise<PersonRec[]> {
-  const recs = await Promise.all(ids.map((id) => blobGetJson<PersonRec>(recPath(folder, id))));
-  return recs.filter((p): p is PersonRec => !!p && !!safeId(p.id) && !p.tombstone);
-}
-
-// Three-way merge of one person: start from the server copy, apply only the
-// changes this device made relative to the record it loaded (`base`).
-// Top-level keys and `fields.*` are merged independently.
-function merge(cur: PersonRec, incoming: PersonRec, base: PersonRec | undefined): PersonRec {
-  if (!base) return { ...incoming, order: cur.order ?? incoming.order };  // no base: this device's copy wins whole
-  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  const out: PersonRec = { ...cur };
-  for (const k of new Set([...Object.keys(incoming), ...Object.keys(base)])) {
-    if (k === "fields" || k === "files" || k === "updatedAt" || k === "id") continue;
-    if (!same(incoming[k], base[k])) out[k] = incoming[k];
-  }
-  // fields: only the ones this device changed
-  if (incoming.fields) {
-    const f: Record<string, unknown> = { ...(cur.fields ?? {}) };
-    const inF = incoming.fields, baseF = base.fields ?? {};
-    for (const k of new Set([...Object.keys(inF), ...Object.keys(baseF)])) {
-      if (!same(inF[k], baseF[k])) f[k] = inF[k];
-    }
-    out.fields = f;
-  }
-  // files: union by id — this device's additions and removals, the other device's kept
-  type F = { id: string; [k: string]: unknown };
-  const curF = (cur.files as F[] | undefined) ?? [], inFiles = (incoming.files as F[] | undefined) ?? [], baseFiles = (base.files as F[] | undefined) ?? [];
-  const removedHere = new Set(baseFiles.filter((b) => !inFiles.some((x) => x.id === b.id)).map((b) => b.id));
-  const merged: F[] = curF.filter((c) => !removedHere.has(c.id)).map((c) => inFiles.find((x) => x.id === c.id) ?? c);
-  for (const x of inFiles) if (!merged.some((c) => c.id === x.id)) merged.push(x);
-  out.files = merged;
-  return out;
-}
-
-// One-time migrations, each only on a board that has no manifest yet:
-//  a) records already exist under people/ (an interim layout) → list once, build the manifest
-//  b) index.json with the full list (older layout) → write records + manifest
-//  c) pre-office-split <ns>/<day>/index.json saved under this office → same as (b)
-// The source index is then marked migrated:true so clearing the board later cannot resurrect it.
-async function migrate(req: NextRequest, folder: string, day: string): Promise<Manifest | null> {
-  const recBlobs = await blobList(`${folder}people/`);
-  const recs = recBlobs.filter((b) => /\/people\/[A-Za-z0-9_.-]+\.json$/.test(b.pathname));
-  if (recs.length) {
-    const people = (await Promise.all(recs.map((b) => blobGetJson<PersonRec>(b.pathname)))).filter((p): p is PersonRec => !!p && !!safeId(p.id) && !p.tombstone);
-    const meta = (await blobGetJson<Record<string, unknown>>(`${folder}meta.json`)) ?? undefined;
-    const s = stamp();
-    const m: Manifest = { meta, metaAt: meta ? s : undefined, savedAt: s, entries: {} };
-    for (const p of people) m.entries[p.id] = { updatedAt: p.updatedAt ?? s, order: p.order ?? 0 };
-    await writeManifest(folder, m);
-    return m;
-  }
-  let srcPath = `${folder}index.json`;
-  let idx = await blobGetJson<OldIndex>(srcPath);
-  const office = officeOf(req);
-  if ((!idx || idx.migrated) && office) {
-    const legacyPath = `${nsOf(req)}/${day}/index.json`;
-    const legacy = await blobGetJson<OldIndex>(legacyPath);
-    if (legacy && !legacy.migrated && ((legacy.meta?.office as string | undefined) ?? "") === office) { idx = legacy; srcPath = legacyPath; }
-  }
-  if (!idx || idx.migrated || (!idx.people?.length && !idx.meta)) {
-    // nothing to migrate: write an empty manifest so this board never needs list() again
-    const empty: Manifest = { savedAt: stamp(), entries: {} };
-    await writeManifest(folder, empty);
-    return empty;
-  }
-  const s = stamp(idx.savedAt ?? "");
-  const m: Manifest = { meta: idx.meta, metaAt: idx.meta ? s : undefined, savedAt: s, entries: {} };
-  await Promise.all((idx.people ?? []).map(async (p) => {
-    const id = safeId(p.id);
-    if (!id) return;
-    await blobPut(recPath(folder, id), JSON.stringify({ ...p, id, updatedAt: s }), "application/json");
-    m.entries[id] = { updatedAt: s, order: p.order ?? 0 };
-  }));
-  await writeManifest(folder, m);
-  await blobPut(srcPath, JSON.stringify({ ...idx, migrated: true, migratedTo: folder, migratedAt: s }), "application/json");
-  return m;
-}
 
 export async function GET(req: NextRequest) {
   const day = dayKey(req);
@@ -170,8 +67,7 @@ export async function GET(req: NextRequest) {
       const rec = id ? await blobGetJson<PersonRec>(recPath(folder, id)) : null;
       return rec && !rec.tombstone ? NextResponse.json(rec, noStore) : NextResponse.json({ error: "not found" }, { status: 404, ...noStore });
     }
-    let m = await readManifest(folder);
-    if (!m) m = await migrate(req, folder, day);
+    const m = await loadManifest(nsOf(req), day, officeOf(req), folder);
     if (!m) return NextResponse.json({}, noStore);
     if (req.nextUrl.searchParams.get("manifest") === "1") return NextResponse.json(m, noStore);
     if (!Object.keys(m.entries).length && !m.meta) return NextResponse.json({}, noStore);
@@ -189,67 +85,11 @@ export async function PUT(req: NextRequest) {
   try {
     const text = await req.text();
     if (text.length > 4_000_000) return NextResponse.json({ error: "payload too large" }, { status: 413 });
-    const body = JSON.parse(text) as SaveBody;
+    const body = JSON.parse(text) as { v?: number } & Parameters<typeof saveToBoard>[4];
     // a tab still running the old full-list client must not write: reload it
     if (body.v !== 2) return NextResponse.json({ error: "หน้าเว็บเป็นเวอร์ชันเก่า — รีเฟรชหน้า 1 ครั้งแล้วลองใหม่" }, { status: 409 });
-    const folder = folderOf(req, day);
-    const m: Manifest = (await readManifest(folder)) ?? (await migrate(req, folder, day)) ?? { savedAt: stamp(), entries: {} };
-    const deleted = new Set((body.deleted ?? []).map(safeId).filter((x): x is string => !!x));
-    const out: PersonRec[] = [];
-    const rejected: string[] = [];
-
-    // 1) deletions first: the tombstone must be in place before `known` repairs run
-    for (const id of deleted) {
-      delete m.entries[id];
-      await blobPut(recPath(folder, id), JSON.stringify({ id, tombstone: true, deletedAt: stamp(m.entries[id]?.updatedAt ?? m.savedAt) }), "application/json");
-    }
-    // 2) people: merge against the record as it is now
-    for (const p of body.people ?? []) {
-      const id = safeId(p.id);
-      if (!id || deleted.has(id)) continue;
-      const entry = m.entries[id];
-      const base = body.bases?.[id];
-      const cur = await blobGetJson<PersonRec>(recPath(folder, id));
-      if (cur?.tombstone) {
-        // deleted on another device: a plain edit does not bring the person back —
-        // only a whole copy (move / import, `revive`) or an edit based on a newer record than the deletion
-        const editedAfterDelete = !!base && (base.updatedAt ?? "") > (cur.deletedAt ?? "");
-        if (!(body.revive && !base) && !editedAfterDelete) { rejected.push(id); continue; }
-      }
-      const untouched = !cur || !!cur.tombstone || (!!base?.updatedAt && base.updatedAt === cur.updatedAt);
-      let next: PersonRec = untouched || !cur ? { ...p, id } : merge(cur, { ...p, id }, base);
-      const s = stamp(cur?.updatedAt ?? entry?.updatedAt ?? "");
-      next = { ...next, updatedAt: s };
-      delete next.tombstone; delete next.deletedAt;
-      await blobPut(recPath(folder, id), JSON.stringify(next), "application/json");
-      m.entries[id] = { updatedAt: s, order: next.order ?? cur?.order ?? 0 };
-      out.push(next);
-    }
-    // 3) ids this client knows about: repairs a manifest entry lost to a racing save
-    for (const k of body.known ?? []) {
-      const id = safeId(k);
-      if (id && !m.entries[id] && !deleted.has(id)) {
-        const rec = await blobGetJson<PersonRec>(recPath(folder, id));
-        if (rec && !rec.tombstone) m.entries[id] = { updatedAt: rec.updatedAt ?? m.savedAt, order: rec.order ?? 0 };
-      }
-    }
-    if (body.meta) {
-      // day settings: a device that loaded older settings cannot roll back newer ones
-      if (!m.metaAt || !body.metaAt || body.metaAt >= m.metaAt) { m.meta = body.meta; m.metaAt = stamp(m.metaAt ?? ""); }
-    }
-    // 4) re-read the manifest right before writing and fold in entries another
-    //    save added meanwhile (shrinks the read-modify-write window to milliseconds)
-    const latest = await readManifest(folder);
-    if (latest) {
-      for (const [id, e] of Object.entries(latest.entries)) {
-        if (deleted.has(id)) continue;
-        if (!m.entries[id] || e.updatedAt > m.entries[id].updatedAt) m.entries[id] = e;
-      }
-      if (latest.metaAt && (!m.metaAt || latest.metaAt > m.metaAt)) { m.meta = latest.meta; m.metaAt = latest.metaAt; }
-    }
-    m.savedAt = stamp(m.savedAt);
-    await writeManifest(folder, m);
-    return NextResponse.json({ ok: true, people: out, rejected, meta: m.meta, metaAt: m.metaAt, savedAt: m.savedAt });
+    const res = await saveToBoard(nsOf(req), day, officeOf(req), folderOf(req, day), body);
+    return NextResponse.json(res);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "save failed" }, { status: 500 });
   }

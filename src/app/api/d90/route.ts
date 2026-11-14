@@ -34,7 +34,7 @@ type Body =
   | { action: "delete"; id: string }
   | { action: "reread"; id: string }
   | { action: "clearDay"; day: string }
-  | { action: "group"; groupId: string; allow: boolean };
+  | { action: "group"; groupId: string; allow: boolean; target?: { ns: string; office: string } | null };
 
 const KINDS: D90Kind[] = ["passport", "slip", "other"];
 
@@ -60,7 +60,13 @@ export async function POST(req: NextRequest) {
       const cfg = await loadConfig(true);
       const g = cfg.groups[body.groupId];
       if (!g) return fail("unknown group", 404);
-      if (body.allow) g.status = "allowed"; else delete cfg.groups[body.groupId];
+      if (body.allow) {
+        g.status = "allowed";
+        // where the pictures go: 90-day board (no target) or a day board for one office
+        const t = body.target as { ns?: string; office?: string } | null | undefined;
+        if (t === null) delete g.target;
+        else if (t && (t.ns === "days" || t.ns === "run") && typeof t.office === "string" && /^[A-Z][A-Z0-9_]+$/.test(t.office)) g.target = { ns: t.ns, office: t.office };
+      } else delete cfg.groups[body.groupId];
       await saveConfig(cfg);
       return NextResponse.json({ ok: true, groups: cfg.groups }, noStore);
     }

@@ -9,6 +9,7 @@
 // job, seeing who is still waiting, and fixing the few pictures the AI got wrong.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { OFFICES, type OfficeId } from "@/lib/offices";
 import {
   bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daySummary, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, returnSummary, searchCases,
   type D90Case, type D90Group, type D90Item,
@@ -171,9 +172,15 @@ export default function D90Page() {
       )}
       {pendingGroups.map(([id, g]) => (
         <div key={id} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-          <span>บอทถูกเชิญเข้ากลุ่ม <b>{g.name || "(ไม่ทราบชื่อ)"}</b> — ให้กลุ่มนี้เป็นกล่องรับงานไหม?</span>
-          <span className="flex gap-2">
-            <BtnBase disabled={busy} tone="emerald" onClick={() => void post({ action: "group", groupId: id, allow: true }, "อนุญาตแล้ว — ส่งรูปเข้ากลุ่มได้เลย")}>✅ อนุญาตกลุ่มนี้</BtnBase>
+          <span>บอทถูกเชิญเข้ากลุ่ม <b>{g.name || "(ไม่ทราบชื่อ)"}</b> — ให้กลุ่มนี้ป้อนงานไปที่ไหน?</span>
+          <span className="flex flex-wrap gap-2">
+            <BtnBase disabled={busy} tone="emerald" onClick={() => void post({ action: "group", groupId: id, allow: true, target: null }, "อนุญาตแล้ว — ส่งรูปเข้ากลุ่มได้เลย")}>📋 บอร์ด 90 วัน</BtnBase>
+            <select disabled={busy} defaultValue="" className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-sm font-semibold text-emerald-900"
+              onChange={(e) => { const v = e.target.value; if (!v) return; const [ns, office] = v.split(":"); void post({ action: "group", groupId: id, allow: true, target: { ns, office } }, "อนุญาตแล้ว — forward รูปลูกค้าเข้ากลุ่มได้เลย"); }}>
+              <option value="">📥 หน้างานวันนี้ / วีซ่ารัน…</option>
+              {(Object.keys(OFFICES) as OfficeId[]).map((o) => <option key={o} value={`days:${o}`}>{OFFICES[o].emoji} ต่อวีซ่า {OFFICES[o].label}</option>)}
+              <option value="run:CHIANG_SAEN">🚗 วีซ่ารัน (เชียงแสน)</option>
+            </select>
             <BtnBase disabled={busy} tone="rose" onClick={() => void post({ action: "group", groupId: id, allow: false })}>ไม่ใช่</BtnBase>
           </span>
         </div>
@@ -327,7 +334,7 @@ export default function D90Page() {
       {allowedGroups.length > 0 && (
         <p className="mt-10 text-center text-xs text-slate-400">
           กล่องรับงาน: {allowedGroups.map(([id, g], i) => (
-            <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
+            <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"}{g.target ? ` → ${g.target.ns === "run" ? "🚗 วีซ่ารัน" : `📥 ${OFFICES[g.target.office as OfficeId]?.label ?? g.target.office}`}` : " → 📋 90 วัน"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
           ))}
           <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>สรุปส่ง</b> = ใบที่ได้กลับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
         </p>

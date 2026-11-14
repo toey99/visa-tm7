@@ -28,7 +28,8 @@ export type D90Item = {
   note?: string;
 };
 
-export type D90Group = { name: string; status: "pending" | "allowed"; ts: number };
+// target: where this group's pictures go — unset = the 90-day board; otherwise a day board (extension / visa run) for one office
+export type D90Group = { name: string; status: "pending" | "allowed"; ts: number; target?: { ns: "days" | "run"; office: string } };
 
 export type D90Case = {
   passport: D90Item;

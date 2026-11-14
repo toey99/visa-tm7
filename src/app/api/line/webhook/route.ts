@@ -1,4 +1,7 @@
-// LINE webhook for the 90-day "กล่องรับงาน" inbox group.
+// LINE webhook for the "กล่องรับงาน" inbox groups.
+// A group approved for the 90-day board behaves as below; a group approved
+// with a target board (📥 ต่อวีซ่า <office> / 🚗 วีซ่ารัน) files forwarded
+// customer pictures straight onto that day board — see src/lib/inbox/board.ts.
 // POST /api/line/webhook   (public — LINE calls it; every request must carry a valid x-line-signature)
 //
 // • picture in an allowed group → saved, read by AI, filed as passport / slip / other, one-line reply
@@ -13,6 +16,9 @@ import { lineGetContent, lineGroupName, lineReply, verifyLineSignature, type Lin
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
 import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
+import { boardSummary, intakeImage, loadState, parseCommand, targetDate, type InboxTarget } from "@/lib/inbox/board";
+import { blobPut as blobPutJson } from "@/lib/blob";
+import { OFFICES, type OfficeId } from "@/lib/offices";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -59,8 +65,47 @@ async function handle(ev: LineEvent): Promise<void> {
   }
 
   if (ev.type !== "message" || !ev.message) return;
+  const target = cfg.groups[groupId]?.target;
+  if (target && (target.ns === "days" || target.ns === "run") && target.office in OFFICES) {
+    const t: InboxTarget = { ns: target.ns, office: target.office as OfficeId };
+    if (ev.message.type === "image") return handleBoardImage(ev, groupId, t);
+    if (ev.message.type === "text") return handleBoardText(ev, groupId, t);
+    return;
+  }
   if (ev.message.type === "image") return handleImage(ev, groupId);
   if (ev.message.type === "text") return handleText(ev);
+}
+
+// ---------- day-board inbox (📥 ต่อวีซ่า / 🚗 วีซ่ารัน) ----------
+async function handleBoardImage(ev: LineEvent, groupId: string, target: InboxTarget): Promise<void> {
+  const m = ev.message!;
+  if (m.contentProvider && m.contentProvider.type !== "line") return;
+  const bytes = await lineGetContent(m.id);
+  const ts = ev.timestamp || Date.now();
+  try {
+    const res = await intakeImage(groupId, target, { id: m.id, setId: m.imageSet?.id, index: m.imageSet?.index, total: m.imageSet?.total }, ts, bytes);
+    if (res.reply) await lineReply(ev.replyToken, res.reply);
+  } catch (e) {
+    console.error("[line inbox] intake failed", m.id, e);
+    await lineReply(ev.replyToken, `⚠️ รูปนี้ลงบอร์ดไม่สำเร็จ (${e instanceof Error ? e.message.slice(0, 120) : "error"}) — ลองส่งใหม่ หรือโยนรูปบนเว็บแทน`);
+  }
+}
+
+async function handleBoardText(ev: LineEvent, groupId: string, target: InboxTarget): Promise<void> {
+  const text = (ev.message?.text ?? "").trim();
+  const ts = ev.timestamp || Date.now();
+  const state = await loadState(groupId);
+  const cmd = parseCommand(text, ts, state.defaults);
+  if (!cmd) return;                                            // ordinary chatter in the group: stay quiet
+  if (cmd.summary) {
+    const date = cmd.summary === "today" ? targetDate(ts, target, state.defaults) : cmd.summary;
+    return lineReply(ev.replyToken, await boardSummary(target, date));
+  }
+  await blobPutJson(`inbox/${groupId}/state.json`, JSON.stringify({ ...state, defaults: cmd.defaults }), "application/json");
+  const office = OFFICES[target.office];
+  const date = targetDate(ts, target, cmd.defaults);
+  return lineReply(ev.replyToken, `${cmd.reply ?? ""}
+→ ${office.emoji} ${office.label} · ลงวัน ${date}`.trim());
 }
 
 async function handleImage(ev: LineEvent, groupId: string): Promise<void> {
