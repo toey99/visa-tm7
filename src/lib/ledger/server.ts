@@ -21,6 +21,8 @@ import {
   type DayLedger, type LedgerBook, type LedgerConfig, type Prices,
 } from "./types";
 
+// Where each book starts when nothing has been saved yet (the last hand-written closing)
+const OPENING: Partial<Record<LedgerBook, { day: string; amount: number }>> = { ARTAO: { day: "2026-11-15", amount: 162607.8 } };
 const root = (book: LedgerBook) => `ledger/${book}/`;
 const cfgPath = (book: LedgerBook) => `${root(book)}config.json`;
 const dayPath = (book: LedgerBook, day: string) => `${root(book)}days/${day}.json`;
@@ -34,7 +36,7 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "");
 export async function loadLedgerConfig(book: LedgerBook): Promise<LedgerConfig> {
   const c = await blobGetJson<LedgerConfig>(cfgPath(book));
   const prices: Prices = { ...DEFAULT_PRICES, ...(c?.prices ?? {}) };
-  return { prices, opening: c?.opening ?? { day: bkkToday(), amount: 0 }, lineGroupId: c?.lineGroupId, updatedAt: c?.updatedAt };
+  return { prices, opening: c?.opening ?? OPENING[book] ?? { day: bkkToday(), amount: 0 }, lineGroupId: c?.lineGroupId, updatedAt: c?.updatedAt };
 }
 export async function saveLedgerConfig(book: LedgerBook, c: LedgerConfig): Promise<void> {
   await blobPut(cfgPath(book), JSON.stringify({ ...c, updatedAt: new Date().toISOString() }), "application/json");

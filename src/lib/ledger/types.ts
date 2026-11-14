@@ -120,21 +120,83 @@ export const dayTh = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}/${
 export const addDays = (day: string, n: number) => new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10) + n)).toISOString().slice(0, 10);
 export const bkkToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
-/** The closing message pasted / pushed to the agent's LINE group. */
+/** The closing message — same shape as the hand-written one (charges by type, visa run by name, cash / transfers, previous balance, totals). */
 export function closingText(book: LedgerBook, d: DayLedger): string {
   const L: string[] = [];
-  L.push(`📒 ${LEDGER_BOOKS[book].label} · ตัดยอด ${dayTh(d.day)}`);
-  L.push(`ยกมา: ${money(d.carryIn)}`);
-  const slips = d.credits.filter((c) => c.kind === "slip");
+  const f = (n: number) => money(n);
+  L.push(`${dayTh(d.day)} · ${LEDGER_BOOKS[book].label}`);
+  L.push("");
+  const payParts: string[] = [];
+
+  // extension work: one line per office at the base price, VIP and overstay extras pulled out
+  const ext = d.charges.filter((c) => c.src === "ext");
+  const byOffice = new Map<string, { label: string; price: number; n: number }>();
+  let vipN = 0, vipSum = 0;
+  const extras: string[] = [];
+  let extrasSum = 0;
+  for (const c of ext) {
+    const base = c.items[0];
+    const k = `${c.office}|${base.amount}`;
+    const g = byOffice.get(k) ?? { label: base.label, price: base.amount, n: 0 };
+    g.n++; byOffice.set(k, g);
+    for (const it of c.items.slice(1)) {
+      if (it.label === "VIP") { vipN++; vipSum += it.amount; }
+      else { extras.push(`${c.name} ${it.label} ${f(it.amount)}`); extrasSum += it.amount; }
+    }
+  }
+  for (const g of byOffice.values()) { L.push(`${g.label} ${g.price}*${g.n} = ${f(g.price * g.n)}`); payParts.push(f(g.price * g.n)); }
+  if (vipN) { L.push(`vip ${vipN} คน 500*${vipN} = ${f(vipSum)}`); payParts.push(f(vipSum)); }
+  for (const x of extras) L.push(x);
+  if (extrasSum) payParts.push(f(extrasSum));
+
+  const d90 = d.charges.filter((c) => c.src === "d90");
+  if (d90.length) { const sum = d90.reduce((s, c) => s + c.amount, 0); L.push(""); L.push(`รายงานตัว 90 วัน ${d90.length} ใบ`); L.push(`${d90[0].amount}*${d90.length} = ${f(sum)}`); payParts.push(f(sum)); }
+
+  const run = d.charges.filter((c) => c.src === "run");
+  if (run.length) {
+    L.push(""); L.push(`วนด่าน ${d.day.slice(8, 10)}/${Number(d.day.slice(5, 7))}`);
+    for (const c of run) {
+      const base = c.items.filter((i) => !i.label.startsWith("overstay") && !i.label.startsWith("ค่าปรับ")).reduce((s, i) => s + i.amount, 0);
+      const over = c.amount - base;
+      L.push(`${c.name}${c.flags ? " " + c.flags : ""} ${over ? `${f(base)}+ค่าover${f(over)}=${f(c.amount)}` : f(c.amount)}`);
+    }
+    const sum = run.reduce((s, c) => s + c.amount, 0);
+    L.push(`รวมวนด่าน ${f(sum)}`); payParts.push(f(sum));
+  }
+
+  const minus = d.adjustments.filter((a) => a.amount < 0);
+  for (const a of minus) { L.push(`${a.label || "หักเพิ่ม"} ${f(-a.amount)}`); payParts.push(f(-a.amount)); }
+  const pay = d.chargeTotal + minus.reduce((s, a) => s - a.amount, 0);
+  L.push(""); L.push("จ่ายรวม"); L.push(payParts.length > 1 ? `${payParts.join("+")} = ${f(pay)}` : f(pay));
+
+  // money in
+  const recvParts: string[] = [];
+  L.push("");
   const direct = d.credits.filter((c) => c.kind === "direct");
-  if (slips.length) L.push(`โอนเข้า ${slips.length} รายการ: +${money(slips.reduce((s, c) => s + c.amount, 0))}`);
-  if (direct.length) L.push(`ลูกค้าจ่ายหน้างาน ${direct.length} คน: +${money(direct.reduce((s, c) => s + c.amount, 0))}`);
-  for (const a of d.adjustments) L.push(`${a.label || "ปรับยอด"}: ${signed(a.amount)}`);
-  if (d.charges.length) {
-    L.push(`ค่างานวันนี้ ${d.charges.length} รายการ: −${money(d.chargeTotal)}`);
-    for (const c of d.charges) L.push(`  • ${c.name || c.passport || c.id}${c.flags ? " " + c.flags : ""} — ${c.items.map((i) => i.label).join(" + ")} = ${money(c.amount)}`);
-  } else L.push("ค่างานวันนี้: 0");
-  L.push(`คงเหลือยกไป: ${money(d.carryOut)}${d.carryOut < 0 ? " (ค้างชำระ)" : ""}`);
-  if (d.note.trim()) L.push(`หมายเหตุ: ${d.note.trim()}`);
+  if (direct.length) {
+    L.push("เงินสด✅");
+    const byOff = new Map<string, number[]>();
+    for (const c of direct) { const ch = d.charges.find((x) => `direct-${x.id}` === c.id); const o = ch ? (ch.src === "run" ? "เชียงแสน" : OFFICE_NOTE[ch.office] ?? ch.office) : "หน้างาน"; byOff.set(o, [...(byOff.get(o) ?? []), c.amount]); }
+    for (const [o, amts] of byOff) {
+      const sum = amts.reduce((s, a) => s + a, 0);
+      const same = amts.every((a) => a === amts[0]);
+      L.push(amts.length > 1 ? (same ? `${o} ${f(amts[0])}*${amts.length} = ${f(sum)}` : `${o} ${amts.map(f).join("+")} = ${f(sum)}`) : `${o} ${f(sum)}`);
+      recvParts.push(f(sum));
+    }
+  }
+  const slips = d.credits.filter((c) => c.kind === "slip");
+  if (slips.length) { const sum = slips.reduce((s, c) => s + c.amount, 0); L.push("เงินโอน✅"); L.push(slips.length > 1 ? `${slips.map((c) => f(c.amount)).join("+")} = ${f(sum)}` : f(sum)); recvParts.push(f(sum)); }
+  const plus = d.adjustments.filter((a) => a.amount > 0);
+  for (const a of plus) { L.push(`${a.label || "ปรับยอด"} ${f(a.amount)}`); recvParts.push(f(a.amount)); }
+  if (d.carryIn >= 0) { L.push(`${dayTh(addDays(d.day, -1))} คงเหลือ ${f(d.carryIn)} บาท✅`); recvParts.push(f(d.carryIn)); }
+  else L.push(`${dayTh(addDays(d.day, -1))} ค้างชำระ ${f(-d.carryIn)} บาท`);
+  const recv = d.creditTotal + plus.reduce((s, a) => s + a.amount, 0) + Math.max(0, d.carryIn);
+  L.push(""); L.push("รับรวม"); L.push(recvParts.length > 1 ? `${recvParts.join("+")} = ${f(recv)}` : f(recv));
+
+  L.push(""); L.push(`รวมยอดคงเหลือ ${d.carryOut >= 0 ? "✅" : "⚠️ ค้างชำระ"}`);
+  L.push(d.carryIn < 0 ? `${f(recv)}-${f(pay)}-${f(-d.carryIn)} = ${f(d.carryOut)}` : `${f(recv)}-${f(pay)} = ${f(d.carryOut)}`);
+  if (d.note.trim()) { L.push(""); L.push(`หมายเหตุ: ${d.note.trim()}`); }
   return L.join("\n");
 }
+
+const OFFICE_NOTE: Record<string, string> = { BANGKOK: "IT", NONTHABURI: "นนท์", RAYONG: "ระยอง", CHIANG_SAEN: "เชียงแสน", VFS_BANGKOK: "VFS", VFS_PATTAYA: "VFS พัทยา" };
