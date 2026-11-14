@@ -9,8 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { blobPut } from "@/lib/blob";
 import { lineGetContent, lineGroupName, lineReply, verifyLineSignature, type LineEvent } from "@/lib/d90/line";
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
-import { loadConfig, loadItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
-import { bkkDay, buildCases, dayLabelTh, daysWaiting, isOpen, searchCases, type D90Item } from "@/lib/d90/types";
+import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
+import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daysWaiting, fullName, isOpen, searchCases, type D90Item } from "@/lib/d90/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -85,10 +85,24 @@ async function handleImage(ev: LineEvent, groupId: string): Promise<void> {
   // one short line per picture that matters; extra pages stay silent
   if (failed) return lineReply(ev.replyToken, `⚠️ อ่านรูปนี้ไม่สำเร็จ — เก็บรูปไว้แล้ว แก้เองได้ที่ ${BOARD_URL}`);
   if (item.kind === "passport") {
-    return lineReply(ev.replyToken, item.name ? `📥 รับงาน: ${item.name}${item.passportNo ? ` · ${item.passportNo}` : ""}` : `⚠️ เป็นหน้า passport แต่อ่านชื่อไม่ออก — แก้ชื่อได้ที่ ${BOARD_URL}`);
+    return lineReply(ev.replyToken, item.name ? `📥 รับงาน: ${fullName(item)}${item.passportNo ? ` · ${item.passportNo}` : ""}` : `⚠️ เป็นหน้า passport แต่อ่านชื่อไม่ออก — แก้ชื่อได้ที่ ${BOARD_URL}`);
   }
   if (item.kind === "slip") {
-    return lineReply(ev.replyToken, `✅ ใบ 90 วัน: ${item.name || "(อ่านชื่อไม่ออก)"}${item.nextDue ? ` · ครั้งถัดไป ${item.nextDue}` : ""}`);
+    // First bubble is the ready-to-forward reminder (English + Chinese name, taken
+    // from the passport this slip belongs to); warnings go in a second bubble.
+    let owner: D90Item | undefined;
+    try {
+      const all = await peekItems();
+      owner = caseForSlip(all.some((i) => i.id === item.id) ? all : [...all, item], item.id)?.passport;
+    } catch (e) {
+      console.error("[line webhook] match failed", m.id, e);
+    }
+    const warn = [
+      !owner && `⚠️ ยังไม่เจองานที่ตรงกับใบนี้ (ไม่มีชื่อจีน) — จับคู่เองได้ที่ ${BOARD_URL}`,
+      owner && !owner.cn && "ℹ️ passport ของคนนี้ไม่มีชื่อจีน",
+      !item.nextDue && "⚠️ อ่านวันครั้งถัดไปจากใบไม่ออก",
+    ].filter(Boolean).join("\n");
+    return lineReply(ev.replyToken, [customerMsgZh(owner?.name || item.name, owner?.cn, item.nextDue), warn]);
   }
 }
 
@@ -96,7 +110,7 @@ async function handleText(ev: LineEvent): Promise<void> {
   const text = (ev.message?.text ?? "").trim();
   if (!/^[?？]/.test(text)) return; // only answers when asked: "?li zhong"
   const q = text.slice(1).trim();
-  const board = buildCases(await loadItems());
+  const board = buildCases(await peekItems());
   const now = Date.now();
   if (!q) {
     const open = board.cases.filter(isOpen);
@@ -106,7 +120,7 @@ async function handleText(ev: LineEvent): Promise<void> {
   if (!hits.length) return lineReply(ev.replyToken, `ไม่พบ “${q}” ในบอร์ด 90 วัน`);
   const lines = hits.map((c) => {
     const p = c.passport;
-    const head = `${p.name || "(ไม่มีชื่อ)"}${p.passportNo ? ` · ${p.passportNo}` : ""}\nรับงาน ${dayLabelTh(bkkDay(p.ts))}`;
+    const head = `${fullName(p) || "(ไม่มีชื่อ)"}${p.passportNo ? ` · ${p.passportNo}` : ""}\nรับงาน ${dayLabelTh(bkkDay(p.ts))}`;
     if (c.slip) return `✅ ${head}\nได้ใบแล้ว ${dayLabelTh(bkkDay(c.slip.ts))}${c.slip.nextDue ? ` · ครั้งถัดไป ${c.slip.nextDue}` : ""}`;
     if (p.done) return `☑️ ${head}\nปิดงานแล้ว`;
     return `⏳ ${head}\nยังไม่ได้ใบ (รอมา ${daysWaiting(p.ts, now)} วัน)`;

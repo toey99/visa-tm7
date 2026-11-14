@@ -36,20 +36,32 @@ export async function saveInboxItem(item: D90Item): Promise<void> {
   await blobPut(`${INBOX}${item.id}.json`, JSON.stringify(item), "application/json");
 }
 
-/** Read every item, folding newly arrived inbox files into the index. */
-export async function loadItems(): Promise<D90Item[]> {
+/** index + inbox, WITHOUT writing anything — safe to call from many webhook calls at once */
+export async function peekItems(): Promise<D90Item[]> {
+  const { idx, fresh } = await readAll();
+  return [...idx.items, ...fresh].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
+}
+
+async function readAll(): Promise<{ idx: Index; fresh: D90Item[]; folded: string[] }> {
   const idx = (await readJson<Index>(INDEX)) ?? { items: [] };
   const inbox = (await blobList(INBOX)).filter((b) => b.pathname.endsWith(".json"));
   const have = new Set(idx.items.map((i) => i.id));
   const fresh: D90Item[] = [];
-  const folded: string[] = [];
+  const folded: string[] = []; // inbox files whose item was ALREADY in the index before this read
   await Promise.all(inbox.map(async (b) => {
+    const id = b.pathname.slice(INBOX.length).replace(/\.json$/, "");
+    if (have.has(id)) { folded.push(b.url); return; }
     const r = await blobFetchUrl(b.url, true);
     if (!r.ok) return; // leave it in the inbox for the next read
     const it = (await r.json()) as D90Item;
-    folded.push(b.url);
     if (it && it.id && !have.has(it.id)) { have.add(it.id); fresh.push(it); }
   }));
+  return { idx, fresh, folded };
+}
+
+/** Read every item, folding newly arrived inbox files into the index. */
+export async function loadItems(): Promise<D90Item[]> {
+  const { idx, fresh, folded } = await readAll();
 
   const cutoff = Date.now() - KEEP_DAYS * 86400000;
   const old = idx.items.filter((i) => i.ts < cutoff);
@@ -59,7 +71,8 @@ export async function loadItems(): Promise<D90Item[]> {
     await blobPut(INDEX, JSON.stringify({ items }), "application/json");
     if (old.length) await blobDeleteByPath(old.map((i) => i.img).filter(Boolean)).catch(() => undefined);
   }
-  // only after the index is safely written
+  // An inbox file is removed one read AFTER its item reached the index, so a
+  // slower, older write of the index landing late can never lose an item.
   if (folded.length) await blobDelete(folded).catch(() => undefined);
   return items;
 }

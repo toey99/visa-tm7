@@ -18,6 +18,7 @@ export type D90Item = {
   groupId: string;
   setId?: string;      // LINE image-set id (pictures sent together)
   name: string;        // SURNAME GIVEN — as read, editable on the board
+  cn?: string;         // 中文姓名 — printed on Chinese passports; slips never carry it
   passportNo: string;
   nationality: string;
   nextDue: string;     // DD/MM/YYYY — slips only: next report date
@@ -113,6 +114,27 @@ export function buildCases(items: D90Item[]): D90Board {
   return { cases, orphanSlips, loose };
 }
 
+/** "LI ZHONG 李忠" — the slip itself has no Chinese name, so a case borrows the passport's */
+export const fullName = (it: { name: string; cn?: string }) => [it.name, it.cn].filter(Boolean).join(" ");
+const hasCjk = (s: string) => /[\u3400-\u9fff]/.test(s);
+const cjkOnly = (s: string) => s.replace(/[^\u3400-\u9fff]/g, "");
+
+/** DD/MM/YYYY → 2027年02月01日 */
+export function dueZh(ddmmyyyy: string): string {
+  const m = ddmmyyyy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}年${m[2]}月${m[1]}日` : "";
+}
+/** ready-to-forward reminder for the customer / agent */
+export function customerMsgZh(name: string, cn: string | undefined, nextDue: string): string {
+  const who = [name, cn].filter(Boolean).join(" ");
+  const due = dueZh(nextDue);
+  return [who, "提醒您下一次的泰国90天报到 (90-day report)", due ? `日期是：${due}。` : "日期：请见回执单。"].filter(Boolean).join("\n");
+}
+/** the open case a just-arrived slip belongs to (same rules as buildCases), if any */
+export function caseForSlip(items: D90Item[], slipId: string): D90Case | undefined {
+  return buildCases(items).cases.find((c) => c.slip?.id === slipId);
+}
+
 export const isOpen = (c: D90Case) => !c.slip && !c.passport.done;
 
 // ---- dates (always Bangkok) ------------------------------------------------
@@ -143,14 +165,15 @@ export function pendingListZh(board: D90Board): string {
   const days = new Map<string, string[]>();
   for (const c of open) {
     const k = bkkDay(c.passport.ts);
-    days.set(k, [...(days.get(k) ?? []), c.passport.name || "(未识别)"]);
+    days.set(k, [...(days.get(k) ?? []), fullName(c.passport) || "(未识别)"]);
   }
   const blocks = [...days.entries()].sort().map(([day, names]) => `${dayLabelZh(day)}提交\n${names.join("\n")}`);
   return [`90天报道 · 待出单 ${open.length} 人`, ...blocks].join("\n\n");
 }
 
 export function searchCases(board: D90Board, q: string): D90Case[] {
-  const tokens = nameTokens(q), pp = ppKey(q);
+  const tokens = nameTokens(q), pp = ppKey(q), zh = cjkOnly(q);
+  if (hasCjk(q)) return zh ? board.cases.filter((c) => cjkOnly(c.passport.cn ?? "").includes(zh)) : [];
   if (!tokens.length && !pp) return [];
   return board.cases.filter((c) => {
     const hay = nameTokens(`${c.passport.name} ${c.slip?.name ?? ""}`).join(" ");

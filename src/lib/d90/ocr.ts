@@ -8,7 +8,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { isTransientGeminiError } from "@/lib/geminiError";
 import type { D90Kind } from "@/lib/d90/types";
 
-export type D90Read = { kind: D90Kind; name: string; passportNo: string; nationality: string; nextDue: string };
+export type D90Read = { kind: D90Kind; name: string; cn: string; passportNo: string; nationality: string; nextDue: string };
 
 const PROMPT = `You are sorting pictures for a Thai immigration 90-day report (TM.47) service.
 Decide what this picture is and extract a few fields. Return JSON matching the schema.
@@ -20,6 +20,7 @@ Decide what this picture is and extract a few fields. Return JSON matching the s
 
 Fields (UPPERCASE English; "" when not printed or unreadable — never guess):
 - "surname", "givenNames": for a passport, exactly as printed on the bio page. For a slip, put the whole name as printed into "surname" and leave "givenNames" empty; drop titles and "( MALE )" / "( FEMALE )".
+- "chineseName": passports only — the holder's name in Chinese characters exactly as printed on the bio page (e.g. 李忠; Chinese passports print it beside 姓名). "" when the page shows no Chinese-character name. Never translate or transliterate a name into Chinese.
 - "passportNo": the passport number if printed on this picture.
 - "nationality": English demonym (CHINESE, VIETNAMESE, MALAYSIAN, INDONESIAN, MYANMAR …).
 - "nextDue": slips only — the date in the "notify your address again on" box, as DD/MM/YYYY in the Gregorian calendar (a Buddhist-era year such as 2570 means 2027).
@@ -42,12 +43,13 @@ export async function readD90Image(bytes: ArrayBuffer, mimeType: string): Promis
           kind: { type: Type.STRING, enum: ["passport", "slip", "other"] },
           surname: { type: Type.STRING },
           givenNames: { type: Type.STRING },
+          chineseName: { type: Type.STRING },
           passportNo: { type: Type.STRING },
           nationality: { type: Type.STRING },
           nextDue: { type: Type.STRING },
         },
-        required: ["kind", "surname", "givenNames", "passportNo", "nationality", "nextDue"],
-        propertyOrdering: ["kind", "surname", "givenNames", "passportNo", "nationality", "nextDue"],
+        required: ["kind", "surname", "givenNames", "chineseName", "passportNo", "nationality", "nextDue"],
+        propertyOrdering: ["kind", "surname", "givenNames", "chineseName", "passportNo", "nationality", "nextDue"],
       },
     },
   };
@@ -63,7 +65,7 @@ export async function readD90Image(bytes: ArrayBuffer, mimeType: string): Promis
     }
   }
   if (!text) throw new Error("empty AI response");
-  const j = JSON.parse(text) as { kind?: string; surname?: string; givenNames?: string; passportNo?: string; nationality?: string; nextDue?: string };
+  const j = JSON.parse(text) as { kind?: string; surname?: string; givenNames?: string; chineseName?: string; passportNo?: string; nationality?: string; nextDue?: string };
   const kind: D90Kind = j.kind === "passport" || j.kind === "slip" ? j.kind : "other";
   const clean = (s?: string) => (s ?? "").toUpperCase().replace(/\s+/g, " ").trim();
   // surname first, always
@@ -72,6 +74,7 @@ export async function readD90Image(bytes: ArrayBuffer, mimeType: string): Promis
   return {
     kind,
     name: kind === "other" ? "" : name,
+    cn: kind === "passport" ? (j.chineseName ?? "").replace(/[^\u3400-\u9fff·]/g, "") : "",
     passportNo: kind === "other" ? "" : clean(j.passportNo).replace(/[^A-Z0-9]/g, ""),
     nationality: kind === "other" ? "" : clean(j.nationality),
     nextDue: kind === "slip" && /^\d{2}\/\d{2}\/\d{4}$/.test(due) ? due : "",

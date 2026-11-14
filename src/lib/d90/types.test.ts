@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCases, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
+import { buildCases, caseForSlip, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
 
 const T0 = Date.UTC(2026, 10, 14, 2, 0, 0); // 14 Nov 2026 09:00 Bangkok
 const item = (p: Partial<D90Item> & { id: string }): D90Item => ({
@@ -77,4 +77,20 @@ test("pending list groups by Bangkok day; search finds by partial name or passpo
   assert.equal(searchCases(b, "zhong")[0].passport.id, "1");
   assert.equal(searchCases(b, "345678")[0].passport.id, "1");
   assert.equal(searchCases(b, "nobody").length, 0);
+});
+
+test("Chinese name: shown beside the English one, searchable, and carried into the customer reminder", () => {
+  const items = [
+    item({ id: "1", name: "YANG LIFENG", cn: "杨立峰" }),
+    item({ id: "2", name: "NGUYEN THI HOA", ts: T0 + 1 }),
+    item({ id: "3", kind: "slip", name: "YANG LIFENG", nextDue: "01/02/2027", ts: T0 + 5000 }),
+  ];
+  const b = buildCases(items);
+  assert.equal(searchCases(b, "立峰")[0].passport.id, "1");
+  assert.equal(searchCases(b, "王").length, 0);
+  assert.equal(pendingListZh(b), "90天报道 · 待出单 1 人\n\n11月14日提交\nNGUYEN THI HOA");
+  const c = caseForSlip(items, "3");
+  assert.equal(c?.passport.cn, "杨立峰");
+  assert.equal(customerMsgZh(c!.passport.name, c!.passport.cn, "01/02/2027"), "YANG LIFENG 杨立峰\n提醒您下一次的泰国90天报到 (90-day report)\n日期是：2027年02月01日。");
+  assert.equal(customerMsgZh("NGUYEN THI HOA", "", ""), "NGUYEN THI HOA\n提醒您下一次的泰国90天报到 (90-day report)\n日期：请见回执单。");
 });

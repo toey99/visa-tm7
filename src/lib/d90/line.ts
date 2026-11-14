@@ -31,13 +31,14 @@ export async function lineGetContent(messageId: string): Promise<ArrayBuffer> {
   return r.arrayBuffer();
 }
 
-export async function lineReply(replyToken: string | undefined, text: string): Promise<void> {
-  if (!replyToken || !text) return;
+export async function lineReply(replyToken: string | undefined, text: string | string[]): Promise<void> {
+  const texts = (Array.isArray(text) ? text : [text]).filter(Boolean).slice(0, 5);
+  if (!replyToken || !texts.length) return;
   try {
     const r = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
       headers: { authorization: `Bearer ${accessToken()}`, "content-type": "application/json" },
-      body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 4800) }] }),
+      body: JSON.stringify({ replyToken, messages: texts.map((t) => ({ type: "text", text: t.slice(0, 4800) })) }),
     });
     if (!r.ok) console.warn("[line] reply failed", r.status, (await r.text()).slice(0, 200));
   } catch (e) {

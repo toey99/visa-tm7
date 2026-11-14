@@ -1,7 +1,7 @@
 // 90-day report board API (signed-in users only; the proxy gates this route)
 // GET  /api/d90                  → { items, groups, lineReady }
 // POST /api/d90  body:
-//   { action: "update", id, patch }        edit one item (name, passportNo, kind, nextDue, linkTo, done, note)
+//   { action: "update", id, patch }        edit one item (name, cn, passportNo, kind, nextDue, linkTo, done, note)
 //   { action: "delete", id }               remove one item and its picture
 //   { action: "reread", id }               run the AI on the stored picture again
 //   { action: "group", groupId, allow }    allow / remove a LINE group
@@ -27,7 +27,7 @@ export async function GET() {
   }
 }
 
-type Patch = Partial<Pick<D90Item, "name" | "passportNo" | "kind" | "nextDue" | "linkTo" | "done" | "note">>;
+type Patch = Partial<Pick<D90Item, "name" | "cn" | "passportNo" | "kind" | "nextDue" | "linkTo" | "done" | "note">>;
 type Body =
   | { action: "update"; id: string; patch: Patch }
   | { action: "delete"; id: string }
@@ -39,6 +39,7 @@ const KINDS: D90Kind[] = ["passport", "slip", "other"];
 function cleanPatch(p: Patch): Patch {
   const out: Patch = {};
   if (typeof p.name === "string") out.name = p.name.toUpperCase().replace(/\s+/g, " ").trim().slice(0, 80);
+  if (typeof p.cn === "string") out.cn = p.cn.replace(/\s+/g, "").slice(0, 20);
   if (typeof p.passportNo === "string") out.passportNo = p.passportNo.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20);
   if (typeof p.kind === "string" && KINDS.includes(p.kind)) out.kind = p.kind;
   if (typeof p.nextDue === "string" && (p.nextDue === "" || /^\d{2}\/\d{2}\/\d{4}$/.test(p.nextDue))) out.nextDue = p.nextDue;

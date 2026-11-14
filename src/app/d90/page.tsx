@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  bkkDay, bkkTime, buildCases, dayLabelTh, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey,
+  bkkDay, bkkTime, buildCases, customerMsgZh, dayLabelTh, daysWaiting, isOpen, nameTokens, pendingListZh, ppKey, searchCases,
   type D90Case, type D90Group, type D90Item,
 } from "@/lib/d90/types";
 
@@ -85,6 +85,14 @@ export default function D90Page() {
     const v = window.prompt("ชื่อ (นามสกุลขึ้นก่อน)", it.name);
     if (v !== null && v.trim() !== it.name) void update(it.id, { name: v });
   }
+  function editCn(it: D90Item) {
+    const v = window.prompt("ชื่อภาษาจีน 中文姓名", it.cn ?? "");
+    if (v !== null && v.trim() !== (it.cn ?? "")) void update(it.id, { cn: v });
+  }
+  async function copyText(text: string, okMsg: string) {
+    try { await navigator.clipboard.writeText(text); flash(okMsg); }
+    catch { window.prompt("คัดลอกข้อความนี้", text); }
+  }
   function editPp(it: D90Item) {
     const v = window.prompt("เลข passport", it.passportNo);
     if (v !== null && v.trim() !== it.passportNo) void update(it.id, { passportNo: v });
@@ -102,7 +110,9 @@ export default function D90Page() {
   const openCases = board.cases.filter(isOpen);
   const doneCases = board.cases.filter((c) => !isOpen(c));
 
+  const zhHits = useMemo(() => (/[\u3400-\u9fff]/.test(q) ? new Set(searchCases(board, q).map((c) => c.passport.id)) : null), [board, q]);
   const match = (c: D90Case) => {
+    if (zhHits) return zhHits.has(c.passport.id);
     const tokens = nameTokens(q), pp = ppKey(q);
     if (!tokens.length && !pp) return true;
     const hay = nameTokens(`${c.passport.name} ${c.slip?.name ?? ""}`).join(" ");
@@ -121,10 +131,7 @@ export default function D90Page() {
   const pendingGroups = groups.filter(([, g]) => g.status === "pending");
   const allowedGroups = groups.filter(([, g]) => g.status === "allowed");
 
-  async function copyPending() {
-    try { await navigator.clipboard.writeText(pendingListZh(board)); flash("คัดลอกรายการค้างแล้ว"); }
-    catch { window.prompt("คัดลอกข้อความนี้", pendingListZh(board)); }
-  }
+  const copyPending = () => copyText(pendingListZh(board), "คัดลอกรายการค้างแล้ว");
 
   return (
     <main className="mx-auto w-full max-w-3xl px-3 pb-24 pt-4 sm:px-6">
@@ -163,7 +170,7 @@ export default function D90Page() {
       )}
 
       <div className="mt-4 flex gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 ค้นชื่อ หรือ เลข passport" className="w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-base outline-none focus:border-pink-300" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 ค้นชื่อ (อังกฤษ / 中文) หรือ เลข passport" className="w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-base outline-none focus:border-pink-300" />
         {q && <button type="button" onClick={() => setQ("")} className="rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500">ล้าง</button>}
       </div>
 
@@ -197,6 +204,7 @@ export default function D90Page() {
                         <ThumbBase onZoom={setZoom} it={p} size={72} />
                         <div className="min-w-0 flex-1">
                           <button type="button" onClick={() => editName(p)} className="block max-w-full truncate text-left text-base font-bold text-slate-800">{p.name || "⚠️ อ่านชื่อไม่ออก — แตะเพื่อใส่ชื่อ"}</button>
+                          <button type="button" onClick={() => editCn(p)} className={`block text-left text-base ${p.cn ? "font-semibold text-slate-700" : "text-xs text-slate-400"}`}>{p.cn || "+ 中文名"}</button>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                             <button type="button" onClick={() => editPp(p)} className="font-mono">{p.passportNo || "+ เลข passport"}</button>
                             {p.nationality && <span>{p.nationality}</span>}
@@ -224,6 +232,7 @@ export default function D90Page() {
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <BtnBase disabled={busy} onClick={() => { const v = window.prompt("โน้ต (เช่น 性别错)", p.note ?? ""); if (v !== null) void update(p.id, { note: v }); }}>📝 โน้ต</BtnBase>
                         {!c.slip && <BtnBase disabled={busy} tone={p.done ? "pink" : "slate"} onClick={() => void update(p.id, { done: !p.done })}>{p.done ? "↩️ เปิดงานใหม่" : "☑️ ปิดงานเอง"}</BtnBase>}
+                        {c.slip && <BtnBase disabled={busy} tone="sky" onClick={() => void copyText(customerMsgZh(p.name, p.cn, c.slip!.nextDue), "คัดลอกข้อความแจ้งลูกค้าแล้ว")}>📋 ข้อความแจ้งลูกค้า (中文)</BtnBase>}
                         {c.slip && <BtnBase disabled={busy} onClick={() => void update(c.slip!.id, { linkTo: "-" }, "ยกเลิกจับคู่แล้ว")}>✂️ ใบนี้ไม่ใช่ของคนนี้</BtnBase>}
                         <BtnBase disabled={busy} onClick={() => void post({ action: "reread", id: p.id }, "อ่านใหม่แล้ว")}>🔁 อ่านใหม่</BtnBase>
                         <BtnBase disabled={busy} tone="rose" onClick={() => remove(p)}>🗑 ลบ</BtnBase>
@@ -249,7 +258,7 @@ export default function D90Page() {
                   <div className="mt-0.5 text-xs text-slate-500">ใบมาถึง {dayLabelTh(bkkDay(s.ts))} {bkkTime(s.ts)} น.{s.nextDue ? ` · ครั้งถัดไป ${s.nextDue}` : ""}</div>
                   <select disabled={busy} value="" onChange={(e) => { if (e.target.value) void update(s.id, { linkTo: e.target.value }, "จับคู่แล้ว"); }} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm">
                     <option value="">จับคู่กับงานที่รอใบ…</option>
-                    {openCases.map((c) => <option key={c.passport.id} value={c.passport.id}>{c.passport.name || "(ไม่มีชื่อ)"} · {dayLabelTh(bkkDay(c.passport.ts))}</option>)}
+                    {openCases.map((c) => <option key={c.passport.id} value={c.passport.id}>{c.passport.name || "(ไม่มีชื่อ)"} {c.passport.cn ?? ""} · {dayLabelTh(bkkDay(c.passport.ts))}</option>)}
                   </select>
                 </div>
               </div>
