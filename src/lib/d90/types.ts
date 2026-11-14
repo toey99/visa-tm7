@@ -23,6 +23,7 @@ export type D90Item = {
   nationality: string;
   nextDue: string;     // DD/MM/YYYY — slips only: next report date
   linkTo?: string;     // slips only: passport item id chosen by hand
+  old?: boolean;       // slips only: set by hand — true = previous slip sent in with the job, false = the new result
   done?: boolean;      // passports only: closed by hand without a slip
   note?: string;
 };
@@ -31,7 +32,7 @@ export type D90Group = { name: string; status: "pending" | "allowed"; ts: number
 
 export type D90Case = {
   passport: D90Item;
-  pages: D90Item[];    // other pages sent with it (entry stamp, visa…)
+  pages: D90Item[];    // other pages sent with it (entry stamp, visa, the PREVIOUS 90-day slip…)
   slip: D90Item | null;
   how: "" | "passport" | "name" | "fuzzy" | "manual";
 };
@@ -68,15 +69,38 @@ function editDistanceAtMost1(a: string, b: string): boolean {
 }
 
 const PAGE_WINDOW_MS = 3 * 60 * 1000;
+const NEW_SLIP_MIN_DAYS = 45;
+
+function dueMs(ddmmyyyy: string): number {
+  const m = ddmmyyyy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : NaN;
+}
+
+/**
+ * Customers often send their PREVIOUS 90-day slip together with the passport.
+ * That one must never close the job. A fresh slip's next date is ~90 days
+ * ahead; a previous slip's date is the one falling due now. When the date
+ * can't be read, a slip that arrives in the same batch as a passport is
+ * taken to be the previous one.
+ */
+export function isOldSlip(s: D90Item, items: D90Item[]): boolean {
+  if (typeof s.old === "boolean") return s.old;
+  if (s.linkTo && s.linkTo !== "-") return false; // linked to a job by hand → it is that job's result
+  const due = dueMs(s.nextDue);
+  if (!Number.isNaN(due)) return due - s.ts < NEW_SLIP_MIN_DAYS * 86400000;
+  return items.some((p) => p.kind === "passport" && p.groupId === s.groupId
+    && ((!!s.setId && p.setId === s.setId) || (p.ts <= s.ts && s.ts - p.ts <= PAGE_WINDOW_MS)));
+}
 
 export function buildCases(items: D90Item[]): D90Board {
   const sorted = [...items].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
   const cases: D90Case[] = sorted.filter((i) => i.kind === "passport").map((p) => ({ passport: p, pages: [], slip: null, how: "" }));
   const byId = new Map(cases.map((c) => [c.passport.id, c]));
 
-  // extra pages → same image set, else the passport sent just before in the same group
+  // extra pages (and previous slips) → same image set, else the passport sent just before in the same group
   const loose: D90Item[] = [];
-  for (const o of sorted.filter((i) => i.kind === "other")) {
+  const oldSlips = new Set(sorted.filter((i) => i.kind === "slip" && isOldSlip(i, sorted)));
+  for (const o of sorted.filter((i) => i.kind === "other" || oldSlips.has(i))) {
     let home = o.setId ? cases.find((c) => c.passport.setId === o.setId) : undefined;
     if (!home) {
       for (const c of cases) {
@@ -84,12 +108,16 @@ export function buildCases(items: D90Item[]): D90Board {
         if (o.ts - c.passport.ts <= PAGE_WINDOW_MS) home = c; // keeps the latest one before it
       }
     }
+    if (!home && o.kind === "slip" && nameKey(o.name)) {
+      // a previous slip sent on its own: the latest job under the same name
+      home = [...cases].reverse().find((c) => nameKey(c.passport.name) === nameKey(o.name) || letterKey(c.passport.name) === letterKey(o.name));
+    }
     if (home) home.pages.push(o); else loose.push(o);
   }
 
   // slips → manual link, passport number, exact name, spacing-insensitive name, one-letter slip
   const orphanSlips: D90Item[] = [];
-  const slips = sorted.filter((i) => i.kind === "slip");
+  const slips = sorted.filter((i) => i.kind === "slip" && !oldSlips.has(i));
   for (const s of slips) {
     if (!s.linkTo) continue;
     const c = byId.get(s.linkTo);

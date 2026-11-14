@@ -27,7 +27,7 @@ export async function GET() {
   }
 }
 
-type Patch = Partial<Pick<D90Item, "name" | "cn" | "passportNo" | "kind" | "nextDue" | "linkTo" | "done" | "note">>;
+type Patch = Partial<Pick<D90Item, "name" | "cn" | "passportNo" | "kind" | "nextDue" | "linkTo" | "old" | "done" | "note">>;
 type Body =
   | { action: "update"; id: string; patch: Patch }
   | { action: "delete"; id: string }
@@ -45,6 +45,7 @@ function cleanPatch(p: Patch): Patch {
   if (typeof p.nextDue === "string" && (p.nextDue === "" || /^\d{2}\/\d{2}\/\d{4}$/.test(p.nextDue))) out.nextDue = p.nextDue;
   if (typeof p.linkTo === "string") out.linkTo = p.linkTo.slice(0, 40);
   if (typeof p.done === "boolean") out.done = p.done;
+  if (typeof p.old === "boolean") out.old = p.old;
   if (typeof p.note === "string") out.note = p.note.slice(0, 200);
   return out;
 }

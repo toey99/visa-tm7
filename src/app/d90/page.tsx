@@ -227,12 +227,24 @@ export default function D90Page() {
                           </div>
                         )}
                       </div>
-                      {c.pages.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{c.pages.map((o) => <ThumbBase onZoom={setZoom} key={o.id} it={o} size={44} />)}</div>}
+                      {c.pages.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {c.pages.map((o) => (
+                            <span key={o.id} className="flex items-center gap-1">
+                              <ThumbBase onZoom={setZoom} it={o} size={44} />
+                              {o.kind === "slip" && (
+                                <button type="button" disabled={busy} onClick={() => { if (window.confirm("ใบนี้คือใบใหม่ (ผลงานที่เจ้าหน้าที่ส่งกลับ) ใช่ไหม?\nกดตกลงเพื่อใช้ใบนี้ปิดงาน")) void update(o.id, { old: false }); }} className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">📎 ใบเก่า{o.nextDue ? ` ${o.nextDue}` : ""}</button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {p.note && <p className="mt-2 text-xs text-amber-700">📝 {p.note}</p>}
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <BtnBase disabled={busy} onClick={() => { const v = window.prompt("โน้ต (เช่น 性别错)", p.note ?? ""); if (v !== null) void update(p.id, { note: v }); }}>📝 โน้ต</BtnBase>
                         {!c.slip && <BtnBase disabled={busy} tone={p.done ? "pink" : "slate"} onClick={() => void update(p.id, { done: !p.done })}>{p.done ? "↩️ เปิดงานใหม่" : "☑️ ปิดงานเอง"}</BtnBase>}
                         {c.slip && <BtnBase disabled={busy} tone="sky" onClick={() => void copyText(customerMsgZh(p.name, p.cn, c.slip!.nextDue), "คัดลอกข้อความแจ้งลูกค้าแล้ว")}>📋 ข้อความแจ้งลูกค้า (中文)</BtnBase>}
+                        {c.slip && <BtnBase disabled={busy} onClick={() => void update(c.slip!.id, { old: true }, "ย้ายเป็นใบเก่าแล้ว — งานกลับไปรอใบ")}>📎 นี่คือใบเก่า</BtnBase>}
                         {c.slip && <BtnBase disabled={busy} onClick={() => void update(c.slip!.id, { linkTo: "-" }, "ยกเลิกจับคู่แล้ว")}>✂️ ใบนี้ไม่ใช่ของคนนี้</BtnBase>}
                         <BtnBase disabled={busy} onClick={() => void post({ action: "reread", id: p.id }, "อ่านใหม่แล้ว")}>🔁 อ่านใหม่</BtnBase>
                         <BtnBase disabled={busy} tone="rose" onClick={() => remove(p)}>🗑 ลบ</BtnBase>
@@ -274,16 +286,16 @@ export default function D90Page() {
 
       {!searching && tab === "loose" && (
         <div className="mt-4 space-y-2">
-          <p className="text-xs text-slate-400">รูปที่บอทดูแล้วไม่ใช่หน้า passport หรือใบ 90 วัน และไม่ได้ส่งมาติดกับ passport ของใคร</p>
+          <p className="text-xs text-slate-400">รูปที่ไม่ใช่หน้า passport หรือใบ 90 วันใบใหม่ และไม่ได้ส่งมาติดกับ passport ของใคร</p>
           {board.loose.length === 0 && <p className="mt-8 text-center text-sm text-slate-400">ไม่มี</p>}
           {[...board.loose].reverse().map((o) => (
             <div key={o.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <ThumbBase onZoom={setZoom} it={o} size={64} />
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-slate-500">{dayLabelTh(bkkDay(o.ts))} {bkkTime(o.ts)} น.{o.note ? ` · ${o.note}` : ""}</div>
+                <div className="text-xs text-slate-500">{o.kind === "slip" ? `📎 ใบ 90 วันใบเก่า · ${o.name || "ไม่มีชื่อ"}${o.nextDue ? ` · ${o.nextDue}` : ""} · ` : ""}{dayLabelTh(bkkDay(o.ts))} {bkkTime(o.ts)} น.{o.note ? ` · ${o.note}` : ""}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   <BtnBase disabled={busy} tone="pink" onClick={() => void update(o.id, { kind: "passport" })}>เป็นหน้า passport</BtnBase>
-                  <BtnBase disabled={busy} tone="emerald" onClick={() => void update(o.id, { kind: "slip" })}>เป็นใบ 90 วัน</BtnBase>
+                  <BtnBase disabled={busy} tone="emerald" onClick={() => void update(o.id, { kind: "slip", old: false })}>เป็นใบ 90 วันใบใหม่</BtnBase>
                   <BtnBase disabled={busy} onClick={() => void post({ action: "reread", id: o.id }, "อ่านใหม่แล้ว")}>🔁 อ่านใหม่</BtnBase>
                   <BtnBase disabled={busy} tone="rose" onClick={() => remove(o)}>🗑 ลบ</BtnBase>
                 </div>

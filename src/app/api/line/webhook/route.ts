@@ -10,7 +10,7 @@ import { blobPut } from "@/lib/blob";
 import { lineGetContent, lineGroupName, lineReply, verifyLineSignature, type LineEvent } from "@/lib/d90/line";
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
-import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daysWaiting, fullName, isOpen, searchCases, type D90Item } from "@/lib/d90/types";
+import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daysWaiting, fullName, isOldSlip, isOpen, searchCases, type D90Item } from "@/lib/d90/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -92,8 +92,13 @@ async function handleImage(ev: LineEvent, groupId: string): Promise<void> {
     // from the passport this slip belongs to); warnings go in a second bubble.
     let owner: D90Item | undefined;
     try {
-      const all = await peekItems();
-      owner = caseForSlip(all.some((i) => i.id === item.id) ? all : [...all, item], item.id)?.passport;
+      const peek = await peekItems();
+      const all = peek.some((i) => i.id === item.id) ? peek : [...peek, item];
+      // the customer's PREVIOUS slip, sent in together with the passport: keep it with the job, don't close anything
+      if (isOldSlip(item, all)) {
+        return lineReply(ev.replyToken, `📎 ใบ 90 วันใบเก่า: ${item.name || "(อ่านชื่อไม่ออก)"}${item.nextDue ? ` · กำหนด ${item.nextDue}` : ""} — แนบไว้กับงาน ยังไม่ปิดงาน`);
+      }
+      owner = caseForSlip(all, item.id)?.passport;
     } catch (e) {
       console.error("[line webhook] match failed", m.id, e);
     }
