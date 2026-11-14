@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "TM30 Bot",
+  "version": "2.0.0",
+  "description": "ผู้ช่วยอัปโหลด Excel และดาวน์โหลด PDF ใบรับแจ้ง TM30 ทีละคน และรับงานจาก tm7.toyka.net (ใช้กับบัญชีที่ login เองแล้ว)",
+  "permissions": [
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://tm30.immigration.go.th/*",
+    "https://tm7.toyka.net/*",
+    "https://*.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://tm30.immigration.go.th/tm30/*"
+      ],
+      "js": [
+        "hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://tm30.immigration.go.th/tm30/*"
+      ],
+      "js": [
+        "bot.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}

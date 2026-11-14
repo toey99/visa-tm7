@@ -28,6 +28,7 @@ import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
 import RunDaySheet from "@/components/RunDaySheet";
+import Tm30BotPanel from "@/components/Tm30BotPanel";
 import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
 import { OFFICES, OFFICE_IDS, isOfficeId, type OfficeId } from "@/lib/offices";
@@ -946,6 +947,18 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     window.open(billUrl(fake, b.amount), "_blank");
   }
 
+  // the same people the "Excel TM30" button would export, per batch — handed to the TM.30 bot panel
+  function tm30BotGroups() {
+    return groupsFor((p) => !!p.fields.firstName && !!p.fields.passportNo && (!isRun || p.fields.run === "RUN30")).map((b) => ({ tag: tagOf(b), people: b.people }));
+  }
+  // the bot filed receipts on the server → pull them onto the cards (retry while a save of ours is in flight)
+  function pullTm30Receipts(attempt = 0) {
+    store.refreshFromServer().then((res) => {
+      if (res) setPeople(res.people);
+      else if (attempt < 3) window.setTimeout(() => pullTm30Receipts(attempt + 1), 4000);
+    }).catch(() => {});
+  }
+
   async function excelTm30() {
     // on the visa-run board only people going on to the 30-day extension need a TM.30
     const groups = groupsFor((p) => !!p.fields.firstName && !!p.fields.passportNo && (!isRun || p.fields.run === "RUN30"));
@@ -1250,6 +1263,21 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={dayZip} disabled={working || !people.length} className={btnCls}>⬇ โฟลเดอร์วันนี้ (zip)</button>
           <button onClick={clearDay} disabled={working} className={btnDangerCls}>ล้างวัน</button>
         </div>
+        {/* queue this day's TM.30 batch for the Chrome-extension bot on the home PC; receipts come back onto the cards */}
+        {loaded && (
+          <div className="mt-3">
+            <Tm30BotPanel
+              ns={isRun ? "run" : "days"}
+              date={meta.date}
+              office={meta.office}
+              officeLabel={OFFICES[meta.office].label}
+              getGroups={tm30BotGroups}
+              disabled={working || !people.length}
+              onFiled={pullTm30Receipts}
+              onError={setError}
+            />
+          </div>
+        )}
       </div>
 
       {showAgents && (
