@@ -130,6 +130,16 @@ export default function D90Page() {
   // the picture being viewed, when it is a page attached to someone's job
   const zoomPage = zoom ? board.cases.flatMap((c) => c.pages).find((o) => o.img === zoom) : undefined;
 
+  const todayKey = bkkDay(now);
+  const todayItems = (data?.items ?? []).filter((i) => bkkDay(i.ts) === todayKey);
+  function clearToday() {
+    const n = (k: D90Item["kind"]) => todayItems.filter((i) => i.kind === k).length;
+    const typed = window.prompt(`ล้างทุกอย่างที่ส่งเข้ามาวันนี้ (${dayLabelTh(todayKey)})\n${todayItems.length} รูป: passport ${n("passport")} · ใบ 90 วัน ${n("slip")} · รูปอื่น ${n("other")}\n\nลบแล้วกู้คืนไม่ได้ — พิมพ์คำว่า ลบ เพื่อยืนยัน`);
+    if (typed === null) return;
+    if (typed.trim() !== "ลบ") { flash("ยังไม่ได้ลบ (ต้องพิมพ์คำว่า ลบ)"); return; }
+    void post({ action: "clearDay", day: todayKey }, "ล้างงานของวันนี้แล้ว");
+  }
+
   const groups = Object.entries(data?.groups ?? {});
   const pendingGroups = groups.filter(([, g]) => g.status === "pending");
   const allowedGroups = groups.filter(([, g]) => g.status === "allowed");
@@ -320,6 +330,12 @@ export default function D90Page() {
             <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
           ))}
           <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>สรุปส่ง</b> = ใบที่ได้กลับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
+        </p>
+      )}
+
+      {todayItems.length > 0 && (
+        <p className="mt-6 text-center">
+          <button type="button" disabled={busy} onClick={clearToday} className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-500 disabled:opacity-50">🧹 ล้างงานของวันนี้ ({todayItems.length} รูป)</button>
         </p>
       )}
 

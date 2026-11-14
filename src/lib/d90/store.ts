@@ -21,7 +21,9 @@ const CONFIG = "d90/config.json";
 const INBOX = "d90/inbox/";
 const KEEP_DAYS = 400;
 
-type Index = { items: D90Item[] };
+// `gone` = ids deleted on the board whose inbox file may still exist; without
+// it a just-deleted picture would be folded straight back in on the next read.
+type Index = { items: D90Item[]; gone?: string[] };
 export type D90Config = { groups: Record<string, D90Group> };
 
 /** null only when the file truly doesn't exist — a failed read must never look like "empty" */
@@ -42,45 +44,55 @@ export async function peekItems(): Promise<D90Item[]> {
   return [...idx.items, ...fresh].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
 }
 
-async function readAll(): Promise<{ idx: Index; fresh: D90Item[]; folded: string[] }> {
+async function readAll(): Promise<{ idx: Index; fresh: D90Item[]; folded: string[]; gone: string[] }> {
   const idx = (await readJson<Index>(INDEX)) ?? { items: [] };
   const inbox = (await blobList(INBOX)).filter((b) => b.pathname.endsWith(".json"));
-  const have = new Set(idx.items.map((i) => i.id));
+  const tomb = new Set(idx.gone ?? []);
+  const have = new Set([...idx.items.map((i) => i.id), ...tomb]);
   const fresh: D90Item[] = [];
-  const folded: string[] = []; // inbox files whose item was ALREADY in the index before this read
+  const folded: string[] = []; // inbox files whose item was ALREADY in the index (or deleted) before this read
+  const listed = new Set<string>();
   await Promise.all(inbox.map(async (b) => {
     const id = b.pathname.slice(INBOX.length).replace(/\.json$/, "");
+    listed.add(id);
     if (have.has(id)) { folded.push(b.url); return; }
     const r = await blobFetchUrl(b.url, true);
     if (!r.ok) return; // leave it in the inbox for the next read
     const it = (await r.json()) as D90Item;
     if (it && it.id && !have.has(it.id)) { have.add(it.id); fresh.push(it); }
   }));
-  return { idx, fresh, folded };
+  // a tombstone is only needed while its inbox file is still around
+  return { idx, fresh, folded, gone: [...tomb].filter((id) => listed.has(id)) };
 }
 
-/** Read every item, folding newly arrived inbox files into the index. */
-export async function loadItems(): Promise<D90Item[]> {
-  const { idx, fresh, folded } = await readAll();
-
+async function loadState(): Promise<{ items: D90Item[]; gone: string[] }> {
+  const { idx, fresh, folded, gone } = await readAll();
   const cutoff = Date.now() - KEEP_DAYS * 86400000;
   const old = idx.items.filter((i) => i.ts < cutoff);
   const items = [...idx.items.filter((i) => i.ts >= cutoff), ...fresh].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
 
-  if (fresh.length || old.length) {
-    await blobPut(INDEX, JSON.stringify({ items }), "application/json");
+  if (fresh.length || old.length || gone.length !== (idx.gone ?? []).length) {
+    await blobPut(INDEX, JSON.stringify({ items, gone }), "application/json");
     if (old.length) await blobDeleteByPath(old.map((i) => i.img).filter(Boolean)).catch(() => undefined);
   }
   // An inbox file is removed one read AFTER its item reached the index, so a
   // slower, older write of the index landing late can never lose an item.
   if (folded.length) await blobDelete(folded).catch(() => undefined);
-  return items;
+  return { items, gone };
+}
+
+/** Read every item, folding newly arrived inbox files into the index. */
+export async function loadItems(): Promise<D90Item[]> {
+  return (await loadState()).items;
 }
 
 /** Apply a change to the index (after folding the inbox in) and save it. */
 export async function mutateItems(fn: (items: D90Item[]) => D90Item[]): Promise<D90Item[]> {
-  const items = fn(await loadItems());
-  await blobPut(INDEX, JSON.stringify({ items }), "application/json");
+  const st = await loadState();
+  const items = fn(st.items);
+  const kept = new Set(items.map((i) => i.id));
+  const gone = [...st.gone, ...st.items.filter((i) => !kept.has(i.id)).map((i) => i.id)];
+  await blobPut(INDEX, JSON.stringify({ items, gone }), "application/json");
   return items;
 }
 

@@ -4,12 +4,13 @@
 //   { action: "update", id, patch }        edit one item (name, cn, passportNo, kind, nextDue, linkTo, done, note)
 //   { action: "delete", id }               remove one item and its picture
 //   { action: "reread", id }               run the AI on the stored picture again
+//   { action: "clearDay", day }            remove EVERYTHING received on one Bangkok day (YYYY-MM-DD) — for test runs
 //   { action: "group", groupId, allow }    allow / remove a LINE group
 import { NextRequest, NextResponse } from "next/server";
 import { blobDeleteByPath, blobGetByPath } from "@/lib/blob";
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, loadItems, mutateItems, saveConfig } from "@/lib/d90/store";
-import type { D90Item, D90Kind } from "@/lib/d90/types";
+import { bkkDay, type D90Item, type D90Kind } from "@/lib/d90/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +33,7 @@ type Body =
   | { action: "update"; id: string; patch: Patch }
   | { action: "delete"; id: string }
   | { action: "reread"; id: string }
+  | { action: "clearDay"; day: string }
   | { action: "group"; groupId: string; allow: boolean };
 
 const KINDS: D90Kind[] = ["passport", "slip", "other"];
@@ -80,6 +82,20 @@ export async function POST(req: NextRequest) {
       });
       if (img) await blobDeleteByPath([img]).catch(() => undefined);
       return NextResponse.json({ ok: true, items }, noStore);
+    }
+
+    if (body.action === "clearDay") {
+      const day = body.day;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? "")) return fail("day must be YYYY-MM-DD", 400);
+      const imgs: string[] = [];
+      const removed = new Set<string>();
+      const items = await mutateItems((all) => {
+        for (const i of all) if (bkkDay(i.ts) === day) { removed.add(i.id); if (i.img) imgs.push(i.img); }
+        // anything still pointing at a removed passport goes back to automatic matching
+        return all.filter((i) => !removed.has(i.id)).map((i) => (i.linkTo && removed.has(i.linkTo) ? { ...i, linkTo: undefined } : i));
+      });
+      if (imgs.length) await blobDeleteByPath(imgs).catch(() => undefined);
+      return NextResponse.json({ ok: true, items, cleared: removed.size }, noStore);
     }
 
     if (body.action === "reread") {
