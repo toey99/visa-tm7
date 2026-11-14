@@ -122,12 +122,13 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
     }
   }));
 
-  // 90-day reports received that day
+  // 90-day reports FINISHED that day — a case counts on the day its result slip
+  // came back and was matched to the passport (not the day the passport arrived)
   if (prices.chargeD90) {
     try {
       const board = buildCases(await peekItems());
-      for (const c of board.cases.filter((c) => bkkDay(c.passport.ts) === day)) {
-        charges.push({ id: c.passport.id, src: "d90", office: "", name: c.passport.name, passport: c.passport.passportNo, items: [{ label: "90 วัน", amount: prices.d90 }], amount: prices.d90, paidDirect: 0, flags: "" });
+      for (const c of board.cases.filter((c) => c.slip && bkkDay(c.slip.ts) === day)) {
+        charges.push({ id: c.passport.id, src: "d90", office: "", name: c.passport.name, passport: c.passport.passportNo, items: [{ label: "90 วัน (สำเร็จ)", amount: prices.d90 }], amount: prices.d90, paidDirect: 0, flags: "" });
       }
     } catch { /* inbox unavailable → no 90-day lines; the day can be closed by hand */ }
   }

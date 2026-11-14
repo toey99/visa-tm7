@@ -61,7 +61,7 @@ export const PRICE_LABELS: Record<keyof Prices, string> = {
   cambodia: "🐻 ประวัติกัมพูชา (ต่อคน)",
   overstayBase: "Overstay — ค่าดำเนินการ (ต่อคน)",
   overstayPerDay: "Overstay — ค่าปรับต่อวัน",
-  d90: "รายงานตัว 90 วัน (ต่อใบ)",
+  d90: "รายงานตัว 90 วัน (ต่อใบที่สำเร็จ — นับวันที่ใบใหม่กลับมาจับคู่)",
   chargeD90: "งาน 90 วันในกล่องรับงาน = ของเอเย่นต์นี้",
 };
 
