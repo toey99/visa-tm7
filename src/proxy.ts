@@ -15,7 +15,9 @@ export const config = {
   // Gate everything EXCEPT the Auth.js endpoints (which must stay public so
   // users can actually sign in), Next.js internals, and static asset files.
   // App pages, /api/generate-tm7, and the Gemini server actions are all gated.
+  // /api/line/webhook is public too: LINE calls it, and the route itself
+  // rejects anything without a valid x-line-signature.
   matcher: [
-    "/((?!api/auth|api/cron|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|ttf|woff2?|pdf)$).*)",
+    "/((?!api/auth|api/cron|api/line/webhook|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|ttf|woff2?|pdf)$).*)",
   ],
 };
