@@ -524,6 +524,39 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     }
   }
 
+  // One person's TM.7 as a download link in this office's LINE group (the group
+  // tagged for this board, just the two of us + the bot) — for the counter or a
+  // straggler, when the PDF is needed on the phone right away. Bulk printing
+  // still goes through "TM7 ทุกคน".
+  const [lineBusy, setLineBusy] = useState("");
+  async function tm7ToLine(p: Person) {
+    if (lineBusy) return;
+    setError("");
+    setLineBusy(p.id);
+    try {
+      // always a fresh packet: an earlier one may predate the TM.30 receipt or an edit
+      const blob = await generateTm7(p);
+      patchPerson(p.id, (x) => ({ ...x, tm7Pdf: blob }));
+      const hasTm30 = p.files.some((x) => x.kind === "tm30" && x.mime === "application/pdf");
+      const fd = new FormData();
+      fd.set("ns", isRun ? "run" : "days");
+      fd.set("day", meta.date.replace(/\//g, ""));
+      fd.set("office", meta.office);
+      fd.set("personId", p.id);
+      fd.set("name", [p.fields.lastName, p.fields.firstName].filter(Boolean).join(" "));
+      fd.set("cn", p.fields.chineseName || "");
+      fd.set("file", new File([blob], "tm7.pdf", { type: "application/pdf" }));
+      const r = await fetch("/api/line/send-tm7", { method: "POST", body: fd });
+      const j = (await r.json().catch(() => ({}))) as { error?: string; groups?: string[] };
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setStatus(`ส่งลิงก์ TM7 ของ ${personFolderName(p)} เข้ากลุ่ม LINE แล้ว${j.groups?.length ? ` (${j.groups.join(", ")})` : ""}${hasTm30 ? "" : " — ยังไม่มีใบ TM30 แนบในชุดนี้"}`);
+    } catch (e) {
+      setError(`${personFolderName(p)}: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLineBusy("");
+    }
+  }
+
   // Which people need a TM.7 packet: everyone on the extension board (when the
   // office has a generator); on the visa-run board only "run + 30 days".
   const needsTm7 = (p: Person) => OFFICES[meta.office].generator !== "none" && (!isRun || p.fields.run === "RUN30");
@@ -1425,6 +1458,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
             onChange={(next) => upsertPerson(next)}
             onRemove={() => removePerson(p.id)}
             onTm7={() => tm7One(p)}
+            onTm7Line={() => tm7ToLine(p)}
+            lineBusy={lineBusy === p.id}
             onPhoto={() => photoOne(p)}
             onCollect={() => collectOne(p)}
             onBill={() => openBill([p])}
@@ -1523,7 +1558,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 const KIND_LABEL: Record<DocType, string> = { passport: "พาสปอร์ต", stamp: "ตราเข้าเมือง", selfie: "เซลฟี่", tm30: "TM30", other: "อื่น ๆ" };
 
 function PersonCard({
-  person: p, people, meta, onChange, onRemove, onTm7, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onMoveOffice, onToggleArrived, picked, onTogglePick, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy, mode, needsTm7,
+  person: p, people, meta, onChange, onRemove, onTm7, onTm7Line, lineBusy, onPhoto, onCollect, onBill, onCrop, onUseAsPhoto, onMoveDay, onMoveOffice, onToggleArrived, picked, onTogglePick, onOverstayCalc, onToggleCancelled, clothes, onMoveFile, holidays, busy, mode, needsTm7,
 }: {
   person: Person;
   people: Person[];
@@ -1531,6 +1566,8 @@ function PersonCard({
   onChange: (p: Person) => void;
   onRemove: () => void;
   onTm7: () => void;
+  onTm7Line: () => void;
+  lineBusy: boolean;
   onPhoto: () => void;
   onCollect: () => void;
   onBill: () => void;
@@ -1602,6 +1639,7 @@ function PersonCard({
           <button onClick={onTogglePick} className={picked ? "rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls} title="เลือกคนนี้เพื่อทำเอกสารเฉพาะกลุ่มที่เลือก (TM7 / TM30 / A4 / zip)">{picked ? "☑ เลือกแล้ว" : "☐ เลือก"}</button>
           <button onClick={onToggleArrived} className={p.arrived ? "rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white" : btnCls} title="ลูกค้ามาถึงหน้างานแล้ว (ขึ้นเครื่องหมายถูกเขียวใน summary)">{p.arrived ? "✅ มาแล้ว" : "☐ มาแล้ว?"}</button>
           {needsTm7 && <button onClick={onTm7} disabled={busy} className={btnCls}>TM7 PDF</button>}
+          {needsTm7 && <button onClick={onTm7Line} disabled={busy || lineBusy} className={btnCls} title="เจน TM7 ของคนนี้แล้วส่งลิงก์ดาวน์โหลดเข้ากลุ่ม LINE ของหน้างานนี้ — ใช้ตอนอยู่หน้างาน / เก็บตก">{lineBusy ? "กำลังส่ง…" : "📲 TM7 → LINE"}</button>}
           <button onClick={onPhoto} disabled={busy} className={btnCls}>{p.aiPhoto ? "ทำรูปใหม่" : "✦ ทำรูปพื้นขาว"}</button>
           {f.pay === "collect" && <button onClick={onCollect} disabled={busy} className={btnCls} title="รูปพาสปอร์ตพร้อมยอดที่ต้องเก็บ">฿ รูปเรียกเก็บ</button>}
           <button onClick={onBill} className={btnCls} title="เปิดโปรแกรมบิล ABC พร้อมชื่อ/พาสปอร์ต/ยอด">🧾 ออกบิล</button>

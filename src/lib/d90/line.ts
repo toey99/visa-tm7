@@ -2,7 +2,9 @@
 // LINE Messaging API — the few calls the 90-day inbox bot needs (server only)
 // =============================================================
 // Needs LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN.
-// The bot only ever uses REPLY messages (free) — never push.
+// The inbox bot only uses REPLY messages (free). The one PUSH is linePush below:
+// a TM.7 link sent to the office's own group on request from a card (counts
+// against the account's monthly message quota — one per group member).
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -43,6 +45,21 @@ export async function lineReply(replyToken: string | undefined, text: string | s
     if (!r.ok) console.warn("[line] reply failed", r.status, (await r.text()).slice(0, 200));
   } catch (e) {
     console.warn("[line] reply failed", e);
+  }
+}
+
+/** Push one text to a group. Returns why it failed (429 = this month's message quota is used up). */
+export async function linePush(to: string, text: string): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  try {
+    const r = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken()}`, "content-type": "application/json" },
+      body: JSON.stringify({ to, messages: [{ type: "text", text: text.slice(0, 4800) }] }),
+    });
+    if (r.ok) return { ok: true };
+    return { ok: false, status: r.status, error: (await r.text()).slice(0, 200) };
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
