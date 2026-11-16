@@ -128,7 +128,7 @@ export default function D90Tm30Panel({ cases, onError }: { cases: D90Case[]; onE
       const groups = await getGroups();
       const people = groups.flatMap((g) => g.people);
       if (!people.length) return;
-      const xls = await buildTm30Excel(people, plusDaysDdmmyyyy(10));
+      const xls = await buildTm30Excel(people, plusDaysDdmmyyyy(30));
       downloadBlob(xls, `TM30_90วัน_${todayDdmmyyyy().replace(/\//g, "")}_${people.length}คน.xls`);
     } catch (e) { onError(e instanceof Error ? e.message : String(e)); }
     finally { setXlsBusy(false); }
@@ -172,7 +172,7 @@ export default function D90Tm30Panel({ cases, onError }: { cases: D90Case[]; onE
           {/* the same sheet the bot would upload — for doing it by hand on the TM.30 site */}
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" disabled={!chosen.length || xlsBusy} onClick={() => void exportExcel()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{xlsBusy ? "กำลังอ่านหน้าพาส…" : `⬇️ Excel TM30 (${chosen.length} คน)`}</button>
-            <span className="text-xs text-slate-500">ไฟล์ .xls สำหรับอัปโหลดในเว็บ TM30 เอง · วันออก = +10 วัน</span>
+            <span className="text-xs text-slate-500">ไฟล์ .xls สำหรับอัปโหลดในเว็บ TM30 เอง · วันออก = +30 วัน</span>
           </div>
           <Tm30BotPanel
             ns="d90"
