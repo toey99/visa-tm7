@@ -17,7 +17,7 @@ import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
 import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
 import { boardSummary, intakeImage, loadState, parseCommand, targetDate, type InboxTarget } from "@/lib/inbox/board";
-import { parsePersonCommand, runPersonCommand } from "@/lib/inbox/commands";
+import { boardByPrefix, parsePersonCommand, runPersonCommand } from "@/lib/inbox/commands";
 import { blobPut as blobPutJson } from "@/lib/blob";
 import { OFFICES, type OfficeId } from "@/lib/offices";
 import { readSlipImage } from "@/lib/slips/ocr";
@@ -105,7 +105,14 @@ async function handleBoardText(ev: LineEvent, groupId: string, target: InboxTarg
   const text = (ev.message?.text ?? "").trim();
   const ts = ev.timestamp || Date.now();
   const state = await loadState(groupId);
-  // a verb + a name acts on that person's card (มาแล้ว LI KAI · จ่ายสด 4500 LI · ย้าย 17/11 LI · ?LI)
+  // "สรุป it" / "สรุป non 17/11" → another office's board from this group
+  const sm = text.match(/^(?:สรุป|summary)\s+([a-zA-Zรัน]+)(?:\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?)?$/);
+  if (sm && boardByPrefix(sm[1])) {
+    const t2 = boardByPrefix(sm[1])!;
+    const date = sm[2] ? `${sm[2].padStart(2, "0")}/${sm[3].padStart(2, "0")}/${sm[4] ? (sm[4].length === 2 ? 2000 + Number(sm[4]) : Number(sm[4]) > 2400 ? Number(sm[4]) - 543 : Number(sm[4])) : new Date(ts + 7 * 3600 * 1000).getUTCFullYear()}` : targetDate(ts, t2, {});
+    return lineReply(ev.replyToken, await boardSummary(t2, date));
+  }
+  // a verb + a name acts on that person's card (มาแล้ว LI KAI · จ่ายสด 4500 LI · ย้าย 17/11 LI · ?LI · มา it1 non2)
   const pc = parsePersonCommand(text, ts);
   if (pc) {
     try {

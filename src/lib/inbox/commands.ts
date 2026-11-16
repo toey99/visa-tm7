@@ -45,7 +45,19 @@ const VERBS: [RegExp, Verb][] = [
   [/^(สถานะ|เช็ค|check|status)$/i, "status"],
 ];
 
-export type PersonCommand = { verb: Verb; amount?: string; date?: string; query: string[] };
+export type PersonCommand = { verb: Verb; amount?: string; date?: string; query: string[]; board?: InboxTarget };
+
+// office prefixes on a queue number — it1 · non2 · r1 / ray1 · vfs1 · vfsp1 (Pattaya) · cs1 / run1 (visa run)
+const OFFICE_PREFIX: Record<string, InboxTarget> = {
+  it: { ns: "days", office: "BANGKOK" }, bkk: { ns: "days", office: "BANGKOK" },
+  non: { ns: "days", office: "NONTHABURI" }, nb: { ns: "days", office: "NONTHABURI" },
+  r: { ns: "days", office: "RAYONG" }, ray: { ns: "days", office: "RAYONG" },
+  vfs: { ns: "days", office: "VFS_BANGKOK" }, vfsb: { ns: "days", office: "VFS_BANGKOK" }, vfsp: { ns: "days", office: "VFS_PATTAYA" },
+  cs: { ns: "run", office: "CHIANG_SAEN" }, run: { ns: "run", office: "CHIANG_SAEN" }, รัน: { ns: "run", office: "CHIANG_SAEN" },
+};
+const PREFIX_RE = new RegExp(`^(${Object.keys(OFFICE_PREFIX).join("|")})(\\d{1,2}(?:-\\d{1,2})?(?:,\\d{1,2}(?:-\\d{1,2})?)*)$`, "i");
+/** Board named by a prefix ("it", "non", "r"…) on its own, e.g. "สรุป it". */
+export const boardByPrefix = (s: string): InboxTarget | undefined => OFFICE_PREFIX[s.toLowerCase()];
 
 /** Parse "verb [amount|date] name…" — null when the text is not such a command (no verb, or no name after it). */
 export function parsePersonCommand(text: string, ts: number): PersonCommand | null {
@@ -70,10 +82,17 @@ export function parsePersonCommand(text: string, ts: number): PersonCommand | nu
     const y = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]) > 2400 ? Number(m[3]) - 543 : Number(m[3])) : now.getUTCFullYear();
     date = `${pad(Number(m[1]))}/${pad(Number(m[2]))}/${y}`;
   }
-  const query = toks.filter(Boolean);
+  // "it1", "non2-4": the first prefix picks the board, the numbers stay as queue positions
+  let board: InboxTarget | undefined;
+  const query = toks.filter(Boolean).map((tok) => {
+    const m = tok.match(PREFIX_RE);
+    if (!m) return tok;
+    board ??= OFFICE_PREFIX[m[1].toLowerCase()];
+    return m[2];
+  });
   if (!query.length) return null;                      // a bare "เก็บ" / "vip" is a default for the next pictures, not a person command
   if (verb === "collect" && !amount) return null;
-  return { verb, amount, date, query };
+  return { verb, amount, date, query, board };
 }
 
 type Found = { rec: PersonRec; day: string; folder: string; all: PersonRec[] };
@@ -145,7 +164,8 @@ async function copyBlob(from: string, to: string): Promise<boolean> {
 }
 
 /** Run one command. Returns the reply text. */
-export async function runPersonCommand(cmd: PersonCommand, target: InboxTarget, ts: number, filingDay: string): Promise<string> {
+export async function runPersonCommand(cmd: PersonCommand, groupTarget: InboxTarget, ts: number, filingDay: string): Promise<string> {
+  const target = cmd.board ?? groupTarget;
   const { hits, byQueue } = await findPerson(target, cmd.query, ts, filingDay);
   const office = OFFICES[target.office];
   if (!hits.length) return `ไม่พบ “${cmd.query.join(" ")}” บนบอร์ด ${office.label} ${keyToDate(todayKey(ts))}${filingDay !== todayKey(ts) ? ` / ${keyToDate(filingDay)}` : ""}`;
@@ -231,5 +251,6 @@ export const PERSON_HELP = [
   "• vip 1 · ไม่vip 1 · ย 17/11 1 (ย้ายวัน)",
   "• ?1 หรือ ?LI → ดูการ์ด · สรุป → ทั้งบอร์ดพร้อมเลขคิว",
   "• ใช้ชื่อแทนเลขได้: มาแล้ว LI KAI · จ่ายสด 4500 LI",
+  "• สั่งข้ามหน้างาน: it1 · non2 · r1 · vfs1 · vfsp1 · cs1 (รัน) เช่น มา it1 it3 · สด 4700 non2 · สรุป it",
   "• ส่งรูปพาสของคนที่อยู่บนบอร์ดวันนี้ซ้ำ = เช็คอิน ✅",
 ];
