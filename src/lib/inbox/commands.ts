@@ -34,13 +34,13 @@ const VERBS: [RegExp, Verb][] = [
   [/^(ยังไม่มา|ไม่มา|unarrive)$/i, "unarrive"],
   [/^(จ่ายสด|สด|เงินสด|cash)$/i, "cash"],
   [/^(โอน|โอนแล้ว|จ่ายโอน|transfer)$/i, "transfer"],
-  [/^(รอโอน|waiting)$/i, "waiting"],
+  [/^(รอโอน|รอ|waiting)$/i, "waiting"],
   [/^(ยังไม่จ่าย|ค้าง|pending)$/i, "pending"],
   [/^(เก็บ|collect)$/i, "collect"],
   [/^vip$/i, "vip"],
   [/^(ไม่vip|novip|-vip)$/i, "novip"],
-  [/^(ย้าย|เลื่อน|move)$/i, "move"],
-  [/^(ยกเลิก|cancel|no-?show)$/i, "cancel"],
+  [/^(ย้าย|เลื่อน|ย|move)$/i, "move"],
+  [/^(ยกเลิก|ยก|cancel|no-?show)$/i, "cancel"],
   [/^(คืน|เอากลับ|uncancel)$/i, "uncancel"],
   [/^(สถานะ|เช็ค|check|status)$/i, "status"],
 ];
@@ -90,17 +90,38 @@ function matches(p: PersonRec, query: string[]): boolean {
   return query.every((q) => hay.includes(q.toUpperCase()));
 }
 
+// "1", "#1", "A1", "ลำดับ1" = queue position on the board (the number shown on the card / summary);
+// "1-4" or "1,3,5" = several. Returns the positions, or null when the query is a name.
+export function queuePositions(query: string[]): number[] | null {
+  const out: number[] = [];
+  for (const raw of query) {
+    for (const tok of raw.split(",").filter(Boolean)) {
+      const m = tok.match(/^(?:#|[aA]|ลำดับ|คิว|no\.?)?(\d{1,2})(?:-(\d{1,2}))?$/);
+      if (!m) return null;
+      const a = Number(m[1]), b = m[2] ? Number(m[2]) : a;
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) out.push(i);
+    }
+  }
+  return out.length ? [...new Set(out)] : null;
+}
+
 /** Find the person on today's board, else on the filing-day board. */
-export async function findPerson(target: InboxTarget, query: string[], ts: number, filingDay: string): Promise<{ hits: Found[] }> {
+export async function findPerson(target: InboxTarget, query: string[], ts: number, filingDay: string): Promise<{ hits: Found[]; byQueue: boolean }> {
   const days = [todayKey(ts)];
   if (filingDay !== days[0]) days.push(filingDay);
   const hits: Found[] = [];
+  const positions = queuePositions(query);
   for (const day of days) {
     const { folder, all } = await readBoard(target, day);
-    for (const rec of all.filter((p) => !p.movedTo && matches(p, query))) hits.push({ rec, day, folder, all });
+    if (positions) {
+      const live = all.filter((p) => !p.cancelled && !p.movedTo);
+      for (const n of positions) { const rec = live[n - 1]; if (rec) hits.push({ rec, day, folder, all }); }
+    } else {
+      for (const rec of all.filter((p) => !p.movedTo && matches(p, query))) hits.push({ rec, day, folder, all });
+    }
     if (hits.length) break;                             // found on the earlier board → don't look further
   }
-  return { hits };
+  return { hits, byQueue: !!positions };
 }
 
 const statusLine = (p: PersonRec, all: PersonRec[]): string => {
@@ -125,13 +146,22 @@ async function copyBlob(from: string, to: string): Promise<boolean> {
 
 /** Run one command. Returns the reply text. */
 export async function runPersonCommand(cmd: PersonCommand, target: InboxTarget, ts: number, filingDay: string): Promise<string> {
-  const { hits } = await findPerson(target, cmd.query, ts, filingDay);
+  const { hits, byQueue } = await findPerson(target, cmd.query, ts, filingDay);
   const office = OFFICES[target.office];
   if (!hits.length) return `ไม่พบ “${cmd.query.join(" ")}” บนบอร์ด ${office.label} ${keyToDate(todayKey(ts))}${filingDay !== todayKey(ts) ? ` / ${keyToDate(filingDay)}` : ""}`;
-  if (hits.length > 1 && cmd.verb !== "status") return `เจอ ${hits.length} คน พิมพ์ชื่อให้ชัดกว่านี้:\n${hits.map((h) => `• ${nameOf(h.rec)} · ${fieldsOf(h.rec).passportNo ?? ""}`).join("\n")}`;
-  if (cmd.verb === "status") return hits.slice(0, 5).map((h) => `${statusLine(h.rec, h.all)}\n📅 ${office.label} ${keyToDate(h.day)}`).join("\n\n");
+  if (cmd.verb === "status") return hits.slice(0, 8).map((h) => `${statusLine(h.rec, h.all)}\n📅 ${office.label} ${keyToDate(h.day)}`).join("\n\n");
+  if (hits.length > 1 && !byQueue) return `เจอ ${hits.length} คน พิมพ์ชื่อให้ชัดกว่านี้ หรือใช้เลขคิว:\n${hits.map((h) => `• ${h.all.filter((x) => !x.cancelled && !x.movedTo).indexOf(h.rec) + 1}. ${nameOf(h.rec)} · ${fieldsOf(h.rec).passportNo ?? ""}`).join("\n")}`;
+  // several queue numbers at once (มาแล้ว 1 3 5) — one simple action each; money / move stay one person at a time
+  if (hits.length > 1) {
+    if (cmd.verb === "move" || cmd.amount) return "สั่งเงินหรือย้ายได้ทีละคน — ใส่เลขคิวเดียว";
+    const outs: string[] = [];
+    for (const h of hits) outs.push(await applyOne(cmd, h, target, office.label));
+    return outs.join("\n\n");
+  }
+  return applyOne(cmd, hits[0], target, office.label);
+}
 
-  const h = hits[0];
+async function applyOne(cmd: PersonCommand, h: Found, target: InboxTarget, officeLabel: string): Promise<string> {
   const base = JSON.parse(JSON.stringify(h.rec)) as PersonRec;
   const rec = JSON.parse(JSON.stringify(h.rec)) as PersonRec;
   const f = (rec.fields ??= {}) as Record<string, unknown>;
@@ -176,7 +206,7 @@ export async function runPersonCommand(cmd: PersonCommand, target: InboxTarget, 
   }
   await saveToBoard(target.ns, h.day, target.office, h.folder, { v: 2, people: [rec], bases: { [rec.id]: base } });
   const after = h.all.map((x) => (x.id === rec.id ? rec : x));
-  return `${did} · ${nameOf(rec)}\n${statusLine(rec, after)}\n📅 ${office.label} ${keyToDate(h.day)}`;
+  return `${did} · ${nameOf(rec)}\n${statusLine(rec, after)}\n📅 ${officeLabel} ${keyToDate(h.day)}`;
 }
 
 /** Passport picture of someone already on today's board → check-in. Returns the reply, or null when nobody matched. */
@@ -195,10 +225,11 @@ export async function checkInByPassport(target: InboxTarget, passportNo: string,
 }
 
 export const PERSON_HELP = [
-  "🧑‍💼 สั่งงานบนการ์ด (พิมพ์ คำสั่ง + ชื่อ):",
-  "• มาแล้ว LI KAI · ไม่มา LI · ยกเลิก LI · คืน LI",
-  "• จ่ายสด 4500 LI · โอน 4500 LI · รอโอน LI · ยังไม่จ่าย LI · เก็บ 4500 LI",
-  "• vip LI · ไม่vip LI · ย้าย 17/11 LI",
-  "• สถานะ LI (หรือ ?LI) → ดูการ์ด",
+  "🧑‍💼 สั่งงานบนการ์ด (คำสั่ง + ชื่อ หรือ เลขคิวบนบอร์ด):",
+  "• มา 1 · มา 1 3 5 · มา 1-4 · ไม่มา 2 · ยก 2 (ยกเลิก) · คืน 2",
+  "• สด 4500 1 · โอน 4500 1 · รอ 1 (รอโอน) · ยังไม่จ่าย 1 · เก็บ 4500 1",
+  "• vip 1 · ไม่vip 1 · ย 17/11 1 (ย้ายวัน)",
+  "• ?1 หรือ ?LI → ดูการ์ด · สรุป → ทั้งบอร์ดพร้อมเลขคิว",
+  "• ใช้ชื่อแทนเลขได้: มาแล้ว LI KAI · จ่ายสด 4500 LI",
   "• ส่งรูปพาสของคนที่อยู่บนบอร์ดวันนี้ซ้ำ = เช็คอิน ✅",
 ];
