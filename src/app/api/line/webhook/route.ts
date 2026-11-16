@@ -15,7 +15,7 @@ import { blobPut } from "@/lib/blob";
 import { lineGetContent, lineGroupName, linePushMessages, lineReply, verifyLineSignature, type LineEvent } from "@/lib/d90/line";
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
-import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
+import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, isPendingRequest, pendingSummary, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
 import { boardSummary, intakeImage, loadState, parseCommand, targetDate, type InboxTarget } from "@/lib/inbox/board";
 import { boardByPrefix, parsePersonCommand, runPersonCommand } from "@/lib/inbox/commands";
 import { pushSummaryPicture } from "@/lib/summary/line";
@@ -220,6 +220,7 @@ async function handleImage(ev: LineEvent, groupId: string): Promise<void> {
 
 async function handleText(ev: LineEvent): Promise<void> {
   const text = (ev.message?.text ?? "").trim();
+  if (isPendingRequest(text)) return lineReply(ev.replyToken, pendingSummary(buildCases(await peekItems()), Date.now())); // "รอใบ"
   const ask = summaryRequest(text, Date.now()); // "สรุป" → received that day, "สรุปส่ง" → slips returned that day
   if (ask) {
     const b = buildCases(await peekItems());

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCases, caseForSlip, daySummary, isOldSlip, returnSummary, summaryDay, summaryRequest, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
+import { isPendingRequest, pendingSummary, buildCases, caseForSlip, daySummary, isOldSlip, returnSummary, summaryDay, summaryRequest, customerMsgZh, isOpen, pendingListZh, searchCases, type D90Item } from "./types.ts";
 
 const T0 = Date.UTC(2026, 10, 14, 2, 0, 0); // 14 Nov 2026 09:00 Bangkok
 const item = (p: Partial<D90Item> & { id: string }): D90Item => ({
@@ -201,4 +201,22 @@ test("return summary: jobs whose new slip came back that day, with the next repo
   assert.deepEqual(summaryRequest("สรุป", T0), { type: "in", day: "2026-11-14" });
   assert.deepEqual(summaryRequest("สรุป 13", T0), { type: "in", day: "2026-11-13" });
   assert.equal(summaryRequest("ขอบคุณค่ะ", T0), null);
+});
+
+test("รอใบ: everyone still waiting, oldest day first, numbered through; finished and hand-closed jobs left out", () => {
+  const D = 86400000;
+  const b = buildCases([
+    item({ id: "1", name: "LI ZHONG", cn: "李忠", passportNo: "AA236515" }),
+    item({ id: "2", name: "SUSIANA BONG", passportNo: "X5718843", ts: T0 + 1000 }),
+    item({ id: "3", name: "PANG CHONG", ts: T0 + 2000, done: true }),
+    item({ id: "4", name: "LIU SHENGQIANG", cn: "刘升强", passportNo: "EG9233901", ts: T0 + 2 * D }),
+    item({ id: "5", kind: "slip", name: "SUSIANA BONG", nextDue: "15/02/2027", ts: T0 + 2 * D + 1000 }),
+  ]);
+  assert.equal(pendingSummary(b, T0 + 2 * D + 5000),
+    "⏳ รอใบ 90 วัน · 2 คน\n90天报到待出单 · 共2人\n\n" +
+    "รับ 14 พ.ย. 2026 · 11月14日提交 · รอ 2 วัน\n1. LI ZHONG 李忠 AA236515\n\n" +
+    "รับ 16 พ.ย. 2026 · 11月16日提交 · วันนี้\n2. LIU SHENGQIANG 刘升强 EG9233901");
+  assert.equal(pendingSummary(buildCases([]), T0), "⏳ รอใบ 90 วัน · 0 คน\n90天报到待出单 · 共0人\n\nไม่มีงานค้าง 🎉");
+  assert.ok(isPendingRequest(" รอใบ ") && isPendingRequest("ค้าง") && isPendingRequest("待出单"));
+  assert.ok(!isPendingRequest("รอใบของ li zhong") && !isPendingRequest("สรุป"));
 });

@@ -236,6 +236,26 @@ export function pendingListZh(board: D90Board): string {
   return [`90天报道 · 待出单 ${open.length} 人`, ...blocks].join("\n\n");
 }
 
+/** "รอใบ" / "ค้าง" / "待出单" → asks for the list of jobs still waiting for their slip */
+export const isPendingRequest = (text: string) => /^(?:รอใบ|งานค้าง|ค้าง|待出单|未完成|pending)$/i.test(text.trim());
+
+/** every job still waiting for its new slip, oldest day first, numbered straight through */
+export function pendingSummary(board: D90Board, now: number): string {
+  const open = board.cases.filter(isOpen);
+  const head = `⏳ รอใบ 90 วัน · ${open.length} คน\n90天报到待出单 · 共${open.length}人`;
+  if (!open.length) return `${head}\n\nไม่มีงานค้าง 🎉`;
+  const days = new Map<string, D90Case[]>();
+  for (const c of open) { const k = bkkDay(c.passport.ts); days.set(k, [...(days.get(k) ?? []), c]); }
+  let n = 0;
+  const blocks = [...days.entries()].sort().map(([day, list]) => {
+    const waited = daysWaiting(list[0].passport.ts, now);
+    const rows = list.map((c) => `${++n}. ${[c.passport.name || "⚠️ (อ่านชื่อไม่ออก)", c.passport.cn, c.passport.passportNo].filter(Boolean).join(" ")}`);
+    return `รับ ${dayLabelTh(day)} · ${dayLabelZh(day)}提交 · ${waited > 0 ? `รอ ${waited} วัน` : "วันนี้"}\n${rows.join("\n")}`;
+  });
+  const tail = board.orphanSlips.length ? `⚠️ มีใบที่ยังไม่จับคู่ ${board.orphanSlips.length} ใบ — บางคนข้างบนอาจได้ใบแล้ว: ${board.orphanSlips.map((s) => s.name || "ไม่มีชื่อ").join(", ")}` : "";
+  return [head, ...blocks, tail].filter(Boolean).join("\n\n");
+}
+
 /** numbered list of every job received on one Bangkok day (YYYY-MM-DD): English name, Chinese name, passport no. */
 export function daySummary(board: D90Board, day: string): string {
   const list = board.cases.filter((c) => bkkDay(c.passport.ts) === day);

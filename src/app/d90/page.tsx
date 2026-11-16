@@ -341,7 +341,7 @@ export default function D90Page() {
           กล่องรับงาน: {allowedGroups.map(([id, g], i) => (
             <span key={id}>{i > 0 && " · "}{g.name || "กลุ่ม LINE"}{g.target ? ` → ${g.target.ns === "slips" ? "🧾 สลิปโอน" : g.target.ns === "run" ? "🚗 วีซ่ารัน" : `📥 ${OFFICES[g.target.office as OfficeId]?.label ?? g.target.office}`}` : " → 📋 90 วัน"} <button type="button" className="underline" onClick={() => { if (window.confirm(`เลิกรับรูปจากกลุ่ม ${g.name || ""}?`)) void post({ action: "group", groupId: id, allow: false }); }}>เลิกใช้</button></span>
           ))}
-          <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>สรุปส่ง</b> = ใบที่ได้กลับวันนี้ · <b>?ชื่อ</b> เช่น ?li zhong
+          <br />ถามบอทในกลุ่มได้: พิมพ์ <b>สรุป</b> = รายชื่อที่รับวันนี้ · <b>สรุปส่ง</b> = ใบที่ได้กลับวันนี้ · <b>รอใบ</b> = คนที่ยังไม่ได้ใบ · <b>?ชื่อ</b> เช่น ?li zhong
         </p>
       )}
 
