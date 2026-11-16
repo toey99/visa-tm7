@@ -135,7 +135,7 @@ export async function renderSummaryPng(target: SummaryTarget, dayKey: string, ag
         : f.pay === "hold" ? { bg: "#7c3aed", fg: "#ffffff", t: `🔒 ${who}รอโอน · hold พาส` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
     const ov = overstayInfo(f.arrivalDate ?? "", f.admittedUntil ?? "", f.visaType ?? "", date, undefined, !isRun);
     const car = isRun ? carById(f.car) : undefined;
-    return { p, f, i, ghost, tag, ov, car, img: await photoDataUrl(p) };
+    return { p, f, i, ghost, tag, ov, car, img: await photoDataUrl(p), cancelled: !!p.cancelled, moved: p.movedTo ? String(p.movedTo) : "", arrived: !!p.arrived };
   }));
 
   const text = [
@@ -180,23 +180,23 @@ export async function renderSummaryPng(target: SummaryTarget, dayKey: string, ag
 
       <div style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", gap: "16px 10px", background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, flexGrow: 1 }}>
         {cards.length === 0 && <div style={{ display: "flex", width: "100%", justifyContent: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
-        {cards.map(({ p, f, i, ghost, tag, ov, car, img }) => (
+        {cards.map(({ p, f, i, ghost, tag, ov, car, img, cancelled, moved, arrived }) => (
           <div key={p.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW, opacity: ghost ? 0.75 : 1 }}>
             <div style={{ display: "flex", position: "relative", width: 90, height: 120 }}>
               {img
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={img} alt="" width={90} height={120} style={{ width: 90, height: 120, objectFit: "cover", borderRadius: 4, filter: ghost ? "grayscale(1)" : undefined }} />
                 : <div style={{ display: "flex", width: 90, height: 120, background: "#eee", borderRadius: 4 }} />}
-              {p.cancelled && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626", fontSize: 64, fontWeight: 700 }}>✕</div>}
-              {p.movedTo && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 56, fontWeight: 700 }}>➡</div>}
+              {cancelled && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626", fontSize: 64, fontWeight: 700 }}>✕</div>}
+              {!!moved && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 56, fontWeight: 700 }}>➡</div>}
               <div style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: 11, background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</div>
-              {ov && ov.days > 0 && <div style={{ position: "absolute", bottom: -6, right: -6, display: "flex", background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</div>}
-              {car && <div style={{ position: "absolute", top: -6, right: -6, display: "flex", background: car.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>🚗{car.id}</div>}
-              {f.vip && <div style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, display: "flex", fontSize: 26, lineHeight: 1 }}>👑</div>}
-              {isRun && f.cambodia && <div style={{ position: "absolute", top: 18, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐻</div>}
-              {isRun && f.overstay && <div style={{ position: "absolute", top: 44, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐢</div>}
+              {!!ov && ov.days > 0 && <div style={{ position: "absolute", bottom: -6, right: -6, display: "flex", background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</div>}
+              {!!car && <div style={{ position: "absolute", top: -6, right: -6, display: "flex", background: car.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>🚗{car.id}</div>}
+              {!!f.vip && <div style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, display: "flex", fontSize: 26, lineHeight: 1 }}>👑</div>}
+              {isRun && !!f.cambodia && <div style={{ position: "absolute", top: 18, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐻</div>}
+              {isRun && !!f.overstay && <div style={{ position: "absolute", top: 44, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐢</div>}
               {isRun && f.run === "RUN30" && <div style={{ position: "absolute", bottom: -6, left: -6, display: "flex", background: "#ea580c", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>+30</div>}
-              {p.arrived && <div style={{ position: "absolute", right: -8, bottom: 10, width: 34, height: 34, borderRadius: 17, background: "#16a34a", border: "3px solid #fff", color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✓</div>}
+              {arrived && <div style={{ position: "absolute", right: -8, bottom: 10, width: 34, height: 34, borderRadius: 17, background: "#16a34a", border: "3px solid #fff", color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✓</div>}
             </div>
             <div style={{ display: "flex", fontSize: 10, fontWeight: 700, marginTop: 6, color: "#222", textAlign: "center" }}>{[f.lastName, f.firstName].filter(Boolean).join(" ") || " "}</div>
             <div style={{ display: "flex", fontSize: 15, lineHeight: 1.2, color: "#111" }}>{f.chineseName || " "}</div>
@@ -210,17 +210,17 @@ export async function renderSummaryPng(target: SummaryTarget, dayKey: string, ag
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           <div style={pill("#fff", accent, 13)}>👥 {people.length} คน</div>
-          {people.some((p) => p.arrived) && <div style={pill("#16a34a", "#fff", 13)}>✓ มาแล้ว {people.filter((p) => p.arrived).length}/{people.length}</div>}
+          {people.some((p) => !!p.arrived) && <div style={pill("#16a34a", "#fff", 13)}>✓ มาแล้ว {people.filter((p) => p.arrived).length}/{people.length}</div>}
           {pendingN > 0 && <div style={pill("#ffe66d", "#4a3b00", 13)}>💰 ต้องเก็บ {pendingN} คน รวม {sum.toLocaleString()} บาท</div>}
           {waiting.length > 0 && <div style={pill("#ede9fe", "#4c1d95", 13)}>🕓 รอโอน {waiting.length} คน {waiting.reduce((s, p) => s + num(F(p).amount), 0).toLocaleString()} บาท</div>}
           {people.some((p) => F(p).pay === "hold") && <div style={pill("#7c3aed", "#ffffff", 13)}>🔒 hold พาสปอร์ต {people.filter((p) => F(p).pay === "hold").length} คน — รอเอเจนซี่ยืนยันโอน</div>}
           {received > 0 && <div style={pill("#d2f4dd", "#14532d", 13)}>💵 รับแล้ว {received.toLocaleString()} บาท</div>}
           {collect.length === 0 && people.length > 0 && <div style={pill("#d2f4dd", "#14532d", 13)}>✅ ไม่มีรายการเก็บเงิน</div>}
           {overstays > 0 && <div style={pill("#fee2e2", "#991b1b", 13)}>⚠ overstay {overstays} คน</div>}
-          {people.some((p) => F(p).vip) && <div style={pill("#fde047", "#713f12", 13)}>👑 VIP {people.filter((p) => F(p).vip).length} คน · +{(people.filter((p) => F(p).vip).length * 500).toLocaleString()} บาท</div>}
+          {people.some((p) => !!F(p).vip) && <div style={pill("#fde047", "#713f12", 13)}>👑 VIP {people.filter((p) => F(p).vip).length} คน · +{(people.filter((p) => F(p).vip).length * 500).toLocaleString()} บาท</div>}
           {isRun && people.some((p) => F(p).run === "RUN30") && <div style={pill("#ffedd5", "#9a3412", 13)}>📄 ไปต่อ 30 วัน {people.filter((p) => F(p).run === "RUN30").length}</div>}
-          {shown.some((p) => p.cancelled) && <div style={pill("#fee2e2", "#991b1b", 13)}>❌ ไม่มา {shown.filter((p) => p.cancelled).length}</div>}
-          {shown.some((p) => p.movedTo) && <div style={pill("#dbeafe", "#1e3a8a", 13)}>➡ เลื่อนวัน {shown.filter((p) => p.movedTo).length}</div>}
+          {shown.some((p) => !!p.cancelled) && <div style={pill("#fee2e2", "#991b1b", 13)}>❌ ไม่มา {shown.filter((p) => p.cancelled).length}</div>}
+          {shown.some((p) => !!p.movedTo) && <div style={pill("#dbeafe", "#1e3a8a", 13)}>➡ เลื่อนวัน {shown.filter((p) => p.movedTo).length}</div>}
         </div>
         {/อาเต่า/.test(agent) && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.25 }}>
