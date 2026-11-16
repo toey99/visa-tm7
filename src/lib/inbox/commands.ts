@@ -97,7 +97,7 @@ export function parsePersonCommand(text: string, ts: number): PersonCommand | nu
 
 type Found = { rec: PersonRec; day: string; folder: string; all: PersonRec[] };
 
-async function readBoard(target: InboxTarget, day: string): Promise<{ folder: string; all: PersonRec[] }> {
+export async function readBoard(target: InboxTarget, day: string): Promise<{ folder: string; all: PersonRec[] }> {
   const folder = boardFolder(target.ns, day, target.office);
   const m = await loadManifest(target.ns, day, target.office, folder);
   return { folder, all: m ? (await readRecords(folder, Object.keys(m.entries))).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : [] };
@@ -143,7 +143,7 @@ export async function findPerson(target: InboxTarget, query: string[], ts: numbe
   return { hits, byQueue: !!positions };
 }
 
-const statusLine = (p: PersonRec, all: PersonRec[]): string => {
+export const statusLine = (p: PersonRec, all: PersonRec[]): string => {
   const f = fieldsOf(p);
   const live = all.filter((x) => !x.cancelled && !x.movedTo);
   const pos = live.findIndex((x) => x.id === p.id) + 1;
@@ -244,6 +244,18 @@ export async function checkInByPassport(target: InboxTarget, passportNo: string,
   const after = all.map((x) => (x.id === rec.id ? rec : x));
   return `✅ เช็คอินแล้ว\n${statusLine(rec, after)}`;
 }
+
+/** One action on a person known by id (a tapped button under their card). */
+export async function runOnPerson(verb: Verb, target: InboxTarget, day: string, id: string, amount?: string): Promise<CommandResult> {
+  const { folder, all } = await readBoard(target, day);
+  const rec = all.find((p) => p.id === id);
+  if (!rec) return { text: "ไม่พบการ์ดนี้แล้ว (ถูกลบ/ย้ายไปแล้ว)" };
+  const h: Found = { rec, day, folder, all };
+  if (verb === "status") return { text: statusLine(rec, all) };
+  const text = await applyOne({ verb, amount, query: [] }, h, target, OFFICES[target.office].label);
+  return { text, changed: { target, day, agents: [String(fieldsOf(rec).agent ?? "").trim()] } };
+}
+export type { Verb };
 
 export const PERSON_HELP = [
   "🧑‍💼 สั่งงานบนการ์ด (คำสั่ง + ชื่อ หรือ เลขคิวบนบอร์ด):",
