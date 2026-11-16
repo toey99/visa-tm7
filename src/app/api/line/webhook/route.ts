@@ -17,6 +17,7 @@ import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
 import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
 import { boardSummary, intakeImage, loadState, parseCommand, targetDate, type InboxTarget } from "@/lib/inbox/board";
+import { parsePersonCommand, runPersonCommand } from "@/lib/inbox/commands";
 import { blobPut as blobPutJson } from "@/lib/blob";
 import { OFFICES, type OfficeId } from "@/lib/offices";
 import { readSlipImage } from "@/lib/slips/ocr";
@@ -104,6 +105,16 @@ async function handleBoardText(ev: LineEvent, groupId: string, target: InboxTarg
   const text = (ev.message?.text ?? "").trim();
   const ts = ev.timestamp || Date.now();
   const state = await loadState(groupId);
+  // a verb + a name acts on that person's card (มาแล้ว LI KAI · จ่ายสด 4500 LI · ย้าย 17/11 LI · ?LI)
+  const pc = parsePersonCommand(text, ts);
+  if (pc) {
+    try {
+      return await lineReply(ev.replyToken, await runPersonCommand(pc, target, ts, targetDate(ts, target, state.defaults).replace(/\//g, "")));
+    } catch (e) {
+      console.error("[line inbox] command failed", text, e);
+      return lineReply(ev.replyToken, `⚠️ ทำไม่สำเร็จ (${e instanceof Error ? e.message.slice(0, 120) : "error"})`);
+    }
+  }
   const cmd = parseCommand(text, ts, state.defaults);
   if (!cmd) return;                                            // ordinary chatter in the group: stay quiet
   if (cmd.summary) {

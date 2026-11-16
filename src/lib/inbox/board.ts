@@ -30,6 +30,7 @@ import { boardFolder, loadManifest, readRecords, saveToBoard, type PersonRec } f
 import { OFFICES, type OfficeId } from "@/lib/offices";
 import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import { DEFAULT_HOLIDAYS, EMPTY_FIELDS, isWorkingDay, type PersonFields } from "@/lib/today/types";
+import { checkInByPassport, PERSON_HELP } from "./commands";
 
 export type InboxTarget = { ns: "days" | "run"; office: OfficeId };
 
@@ -116,6 +117,8 @@ const HELP = [
   "• พิมพ์ก่อน forward เพื่อตั้งค่า: อาเต่า 4000 · VIP · +30 · ไม่เก็บ · รอโอน · 15/11 · พรุ่งนี้",
   "• สรุป → รายชื่อที่ลงบอร์ดวันนั้น · ล้างค่า → ยกเลิกค่าตั้งต้น",
   "• ก่อน 17:00 ลงวันนี้ · หลัง 17:00 ลงวันทำการถัดไป",
+  "",
+  ...PERSON_HELP,
 ].join("\n");
 
 // ---------- pictures ----------
@@ -203,6 +206,11 @@ async function fileSet(groupId: string, target: InboxTarget, items: SetItem[], t
   for (const it of ordered) {
     if (it.kind === "passport" && it.data) {
       const no = it.data.passportNo;
+      // the same passport again while that person is already on TODAY's board = check-in at the counter
+      if (no) {
+        const ci = await checkInByPassport(target, no, ts).catch(() => null);
+        if (ci) { replies.push(ci); current = null; continue; }
+      }
       const same = no ? existing.find((p) => (p.fields as PersonFields | undefined)?.passportNo === no) : undefined;
       const d = same ? draftFor(same.id, false, same) : draftFor(`li-${it.id}`, true);
       d.rec.fields = applyPassport(d.rec.fields as PersonFields, it.data) as unknown as Record<string, unknown>;
