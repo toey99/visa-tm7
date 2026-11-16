@@ -12,12 +12,14 @@
 //   or read until someone signed in presses "อนุญาต" on /d90.
 import { NextRequest, NextResponse } from "next/server";
 import { blobPut } from "@/lib/blob";
-import { lineGetContent, lineGroupName, lineReply, verifyLineSignature, type LineEvent } from "@/lib/d90/line";
+import { lineGetContent, lineGroupName, linePushMessages, lineReply, verifyLineSignature, type LineEvent } from "@/lib/d90/line";
 import { readD90Image, sniffImageMime } from "@/lib/d90/ocr";
 import { loadConfig, peekItems, saveConfig, saveInboxItem } from "@/lib/d90/store";
 import { bkkDay, buildCases, caseForSlip, customerMsgZh, dayLabelTh, daySummary, daysWaiting, fullName, isOldSlip, isOpen, returnSummary, searchCases, summaryRequest, type D90Item } from "@/lib/d90/types";
 import { boardSummary, intakeImage, loadState, parseCommand, targetDate, type InboxTarget } from "@/lib/inbox/board";
 import { boardByPrefix, parsePersonCommand, runPersonCommand } from "@/lib/inbox/commands";
+import { pushSummaryPicture } from "@/lib/summary/line";
+import { MAIN_AGENTS } from "@/lib/today/agents";
 import { blobPut as blobPutJson } from "@/lib/blob";
 import { OFFICES, type OfficeId } from "@/lib/offices";
 import { readSlipImage } from "@/lib/slips/ocr";
@@ -25,6 +27,8 @@ import { claimTransfer, listSlips, loadSlipState, saveSlip, saveSlipState, slipI
 import { SLIP_BOOKS, addDays, bkkDay as slipDay, counted, dayShort, dayTh, formula, isSlipBook, money, parseDay, roundFor, summaryText, total, type SlipBookId, type SlipItem } from "@/lib/slips/types";
 
 export const runtime = "nodejs";
+// where LINE fetches the pictures we push (signed links under /api/pub)
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN ?? "https://tm7.toyka.net";
 export const maxDuration = 60;
 
 const BOARD_URL = "https://tm7.toyka.net/d90";
@@ -112,11 +116,40 @@ async function handleBoardText(ev: LineEvent, groupId: string, target: InboxTarg
     const date = sm[2] ? `${sm[2].padStart(2, "0")}/${sm[3].padStart(2, "0")}/${sm[4] ? (sm[4].length === 2 ? 2000 + Number(sm[4]) : Number(sm[4]) > 2400 ? Number(sm[4]) - 543 : Number(sm[4])) : new Date(ts + 7 * 3600 * 1000).getUTCFullYear()}` : targetDate(ts, t2, {});
     return lineReply(ev.replyToken, await boardSummary(t2, date));
   }
+  const origin = PUBLIC_ORIGIN;
+  // "รูปอัตโนมัติ ปิด/เปิด" — whether a summary picture follows every command in this group
+  const ap = text.match(/^รูปอัตโนมัติ\s*(ปิด|เปิด|off|on)$/i);
+  if (ap) {
+    const on = /เปิด|on/i.test(ap[1]);
+    await blobPutJson(`inbox/${groupId}/state.json`, JSON.stringify({ ...state, autoPic: on }), "application/json");
+    return lineReply(ev.replyToken, on ? "🖼 เปิดรูป Summary อัตโนมัติหลังทุกคำสั่งแล้ว" : "🔕 ปิดรูปอัตโนมัติแล้ว — ขอเองด้วย “รูป” / “รูป it อาเต่า”");
+  }
+  // "รูป" · "รูป it" · "รูป it อาเต่า" · "รูป อาเต่า" → the summary sheet as a picture, now
+  const pm = text.match(/^(?:รูป|รูปสรุป|สรุปรูป|pic)(?:\s+(.+))?$/i);
+  if (pm) {
+    const toks = (pm[1] ?? "").trim().split(/\s+/).filter(Boolean);
+    const t2 = toks[0] && boardByPrefix(toks[0]) ? boardByPrefix(toks.shift()!)! : target;
+    const typed = toks.join(" ");
+    const agent = typed ? (MAIN_AGENTS.find((a) => a.toLowerCase() === typed.toLowerCase()) ?? typed) : "";
+    const dayKey = targetDate(ts, t2, t2 === target ? state.defaults : {}).replace(/\//g, "");
+    const r = await pushSummaryPicture(groupId, origin, t2, dayKey, agent);
+    if (!r.ok) return lineReply(ev.replyToken, `⚠️ ${r.error}`);
+    return;
+  }
   // a verb + a name acts on that person's card (มาแล้ว LI KAI · จ่ายสด 4500 LI · ย้าย 17/11 LI · ?LI · มา it1 non2)
   const pc = parsePersonCommand(text, ts);
   if (pc) {
     try {
-      return await lineReply(ev.replyToken, await runPersonCommand(pc, target, ts, targetDate(ts, target, state.defaults).replace(/\//g, "")));
+      const r = await runPersonCommand(pc, target, ts, targetDate(ts, target, state.defaults).replace(/\//g, ""));
+      await lineReply(ev.replyToken, r.text);
+      // the agent's sheet, updated, so it can be forwarded to them straight away
+      if (r.changed && state.autoPic !== false) {
+        for (const agent of r.changed.agents.slice(0, 3)) {
+          const p = await pushSummaryPicture(groupId, origin, r.changed.target, r.changed.day, agent);
+          if (!p.ok) { await linePushMessages(groupId, [{ type: "text", text: `⚠️ ${p.error}` }]); break; }
+        }
+      }
+      return;
     } catch (e) {
       console.error("[line inbox] command failed", text, e);
       return lineReply(ev.replyToken, `⚠️ ทำไม่สำเร็จ (${e instanceof Error ? e.message.slice(0, 120) : "error"})`);

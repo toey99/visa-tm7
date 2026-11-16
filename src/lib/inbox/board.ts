@@ -35,7 +35,7 @@ import { checkInByPassport, PERSON_HELP } from "./commands";
 export type InboxTarget = { ns: "days" | "run"; office: OfficeId };
 
 type Defaults = { agent?: string; amount?: string; vip?: boolean; run?: "RUN" | "RUN30"; pay?: PersonFields["pay"]; dateKey?: string; dateSetDay?: string; setAt?: number };
-type GroupState = { defaults: Defaults; lastPersonId?: string; lastPersonAt?: number; lastBoard?: string; waiting: WaitingItem[] };
+type GroupState = { defaults: Defaults; lastPersonId?: string; lastPersonAt?: number; lastBoard?: string; waiting: WaitingItem[]; autoPic?: boolean };
 type WaitingItem = { id: string; kind: AnalyzedDoc["docType"]; path: string; mime: string; ts: number; data?: AnalyzedDoc };
 type SetItem = { id: string; setId: string; index: number; total: number; ts: number; path: string; mime: string; kind: AnalyzedDoc["docType"]; data?: AnalyzedDoc; error?: string };
 

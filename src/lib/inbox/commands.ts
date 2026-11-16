@@ -163,22 +163,23 @@ async function copyBlob(from: string, to: string): Promise<boolean> {
   return true;
 }
 
-/** Run one command. Returns the reply text. */
-export async function runPersonCommand(cmd: PersonCommand, groupTarget: InboxTarget, ts: number, filingDay: string): Promise<string> {
+/** What changed, so the caller can send the matching summary picture: the board, the day and the agents touched. */
+export type CommandResult = { text: string; changed?: { target: InboxTarget; day: string; agents: string[] } };
+
+/** Run one command. Returns the reply text (and what changed). */
+export async function runPersonCommand(cmd: PersonCommand, groupTarget: InboxTarget, ts: number, filingDay: string): Promise<CommandResult> {
   const target = cmd.board ?? groupTarget;
   const { hits, byQueue } = await findPerson(target, cmd.query, ts, filingDay);
   const office = OFFICES[target.office];
-  if (!hits.length) return `ไม่พบ “${cmd.query.join(" ")}” บนบอร์ด ${office.label} ${keyToDate(todayKey(ts))}${filingDay !== todayKey(ts) ? ` / ${keyToDate(filingDay)}` : ""}`;
-  if (cmd.verb === "status") return hits.slice(0, 8).map((h) => `${statusLine(h.rec, h.all)}\n📅 ${office.label} ${keyToDate(h.day)}`).join("\n\n");
-  if (hits.length > 1 && !byQueue) return `เจอ ${hits.length} คน พิมพ์ชื่อให้ชัดกว่านี้ หรือใช้เลขคิว:\n${hits.map((h) => `• ${h.all.filter((x) => !x.cancelled && !x.movedTo).indexOf(h.rec) + 1}. ${nameOf(h.rec)} · ${fieldsOf(h.rec).passportNo ?? ""}`).join("\n")}`;
+  if (!hits.length) return { text: `ไม่พบ “${cmd.query.join(" ")}” บนบอร์ด ${office.label} ${keyToDate(todayKey(ts))}${filingDay !== todayKey(ts) ? ` / ${keyToDate(filingDay)}` : ""}` };
+  if (cmd.verb === "status") return { text: hits.slice(0, 8).map((h) => `${statusLine(h.rec, h.all)}\n📅 ${office.label} ${keyToDate(h.day)}`).join("\n\n") };
+  if (hits.length > 1 && !byQueue) return { text: `เจอ ${hits.length} คน พิมพ์ชื่อให้ชัดกว่านี้ หรือใช้เลขคิว:\n${hits.map((h) => `• ${h.all.filter((x) => !x.cancelled && !x.movedTo).indexOf(h.rec) + 1}. ${nameOf(h.rec)} · ${fieldsOf(h.rec).passportNo ?? ""}`).join("\n")}` };
   // several queue numbers at once (มาแล้ว 1 3 5) — one simple action each; money / move stay one person at a time
-  if (hits.length > 1) {
-    if (cmd.verb === "move" || cmd.amount) return "สั่งเงินหรือย้ายได้ทีละคน — ใส่เลขคิวเดียว";
-    const outs: string[] = [];
-    for (const h of hits) outs.push(await applyOne(cmd, h, target, office.label));
-    return outs.join("\n\n");
-  }
-  return applyOne(cmd, hits[0], target, office.label);
+  if (hits.length > 1 && (cmd.verb === "move" || cmd.amount)) return { text: "สั่งเงินหรือย้ายได้ทีละคน — ใส่เลขคิวเดียว" };
+  const outs: string[] = [];
+  for (const h of hits) outs.push(await applyOne(cmd, h, target, office.label));
+  const agents = [...new Set(hits.map((h) => String(fieldsOf(h.rec).agent ?? "").trim()))];
+  return { text: outs.join("\n\n"), changed: { target, day: hits[0].day, agents } };
 }
 
 async function applyOne(cmd: PersonCommand, h: Found, target: InboxTarget, officeLabel: string): Promise<string> {
@@ -253,4 +254,6 @@ export const PERSON_HELP = [
   "• ใช้ชื่อแทนเลขได้: มาแล้ว LI KAI · จ่ายสด 4500 LI",
   "• สั่งข้ามหน้างาน: it1 · non2 · r1 · vfs1 · vfsp1 · cs1 (รัน) เช่น มา it1 it3 · สด 4700 non2 · สรุป it",
   "• ส่งรูปพาสของคนที่อยู่บนบอร์ดวันนี้ซ้ำ = เช็คอิน ✅",
+  "• หลังสั่ง บอทส่งรูป Summary ของเอเย่นต์คนนั้นกลับมาให้ (forward ต่อได้เลย) · ปิด/เปิดด้วย รูปอัตโนมัติ ปิด / เปิด",
+  "• ขอรูปเอง: รูป · รูป it · รูป it อาเต่า · รูป อาเต่า",
 ];
