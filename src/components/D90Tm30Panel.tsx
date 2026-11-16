@@ -11,6 +11,7 @@
 // merged PDF to pass on to the officer in LINE.
 import { useMemo, useRef, useState } from "react";
 import Tm30BotPanel, { type Tm30Group } from "@/components/Tm30BotPanel";
+import { buildTm30Excel, downloadBlob, plusDaysDdmmyyyy } from "@/lib/today/clientTools";
 import { downscaleImage } from "@/lib/today/clientTools";
 import { EMPTY_FIELDS, todayDdmmyyyy, type Person, type PersonFields } from "@/lib/today/types";
 import { ppKey, type D90Case } from "@/lib/d90/types";
@@ -120,6 +121,19 @@ export default function D90Tm30Panel({ cases, onError }: { cases: D90Case[]; onE
     return [{ tag: "", people }];
   }
 
+  const [xlsBusy, setXlsBusy] = useState(false);
+  async function exportExcel() {
+    setXlsBusy(true);
+    try {
+      const groups = await getGroups();
+      const people = groups.flatMap((g) => g.people);
+      if (!people.length) return;
+      const xls = await buildTm30Excel(people, plusDaysDdmmyyyy(10));
+      downloadBlob(xls, `TM30_90วัน_${todayDdmmyyyy().replace(/\//g, "")}_${people.length}คน.xls`);
+    } catch (e) { onError(e instanceof Error ? e.message : String(e)); }
+    finally { setXlsBusy(false); }
+  }
+
   return (
     <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50/70 p-3">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between text-left text-sm font-semibold text-violet-900">
@@ -155,6 +169,11 @@ export default function D90Tm30Panel({ cases, onError }: { cases: D90Case[]; onE
             </div>
           )}
 
+          {/* the same sheet the bot would upload — for doing it by hand on the TM.30 site */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={!chosen.length || xlsBusy} onClick={() => void exportExcel()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{xlsBusy ? "กำลังอ่านหน้าพาส…" : `⬇️ Excel TM30 (${chosen.length} คน)`}</button>
+            <span className="text-xs text-slate-500">ไฟล์ .xls สำหรับอัปโหลดในเว็บ TM30 เอง · วันออก = +10 วัน</span>
+          </div>
           <Tm30BotPanel
             ns="d90"
             date={todayDdmmyyyy()}
