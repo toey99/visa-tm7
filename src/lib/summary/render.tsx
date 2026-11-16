@@ -82,6 +82,20 @@ export type RenderedSummary = { png: ArrayBuffer; count: number; agent: string; 
 
 /** Draw the summary of one board (optionally one agent's people) as a PNG. */
 export async function renderSummaryPng(target: SummaryTarget, dayKey: string, agent = ""): Promise<RenderedSummary> {
+  try {
+    return await draw(target, dayKey, agent, false);
+  } catch (e) {
+    // satori is picky about some CSS (gradients, shorthands) — draw again plainly rather than send nothing
+    console.error("[summary render] retrying plain", e);
+    return draw(target, dayKey, agent, true);
+  }
+}
+
+// "linear-gradient(135deg,#a,#b 40%,#c)" → spaces after the commas, the form satori's parser expects
+const tidyGradient = (g: string) => g.replace(/,(?=\S)/g, ", ");
+const firstColor = (g: string) => g.match(/#[0-9a-fA-F]{3,8}/)?.[0] ?? "#f8fafc";
+
+async function draw(target: SummaryTarget, dayKey: string, agent: string, plain: boolean): Promise<RenderedSummary> {
   const folder = boardFolder(target.ns, dayKey, target.office);
   const m = await loadManifest(target.ns, dayKey, target.office, folder);
   const recs = m ? (await readRecords(folder, Object.keys(m.entries))).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : [];
@@ -156,7 +170,7 @@ export async function renderSummaryPng(target: SummaryTarget, dayKey: string, ag
   const height = 22 + 70 + 12 + 32 + rows * 212 + 14 + 12 + 70 + 22;
 
   const element = (
-    <div style={{ display: "flex", flexDirection: "column", width: sheetW, height, padding: 22, background: o.summaryBg, fontFamily: font, position: "relative" }}>
+    <div style={{ display: "flex", flexDirection: "column", width: sheetW, height, padding: 22, backgroundColor: firstColor(o.summaryBg), backgroundImage: plain ? undefined : tidyGradient(o.summaryBg), fontFamily: font, position: "relative" }}>
       <div style={{ position: "absolute", right: -60, top: -60, width: 220, height: 220, borderRadius: 110, background: accent, opacity: 0.08, display: "flex" }} />
       <div style={{ position: "absolute", left: -40, bottom: -70, width: 180, height: 180, borderRadius: 90, background: accent, opacity: 0.06, display: "flex" }} />
 
@@ -178,7 +192,7 @@ export async function renderSummaryPng(target: SummaryTarget, dayKey: string, ag
         </div>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", gap: "16px 10px", background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, flexGrow: 1 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", rowGap: 16, columnGap: 10, background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, flexGrow: 1 }}>
         {cards.length === 0 && <div style={{ display: "flex", width: "100%", justifyContent: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
         {cards.map(({ p, f, i, ghost, tag, ov, car, img, cancelled, moved, arrived }) => (
           <div key={p.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW, opacity: ghost ? 0.75 : 1 }}>
@@ -208,7 +222,7 @@ export async function renderSummaryPng(target: SummaryTarget, dayKey: string, ag
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", rowGap: 8, columnGap: 8, alignItems: "center" }}>
           <div style={pill("#fff", accent, 13)}>👥 {people.length} คน</div>
           {people.some((p) => !!p.arrived) && <div style={pill("#16a34a", "#fff", 13)}>✓ มาแล้ว {people.filter((p) => p.arrived).length}/{people.length}</div>}
           {pendingN > 0 && <div style={pill("#ffe66d", "#4a3b00", 13)}>💰 ต้องเก็บ {pendingN} คน รวม {sum.toLocaleString()} บาท</div>}
