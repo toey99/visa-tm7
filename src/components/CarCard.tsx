@@ -24,17 +24,32 @@ const ZH_NUM = ["", "1", "2", "3", "4"];
 // variant "customer": meeting-point strip at the bottom (sent to the riders).
 // variant "driver": no strip, bigger faces so the driver can match people fast.
 export type CarCardVariant = "customer" | "driver";
+// Second language on the customer card: Chinese riders get 中文, others English,
+// a mixed car gets both. The board picks it from the riders' nationalities.
+export type CarCardLang = "zh" | "en" | "both";
+const CHINESE = /chin|中国|中國|cn\b|chn|taiwan|hong\s*kong|macau|台湾|香港/i;
+export function carCardLang(people: { fields: { nationality?: string } }[]): CarCardLang {
+  const zh = people.some((p) => !p.fields.nationality || CHINESE.test(p.fields.nationality));
+  const other = people.some((p) => p.fields.nationality && !CHINESE.test(p.fields.nationality));
+  return zh && other ? "both" : other ? "en" : "zh";
+}
+const EN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const COLOR_EN: Record<string, string> = { "สีขาว": "white", "สีเงิน": "silver", "สีดำ": "black", "สีเหลือง-แดง": "yellow-red (taxi)", "สีแดง": "red", "สีเทา": "grey", "สีน้ำเงิน": "blue" };
 
 // overstayDays: person id → days over the admitted-until date (computed by the
 // board, which knows the holiday list); shown as 🐢 with the day count on the
 // driver card — the driver must know the fine is coming (2,000 + 500/day)
-const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: DayMeta; variant?: CarCardVariant; overstayDays?: Record<string, number> }>(function CarCard({ car, people, meta, variant = "customer", overstayDays = {} }, ref) {
+const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: DayMeta; variant?: CarCardVariant; overstayDays?: Record<string, number>; lang?: CarCardLang }>(function CarCard({ car, people, meta, variant = "customer", overstayDays = {}, lang = "zh" }, ref) {
   const driver = variant === "driver";
+  // L(zh, en): the second-language line(s) for this car
+  const L = (zh: string, en: string) => (lang === "zh" ? zh : lang === "en" ? en : `${zh} · ${en}`);
+  const colorEn = COLOR_EN[car.color] ?? car.color;
   const PH = driver ? { w: 220, h: 290 } : { w: 180, h: 236 };
   const [dd, mm] = meta.date.split("/");
   const slot = RUN_SLOTS.find((s) => s.id === (meta.slot || "morning")) ?? RUN_SLOTS[0];
   const dateTh = dd && mm ? `${dd} ${TH_MONTHS[Number(mm) - 1] ?? mm} ${slot.th}` : "";
   const dateZh = dd && mm ? `${Number(mm)}月${dd}号${slot.zh}` : "";
+  const dateEn = dd && mm ? `${Number(dd)} ${EN_MONTHS[Number(mm) - 1] ?? mm} · ${slot.id === "morning" ? "morning" : slot.id === "noon" ? "noon" : slot.id === "afternoon" ? "afternoon" : "evening"} trip` : "";
   // header values: every distinct flight / landing / return among the riders
   // (each rider falls back to the day's default), listed in rider order —
   // e.g. "DD102, SL532" with "10:00, 09:30", so the boxes pair up by position
@@ -63,14 +78,14 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ fontSize: 38, lineHeight: 1 }}>🚗</div>
           <div>
-            <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>รถคันที่ {car.id} · {ZH_NUM[Number(car.id)] ?? car.id}号车</div>
-            <div style={{ fontSize: 13, opacity: 0.9, marginTop: 3 }}>{car.name} {car.color} · {car.colorZh} · ทะเบียน {car.plate}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>รถคันที่ {car.id} · {L(`${ZH_NUM[Number(car.id)] ?? car.id}号车`, `Car ${car.id}`)}</div>
+            <div style={{ fontSize: 13, opacity: 0.9, marginTop: 3 }}>{car.name} {car.color} · {L(car.colorZh, colorEn)} · ทะเบียน {car.plate}</div>
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>VISA RUN · 签证跑</div>
+          <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>VISA RUN{lang !== "en" ? " · 签证跑" : ""}</div>
           <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>{dateTh}{driver ? " · 🧑‍✈️ คนขับ" : ""}</div>
-          <div style={{ fontSize: 15, opacity: 0.95 }}>{dateZh}</div>
+          <div style={{ fontSize: 15, opacity: 0.95 }}>{L(dateZh, dateEn)}</div>
         </div>
       </div>
 
@@ -121,12 +136,12 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
           {(headFlight || headLand) && (
             <div style={{ ...PANEL, padding: "14px 16px", textAlign: "center" }}>
-              <div style={{ fontSize: 11, letterSpacing: 2, color: "#666" }}>✈ FLIGHT · 航班</div>
+              <div style={{ fontSize: 11, letterSpacing: 2, color: "#666" }}>✈ FLIGHT{lang !== "en" ? " · 航班" : ""}</div>
               {headFlight && <div style={{ fontSize: headFlight.length > 7 ? 30 : 40, fontWeight: 800, color: "#111", letterSpacing: 1, lineHeight: 1.1 }}>{headFlight}</div>}
               {headLand && (
                 <>
                   <div style={{ marginTop: 6, display: "inline-block", background: "#ffeb3b", borderRadius: 12, padding: "6px 18px", fontSize: headLand.length > 5 ? 20 : 24, fontWeight: 700, color: "#111", whiteSpace: "nowrap" }}>🛬 เครื่องลง {headLand} น</div>
-                  <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>落地 {headLand}</div>
+                  <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>{L(`落地 ${headLand}`, `Landing ${headLand}`)}</div>
                 </>
               )}
             </div>
@@ -134,14 +149,14 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
           {headReturn && (
             <div style={{ background: "#ffb3b8", borderRadius: 16, padding: "12px 14px", textAlign: "center", boxShadow: "0 2px 10px rgba(0,0,0,.08)" }}>
               <div style={{ fontSize: headReturn.length > 5 ? 19 : 23, fontWeight: 800, color: "#1a1aa6", whiteSpace: "nowrap", lineHeight: 1.2 }}>⏰ กลับถึงสนามบินก่อน {headReturn} น</div>
-              <div style={{ fontSize: 15, color: "#1a1aa6", marginTop: 2 }}>{headReturn} 前回到机场</div>
+              <div style={{ fontSize: 15, color: "#1a1aa6", marginTop: 2 }}>{L(`${headReturn} 前回到机场`, `Back at the airport before ${headReturn}`)}</div>
             </div>
           )}
           <div style={{ ...PANEL, padding: 12, textAlign: "center", marginTop: "auto" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={car.image} alt={car.name} style={{ width: "100%", height: 240, objectFit: "cover", borderRadius: 12, boxShadow: "0 3px 12px rgba(0,0,0,.2)" }} crossOrigin="anonymous" />
             <div style={{ marginTop: 10, display: "inline-block", background: "#fff", color: "#111", border: "3px solid #111", borderRadius: 8, padding: "3px 18px", fontSize: 26, fontWeight: 800, letterSpacing: 2, boxShadow: "0 2px 6px rgba(0,0,0,.25)" }}>{car.plate}</div>
-            <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>{car.name} · {car.color} {car.colorZh} · {car.province}</div>
+            <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>{car.name} · {car.color} {L(car.colorZh, colorEn)} · {car.province}</div>
           </div>
         </div>
       </div>
@@ -149,25 +164,25 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
       {/* meeting point after landing — replaces the separate guide picture (customer card only) */}
       {!driver && <div style={{ ...PANEL, marginTop: 14, padding: "12px 14px", position: "relative" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <span style={{ background: "#1e3a8a", color: "#fff", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>📍 จุดนัดพบหลังลงเครื่อง · 下飞机后的集合地点</span>
-          <span style={{ background: "#ffeb3b", color: "#111", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>ประตู {MEETING_POINT.gate} · {MEETING_POINT.gate}号门</span>
+          <span style={{ background: "#1e3a8a", color: "#fff", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>📍 จุดนัดพบหลังลงเครื่อง · {L("下飞机后的集合地点", "Meeting point after landing")}</span>
+          <span style={{ background: "#ffeb3b", color: "#111", borderRadius: 10, padding: "4px 12px", fontSize: 16, fontWeight: 800 }}>ประตู {MEETING_POINT.gate} · {L(`${MEETING_POINT.gate}号门`, `Gate ${MEETING_POINT.gate}`)}</span>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
           <div style={{ flex: "0 0 300px", textAlign: "center" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={MEETING_POINT.insideImage} alt="" style={{ width: 300, height: 190, objectFit: "cover", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,.18)" }} crossOrigin="anonymous" />
-            <div style={{ fontSize: 12, color: "#333", marginTop: 4, fontWeight: 700 }}>🏢 ภายในอาคาร · 航站楼内 — พบกันที่ประตู {MEETING_POINT.gate}</div>
+            <div style={{ fontSize: 12, color: "#333", marginTop: 4, fontWeight: 700 }}>🏢 ภายในอาคาร · {L("航站楼内", "Inside the terminal")} — {L(`${MEETING_POINT.gate}号门集合`, `meet at Gate ${MEETING_POINT.gate}`)}</div>
           </div>
           <div style={{ flex: "0 0 300px", textAlign: "center" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={MEETING_POINT.outsideImage} alt="" style={{ width: 300, height: 190, objectFit: "cover", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,.18)" }} crossOrigin="anonymous" />
-            <div style={{ fontSize: 12, color: "#333", marginTop: 4, fontWeight: 700 }}>🚪 ภายนอกอาคาร · 航站楼外 — รอรถที่บริเวณประตู {MEETING_POINT.gate}</div>
+            <div style={{ fontSize: 12, color: "#333", marginTop: 4, fontWeight: 700 }}>🚪 ภายนอกอาคาร · {L("航站楼外", "Outside the terminal")} — {L(`在${MEETING_POINT.gate}号门外等车`, `wait for the car at Gate ${MEETING_POINT.gate}`)}</div>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 6 }}>
             {[
-              { n: 1, icon: "🚶", th: <>หลังจากลงเครื่องแล้ว ให้เดินมาที่ <b>ประตู {MEETING_POINT.gate}</b></>, zh: `下飞机后，请先走到 ${MEETING_POINT.gate} 号门` },
-              { n: 2, icon: "🚪", th: <>จากนั้นเดินออกไป <b>ภายนอกอาคาร</b></>, zh: "然后从这里走出到航站楼外" },
-              { n: 3, icon: "🚗", th: <>มองหารถ <b>{car.name} {car.color}</b> ทะเบียน <b style={{ background: "#111", color: "#fff", borderRadius: 6, padding: "0 6px" }}>{car.plate}</b></>, zh: `请找 ${car.colorZh} ${car.name} 车牌 ${car.plate}` },
+              { n: 1, icon: "🚶", th: <>หลังจากลงเครื่องแล้ว ให้เดินมาที่ <b>ประตู {MEETING_POINT.gate}</b></>, zh: L(`下飞机后，请先走到 ${MEETING_POINT.gate} 号门`, `After landing, walk to Gate ${MEETING_POINT.gate}`) },
+              { n: 2, icon: "🚪", th: <>จากนั้นเดินออกไป <b>ภายนอกอาคาร</b></>, zh: L("然后从这里走出到航站楼外", "Then step outside the terminal") },
+              { n: 3, icon: "🚗", th: <>มองหารถ <b>{car.name} {car.color}</b> ทะเบียน <b style={{ background: "#111", color: "#fff", borderRadius: 6, padding: "0 6px" }}>{car.plate}</b></>, zh: L(`请找 ${car.colorZh} ${car.name} 车牌 ${car.plate}`, `Look for the ${colorEn} ${car.name}, plate ${car.plate}`) },
             ].map((s) => (
               <div key={s.n} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <span style={{ flex: "0 0 26px", width: 26, height: 26, borderRadius: "50%", background: accent, color: "#fff", fontSize: 13, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{s.n}</span>
@@ -177,7 +192,7 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
                 </div>
               </div>
             ))}
-            <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>👥 {people.length} คน · โปรดรอที่บริเวณประตู {MEETING_POINT.gate} · 请在 {MEETING_POINT.gate} 号门附近等候</div>
+            <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>👥 {people.length} คน · โปรดรอที่บริเวณประตู {MEETING_POINT.gate} · {L(`请在 ${MEETING_POINT.gate} 号门附近等候`, `Please wait near Gate ${MEETING_POINT.gate}`)}</div>
           </div>
         </div>
       </div>}

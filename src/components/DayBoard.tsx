@@ -25,7 +25,7 @@ import {
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
 import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
-import CarCard from "@/components/CarCard";
+import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
 import RunDaySheet from "@/components/RunDaySheet";
 import Tm30BotPanel from "@/components/Tm30BotPanel";
@@ -731,6 +731,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   // then gets a picture with just their customers, each labelled with the
   // sub-agent note they gave us).
   const [summaryAgent, setSummaryAgent] = useState("");
+  // customer car card second language per car ("" = auto from the riders' nationalities)
+  const [carLangs, setCarLangs] = useState<Record<string, CarCardLang | undefined>>({});
   const summaryAgents = Array.from(new Set(active.map((p) => p.fields.agent).filter(Boolean)));
   async function makeSummary(): Promise<Blob | null> {
     const el = summaryRef.current;
@@ -1541,9 +1543,19 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
               return (
                 <div key={c.id}>
                   {riders.length > c.seats && <p className="mb-1 text-xs font-semibold text-red-600">⚠ {c.name} นั่งได้ {c.seats} คน แต่จัดไว้ {riders.length} คน</p>}
+                  {carView === "customer" && (
+                    <div className="mb-1 flex items-center gap-1 text-xs text-slate-600">
+                      <span>ภาษาบนการ์ด {c.name}:</span>
+                      {(["zh", "en", "both"] as const).map((l) => {
+                        const auto = carCardLang(riders);
+                        const cur = carLangs[c.id] ?? auto;
+                        return <button key={l} type="button" onClick={() => setCarLangs((m) => ({ ...m, [c.id]: l }))} className={`rounded-full px-2 py-0.5 ${cur === l ? "bg-orange-500 text-white" : "border border-slate-300 bg-white"}`}>{l === "zh" ? "中文" : l === "en" ? "English" : "中文 + English"}{auto === l ? " ·auto" : ""}</button>;
+                      })}
+                    </div>
+                  )}
                   {/* both variants stay mounted so either can be exported; the one not being viewed sits off-screen */}
                   <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "customer" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
-                    <CarCard ref={(el) => { carRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="customer" />
+                    <CarCard ref={(el) => { carRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="customer" lang={carLangs[c.id] ?? carCardLang(riders)} />
                   </div>
                   <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "driver" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
                     <CarCard ref={(el) => { driverRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="driver" overstayDays={overstayByPerson} />
