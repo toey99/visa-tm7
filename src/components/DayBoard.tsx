@@ -28,6 +28,8 @@ import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
 import RunDaySheet from "@/components/RunDaySheet";
+import RunCostSheet, { type RunCostRow } from "@/components/RunCostSheet";
+import type { Pricing } from "@/lib/stats/pricing";
 import Tm30BotPanel from "@/components/Tm30BotPanel";
 import { DIRECT_CUSTOMER, MAIN_AGENTS } from "@/lib/today/agents";
 import ExpiryReport, { thDate, zhDate, type ReportRow } from "@/components/ExpiryReport";
@@ -886,6 +888,39 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     finally { setRunSheetRows(null); setWorking(false); }
   }
 
+  // ---------- visa-run cost sheet: what we owe the checkpoint partner today ----------
+  const costSheetRef = useRef<HTMLDivElement>(null);
+  const [costSheet, setCostSheet] = useState<{ rows: RunCostRow[]; pricing: Pricing } | null>(null);
+  async function runCostSheet() {
+    if (!active.length) { setError("ยังไม่มีคนในบอร์ด"); return; }
+    setError(""); setWorking(true); setStatus("กำลังทำตารางต้นทุนด่าน…");
+    try {
+      const r = await fetch("/api/stats?from=2000-01-01&to=2000-01-01", { cache: "no-store" });
+      const j = (await r.json()) as { pricing?: Pricing; error?: string };
+      if (!r.ok || !j.pricing) throw new Error(j.error || "โหลดตารางราคาไม่ได้");
+      const perCar = new Map<string, number>();
+      for (const p of active) if (p.fields.car) perCar.set(p.fields.car, (perCar.get(p.fields.car) ?? 0) + 1);
+      const rows: RunCostRow[] = active.map((p) => {
+        const f = p.fields;
+        const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
+        const osDays = f.overstay ? (Number(f.overstayDays) || (ov?.days ?? 0)) : 0;
+        return {
+          name: [f.lastName, f.firstName].filter(Boolean).join(" "), cn: f.chineseName || "",
+          carId: f.car || "", carSize: perCar.get(f.car || "") ?? 0,
+          run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(f.nationality || ""), overstayDays: osDays,
+          cash: f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0,
+        };
+      });
+      setCostSheet({ rows, pricing: j.pricing });
+      await new Promise((r) => setTimeout(r, 450));
+      const blob = costSheetRef.current ? await captureNode(costSheetRef.current) : null;
+      if (!blob) throw new Error("สร้างรูปตารางไม่สำเร็จ");
+      downloadBlob(blob, `visarun_${meta.date.replace(/\//g, "")}_ต้นทุนด่าน.png`);
+      setStatus("");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setCostSheet(null); setWorking(false); }
+  }
+
   // ---------- visa-run expiry report (sent back to the factory / agent in the evening) ----------
   const reportRef = useRef<HTMLDivElement>(null);
   const reportPeople = active.filter((p) => p.fields.report);
@@ -1337,6 +1372,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
           <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
           {isRun && <button onClick={runDaySheet} disabled={working || !people.length} className={btnCls} title="รูปตารางรายคนส่งให้ด่าน — แถบสีตามคันรถ, ต่อ 30 วัน/อยู่เกิน, 🐻, เงินสดที่คนขับเก็บ">📊 ตารางส่งด่าน (PNG)</button>}
+          {isRun && <button onClick={runCostSheet} disabled={working || !people.length} className={btnCls} title="ต้นทุนที่ต้องเคลียร์กับด่านวันนี้ — ค่าเหมาต่อหัวตามจำนวนคนในรถ + ต่อ 30 วัน + 🐻 + 🇮🇳 วีซ่าลาว + ค่าปรับ, หักเงินสดที่คนขับเก็บ (ราคาจาก ⚙️ Dashboard)">💰 ต้นทุนด่าน (PNG)</button>}
           <button onClick={() => { setShowBills((v) => !v); if (!showBills) void searchBills(""); }} className={btnCls} title="ค้นบิลย้อนหลัง">🧾 ประวัติบิล</button>
           <button onClick={() => setShowSettings((v) => !v)} className={btnCls} title="ตั้งค่ารูป">⚙</button>
           <button onClick={() => setShowRecover((v) => !v)} className={btnCls} title="ดูทุกอย่างที่เซิร์ฟเวอร์ยังเก็บไว้ของวันนี้ (ทุกหน้างาน + สำเนาเก่า) แล้วดึงกลับมาหน้านี้">🧰 กู้ข้อมูล</button>
@@ -1480,6 +1516,11 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       {runSheetRows && (
         <div style={{ position: "absolute", left: -20000, top: 0 }}>
           <RunDaySheet ref={runSheetRef} rows={runSheetRows} date={meta.date} />
+        </div>
+      )}
+      {costSheet && (
+        <div style={{ position: "absolute", left: -20000, top: 0 }}>
+          <RunCostSheet ref={costSheetRef} rows={costSheet.rows} date={meta.date} pricing={costSheet.pricing} />
         </div>
       )}
       {/* off-screen "amount to collect" card, mounted only while being captured */}
