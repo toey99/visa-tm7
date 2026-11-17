@@ -119,7 +119,7 @@ export function priceRow(r: StatRow, p: Pricing = DEFAULT_PRICING): Priced {
     cost += p.cost.ext[r.office] ?? 0;
   } else {
     const solo = r.carSize === 1;
-    sale += runSale(p, r.agent, solo);
+    sale += runSale(p, r.agent, solo, r.indian);
     const n = (Math.min(4, Math.max(1, r.carSize || 2)) as 1 | 2 | 3 | 4);
     cost += p.cost.runPerHead[n] ?? p.cost.runPerHead[2];
     if (r.indian) cost += p.cost.runIndian;

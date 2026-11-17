@@ -12,7 +12,8 @@ export type Pricing = {
     ext: Record<OfficeId, ExtPrice>;      // 30-day extension (CHIANG_SAEN = the +30 after a run)
     runShared: number;                     // visa run, 2+ in the car, per head
     runSolo: number;                       // visa run, alone in the car
-    runByAgent: Record<string, number>;    // per-head run price for specific agents (replaces shared/solo)
+    runIndianByAgent: Record<string, number>;  // per-head run price for an INDIAN passport, by agent (Chinese riders: the normal price)
+    runIndian: number;                     // per-head run price for an Indian passport, other agents (0 = normal price)
     run30: number;                         // 🐰 +30 per head (on top of the run)
     cambodia: number;                      // 🐻 per head
     overstayBase: number;                  // overstay handling per head
@@ -45,7 +46,8 @@ export const DEFAULT_PRICING: Pricing = {
     },
     runShared: 9500,
     runSolo: 10000,
-    runByAgent: { "พี่หนู": 13000 },
+    runIndianByAgent: { "พี่หนู": 13000 },
+    runIndian: 0,
     run30: 4500,
     cambodia: 7500,
     overstayBase: 2000,
@@ -67,9 +69,12 @@ export const DEFAULT_PRICING: Pricing = {
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "");
 
-export function runSale(p: Pricing, agent: string, solo: boolean): number {
-  const k = Object.keys(p.sale.runByAgent ?? {}).find((a) => norm(a) === norm(agent));
-  if (k) return p.sale.runByAgent[k];
+export function runSale(p: Pricing, agent: string, solo: boolean, indian: boolean): number {
+  if (indian) {
+    const k = Object.keys(p.sale.runIndianByAgent ?? {}).find((a) => norm(a) === norm(agent));
+    if (k) return p.sale.runIndianByAgent[k];
+    if (p.sale.runIndian) return p.sale.runIndian;
+  }
   return solo ? p.sale.runSolo : p.sale.runShared;
 }
 
@@ -86,7 +91,7 @@ export function withDefaults(c: Partial<Pricing> | null | undefined): Pricing {
   const ext = { ...d.sale.ext } as Pricing["sale"]["ext"];
   for (const k of Object.keys(ext) as OfficeId[]) ext[k] = { default: c?.sale?.ext?.[k]?.default ?? d.sale.ext[k].default, byAgent: { ...d.sale.ext[k].byAgent, ...(c?.sale?.ext?.[k]?.byAgent ?? {}) } };
   return {
-    sale: { ...d.sale, ...(c?.sale ?? {}), ext, runByAgent: { ...d.sale.runByAgent, ...(c?.sale?.runByAgent ?? {}) } },
+    sale: { ...d.sale, ...(c?.sale ?? {}), ext, runIndianByAgent: { ...d.sale.runIndianByAgent, ...(c?.sale?.runIndianByAgent ?? {}) } },
     cost: { ...d.cost, ...(c?.cost ?? {}), ext: { ...d.cost.ext, ...(c?.cost?.ext ?? {}) }, runPerHead: { ...d.cost.runPerHead, ...(c?.cost?.runPerHead ?? {}) } },
     updatedAt: c?.updatedAt,
   };
