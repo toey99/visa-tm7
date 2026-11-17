@@ -18,7 +18,8 @@ export type Prices = {
   extBANGKOK: number;        // ต่อ 30 วัน IT
   extNONTHABURI: number;     // ต่อ 30 วัน นนท์
   extRAYONG: number;         // ต่อ 30 วัน ระยอง
-  vfs: number;               // VFS (BKK / Pattaya)
+  vfs: number;               // VFS กรุงเทพ
+  vfsPattaya: number;        // VFS พัทยา
   vip: number;               // VIP lane (+ per person) — charged to the agent when chargeVip
   chargeVip: boolean;
   runSolo: number;           // visa run, car with one passenger
@@ -36,6 +37,7 @@ export const DEFAULT_PRICES: Prices = {
   extNONTHABURI: 4700,
   extRAYONG: 4700,
   vfs: 3200,
+  vfsPattaya: 4500,
   vip: 500,
   chargeVip: true,
   runSolo: 10000,
@@ -52,7 +54,8 @@ export const PRICE_LABELS: Record<keyof Prices, string> = {
   extBANGKOK: "ต่อ 30 วัน IT Square",
   extNONTHABURI: "ต่อ 30 วัน นนทบุรี",
   extRAYONG: "ต่อ 30 วัน ระยอง",
-  vfs: "VFS (กรุงเทพ / พัทยา)",
+  vfs: "VFS กรุงเทพ",
+  vfsPattaya: "VFS พัทยา",
   vip: "VIP (+ ต่อคน)",
   chargeVip: "คิด VIP กับเอเย่นต์ด้วย",
   runSolo: "Visa Run — รถ 1 คัน มี 1 คน",

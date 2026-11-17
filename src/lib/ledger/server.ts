@@ -95,8 +95,8 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
     for (const p of people.filter(active)) {
       const f = p.fields ?? {};
       if (!isAgent(f, agent)) continue;
-      const base = office === "BANGKOK" ? prices.extBANGKOK : office === "NONTHABURI" ? prices.extNONTHABURI : office === "RAYONG" ? prices.extRAYONG : prices.vfs;
-      const items = [{ label: office.startsWith("VFS") ? "VFS" : `ต่อ 30 วัน ${office === "BANGKOK" ? "IT" : office === "NONTHABURI" ? "นนท์" : "ระยอง"}`, amount: base }];
+      const base = office === "BANGKOK" ? prices.extBANGKOK : office === "NONTHABURI" ? prices.extNONTHABURI : office === "RAYONG" ? prices.extRAYONG : office === "VFS_PATTAYA" ? prices.vfsPattaya : prices.vfs;
+      const items = [{ label: office === "VFS_PATTAYA" ? "VFS พัทยา" : office === "VFS_BANGKOK" ? "VFS" : `ต่อ 30 วัน ${office === "BANGKOK" ? "IT" : office === "NONTHABURI" ? "นนท์" : "ระยอง"}`, amount: base }];
       if (f.vip && prices.chargeVip) items.push({ label: "VIP", amount: prices.vip });
       items.push(...overstayItems(f, day, prices, true));
       const flags = [f.vip ? "👑" : "", f.overstay ? "🐢" : ""].filter(Boolean).join("");
