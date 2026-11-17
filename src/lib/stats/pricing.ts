@@ -54,9 +54,9 @@ export const DEFAULT_PRICING: Pricing = {
     ext: { BANGKOK: 3000, NONTHABURI: 4000, RAYONG: 4500, VFS_BANGKOK: 2400, VFS_PATTAYA: 3400, CHIANG_SAEN: 4000 },
     runPerHead: { 1: 9800, 2: 9000, 3: 8350, 4: 8150 },
     run30: 4000,          // assumed = Chiang Saen extension cost; confirm
-    cambodia: 0,          // not given; confirm
+    cambodia: 7500,
     overstayPerDay: 500,  // the fine itself; the 2,000 handling is margin
-    vip: 0,               // not given; confirm
+    vip: 500,
     d90: 500,
   },
 };
