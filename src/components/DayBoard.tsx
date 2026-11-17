@@ -863,7 +863,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         const car = carById(f.car);
         const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
         const osDays = Number(f.overstayDays) || (ov?.days ?? 0);
-        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", f.overstay ? `🐢 อยู่เกิน${osDays ? ` ${osDays} วัน` : ""}` : ""].filter(Boolean).join(" + ");
+        const indian = /india/i.test(f.nationality || "");
+        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", f.overstay ? `🐢 อยู่เกิน${osDays ? ` ${osDays} วัน` : ""}` : "", indian ? "🇮🇳 อินเดีย · วีซ่าลาว +2,000" : ""].filter(Boolean).join(" + ");
         const e = expiryOf(p);
         const cashAtDriver = f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0;
         return {

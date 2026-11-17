@@ -76,7 +76,7 @@ const RunDaySheet = forwardRef<HTMLDivElement, { rows: RunSheetRow[]; date: stri
           <div style={{ padding: "8px", fontSize: 15 }}>รวม {rows.length} คน</div>
           <div></div><div></div><div></div><div></div>
           <div style={{ padding: "8px", fontSize: 14 }}>{carsUsed.length} คัน</div>
-          <div style={{ padding: "8px", fontSize: 14 }}>ต่อ 30 วัน {rows.filter((r) => /ต่ออายุ/.test(r.detail)).length} คน{rows.some((r) => /อยู่เกิน/.test(r.detail)) ? ` · อยู่เกิน ${rows.filter((r) => /อยู่เกิน/.test(r.detail)).length} คน` : ""}</div>
+          <div style={{ padding: "8px", fontSize: 14 }}>ต่อ 30 วัน {rows.filter((r) => /ต่ออายุ/.test(r.detail)).length} คน{rows.some((r) => /อยู่เกิน/.test(r.detail)) ? ` · อยู่เกิน ${rows.filter((r) => /อยู่เกิน/.test(r.detail)).length} คน` : ""}{rows.some((r) => /อินเดีย/.test(r.detail)) ? ` · 🇮🇳 อินเดีย ${rows.filter((r) => /อินเดีย/.test(r.detail)).length} คน (วีซ่าลาว +2,000/คน)` : ""}</div>
           <div style={{ padding: "8px", textAlign: "center", fontSize: 15 }}>{rows.filter((r) => r.bear).length || ""}</div>
           <div style={{ padding: "8px", textAlign: "right", fontSize: 16, color: "#b91c1c" }}>{cashSum ? cashSum.toLocaleString() : ""}</div>
           {anyFine && <div style={{ padding: "8px", textAlign: "right", fontSize: 16, color: "#15803d" }}>{fineSum.toLocaleString()}</div>}
