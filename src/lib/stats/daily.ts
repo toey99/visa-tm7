@@ -13,7 +13,7 @@ import { peekItems } from "@/lib/d90/store";
 import { bkkDay, buildCases } from "@/lib/d90/types";
 import { OFFICE_IDS, type OfficeId } from "@/lib/offices";
 import { overstayInfo, type PersonFields } from "@/lib/today/types";
-import { DEFAULT_PRICING, extSale, withDefaults, type Pricing } from "./pricing";
+import { DEFAULT_PRICING, extSale, runSale, withDefaults, type Pricing } from "./pricing";
 
 export type StatRow = {
   ns: "days" | "run";
@@ -22,6 +22,7 @@ export type StatRow = {
   sub: string;              // sub-agent note
   run30: boolean;
   cambodia: boolean;
+  indian: boolean;          // Indian passport (visa run costs more)
   vip: boolean;
   overstayDays: number;
   carSize: number;          // run only: how many rode in that car (0 = no car set)
@@ -61,7 +62,7 @@ async function boardRows(ns: "days" | "run", day: string, office: OfficeId): Pro
     return {
       ns, office,
       agent: str(f.agent).trim(), sub: str(f.subAgent).trim(),
-      run30: f.run === "RUN30", cambodia: !!f.cambodia, vip: !!f.vip, overstayDays,
+      run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(str(f.nationality)), vip: !!f.vip, overstayDays,
       carSize: ns === "run" ? (perCar.get(str(f.car)) ?? 0) : 0,
       arrived: !!p.arrived, cancelled: !!p.cancelled, moved: !!p.movedTo,
       pay: str(f.pay), paidHow: str(f.paidHow), amount: num(f.amount), paidAmount: num(f.paidAmount),
@@ -118,9 +119,10 @@ export function priceRow(r: StatRow, p: Pricing = DEFAULT_PRICING): Priced {
     cost += p.cost.ext[r.office] ?? 0;
   } else {
     const solo = r.carSize === 1;
-    sale += solo ? p.sale.runSolo : p.sale.runShared;
+    sale += runSale(p, r.agent, solo);
     const n = (Math.min(4, Math.max(1, r.carSize || 2)) as 1 | 2 | 3 | 4);
     cost += p.cost.runPerHead[n] ?? p.cost.runPerHead[2];
+    if (r.indian) cost += p.cost.runIndian;
     if (r.run30) { sale += p.sale.run30; cost += p.cost.run30; }
     if (r.cambodia) { sale += p.sale.cambodia; cost += p.cost.cambodia; }
   }

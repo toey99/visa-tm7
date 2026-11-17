@@ -269,6 +269,8 @@ function PricingPanel({ pricing, onSaved }: { pricing: Pricing; onSaved: () => v
         {([
           ["วีซ่ารัน ขาย (2 คนขึ้นไป)", p.sale.runShared, (v: number) => setP({ ...p, sale: { ...p.sale, runShared: v } })],
           ["วีซ่ารัน ขาย (รถ 1 คน)", p.sale.runSolo, (v: number) => setP({ ...p, sale: { ...p.sale, runSolo: v } })],
+          ["วีซ่ารัน ต้นทุนเพิ่ม อินเดีย/คน", p.cost.runIndian, (v: number) => setP({ ...p, cost: { ...p.cost, runIndian: v } })],
+          ["วีซ่ารัน ขาย พี่หนู/คน", p.sale.runByAgent["พี่หนู"] ?? 0, (v: number) => setP({ ...p, sale: { ...p.sale, runByAgent: { ...p.sale.runByAgent, "พี่หนู": v } } })],
           ["🐰 +30 ขาย", p.sale.run30, (v: number) => setP({ ...p, sale: { ...p.sale, run30: v } })],
           ["🐰 +30 ต้นทุน", p.cost.run30, (v: number) => setP({ ...p, cost: { ...p.cost, run30: v } })],
           ["🐻 กัมพูชา ขาย", p.sale.cambodia, (v: number) => setP({ ...p, sale: { ...p.sale, cambodia: v } })],
