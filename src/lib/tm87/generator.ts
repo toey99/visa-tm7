@@ -89,12 +89,13 @@ export async function generateTm87Pdf(data: Tm87Data, photo?: Uint8Array): Promi
   const [p1, p2] = doc.getPages();
   const C = rgb(0.1, 0.2, 0.8);
   const S = 10.5;
+  const LIFT = 3.2;   // the measured y is the dotted line itself; sit the letters just above it
   const up = (s?: string) => (s ?? "").trim().toUpperCase();
   const draw = (page: typeof p1, f: { x: number; y: number }, v: string, size = S, maxW?: number) => {
     if (!v) return;
     let s = size;
     if (maxW) while (s > 7 && font.widthOfTextAtSize(v, s) > maxW) s -= 0.5;
-    page.drawText(v, { x: f.x, y: f.y, size: s, font, color: C });
+    page.drawText(v, { x: f.x, y: f.y + LIFT, size: s, font, color: C });
   };
 
   const fd = parts(data.date), dob = parts(data.dateOfBirth), iss = parts(data.passportIssueDate), exp = parts(data.passportExpiryDate), arr = parts(data.arrivalDate);
