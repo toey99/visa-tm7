@@ -14,6 +14,7 @@ import { peekItems } from "@/lib/d90/store";
 import { bkkDay, buildCases } from "@/lib/d90/types";
 import { OFFICE_IDS, type OfficeId } from "@/lib/offices";
 import { listSlips } from "@/lib/slips/store";
+import { jobsInRange } from "@/lib/jobs/store";
 import { bkkTime, counted } from "@/lib/slips/types";
 import { overstayInfo } from "@/lib/today/types";
 import {
@@ -138,6 +139,13 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       }
     } catch { /* inbox unavailable → no 90-day lines; the day can be closed by hand */ }
   }
+
+  // long-stay visa jobs filed that day for this agent (priced per case on /jobs)
+  try {
+    for (const j of (await jobsInRange(day, day)).filter((j) => j.status !== "ยกเลิก" && isAgent({ agent: j.agent }, agent))) {
+      charges.push({ id: `job-${j.id}`, src: "ext", office: "", name: j.customer, passport: j.passportNo ?? "", items: [{ label: j.type, amount: j.sale }], amount: j.sale, paidDirect: j.paid === "paid" ? 0 : 0, flags: "🗂" });
+    }
+  } catch { /* no jobs file yet */ }
 
   // transfers in (slip room, that round)
   const slips = (await listSlips(slipBook, day)).filter(counted).sort((a, b) => a.ts - b.ts);

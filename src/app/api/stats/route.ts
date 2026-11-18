@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addDays, bkkToday, loadPricing, savePricing, snapshotDay, statsRange, summarize } from "@/lib/stats/daily";
 import { withDefaults, type Pricing } from "@/lib/stats/pricing";
+import { jobsInRange } from "@/lib/jobs/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -17,6 +18,17 @@ export async function GET(req: NextRequest) {
     const from = safeDay(q.get("from")) ?? addDays(to, -29);
     const pricing = await loadPricing();
     const days = (await statsRange(from, to)).map((s) => summarize(s, pricing));
+    // long-stay visa jobs (Non-O, Non-B …) count on the day they were filed
+    const jobs = (await jobsInRange(from, to).catch(() => [])).filter((j) => j.status !== "ยกเลิก");
+    for (const j of jobs) {
+      const d = days.find((x) => x.day === j.day);
+      if (!d) continue;
+      d.people += 1; d.jobs = (d.jobs ?? 0) + 1;
+      d.sale += j.sale; d.cost += j.cost; d.profit = d.sale - d.cost;
+      const a = j.agent || "ลูกค้าตรง";
+      const ag = (d.byAgent[a] ??= { people: 0, sale: 0, cost: 0 });
+      ag.people += 1; ag.sale += j.sale; ag.cost += j.cost;
+    }
     return NextResponse.json({ pricing, days, from, to }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "stats failed" }, { status: 500 });

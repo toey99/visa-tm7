@@ -66,7 +66,7 @@ export default function DashboardPage() {
 
   const days = data?.days ?? [];
   const tot = useMemo(() => {
-    const t = { people: 0, arrived: 0, sale: 0, cost: 0, profit: 0, collected: 0, toCollect: 0, waiting: 0, hold: 0, vip: 0, overstay: 0, d90: 0, run: 0 };
+    const t = { people: 0, arrived: 0, sale: 0, cost: 0, profit: 0, collected: 0, toCollect: 0, waiting: 0, hold: 0, vip: 0, overstay: 0, d90: 0, run: 0, jobs: 0 };
     for (const d of days) for (const k of Object.keys(t) as (keyof typeof t)[]) t[k] += d[k] ?? 0;
     return t;
   }, [days]);
@@ -93,7 +93,7 @@ export default function DashboardPage() {
 
       {/* headline tiles */}
       <section className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile label="ลูกค้า" value={`${tot.people}`} sub={`มาแล้ว ${tot.arrived} · รัน ${tot.run} · 90 วัน ${tot.d90} ใบ`} tone="pink" />
+        <Tile label="ลูกค้า" value={`${tot.people}`} sub={`มาแล้ว ${tot.arrived} · รัน ${tot.run} · 90 วัน ${tot.d90} ใบ${tot.jobs ? ` · วีซ่ายาว ${tot.jobs}` : ""}`} tone="pink" />
         <Tile label="ยอดขาย" value={money(tot.sale)} sub={`ต้นทุน ${money(tot.cost)}`} tone="blue" />
         <Tile label="กำไรขั้นต้น" value={money(tot.profit)} sub={tot.sale ? `${Math.round((tot.profit / tot.sale) * 100)}% ของยอดขาย` : ""} tone={tot.profit >= 0 ? "green" : "rose"} big />
         <Tile label="เงินหน้างาน" value={money(tot.collected)} sub={`ต้องเก็บ ${money(tot.toCollect)} · รอโอน ${money(tot.waiting)}${tot.hold ? ` · hold ${tot.hold}` : ""}`} tone="amber" />

@@ -139,6 +139,7 @@ export type DaySummary = {
   byAgent: Record<string, { people: number; sale: number; cost: number }>;
   sale: number; cost: number; profit: number; collected: number; toCollect: number; waiting: number; hold: number;
   d90: number;
+  jobs?: number;            // long-stay visa jobs filed that day
 };
 
 export function summarize(s: DayStats, p: Pricing): DaySummary {
