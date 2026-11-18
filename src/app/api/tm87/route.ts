@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const photo = fd.get("photo");
     const bytes = await generateTm87Pdf(data, photo instanceof File && photo.size ? new Uint8Array(await photo.arrayBuffer()) : undefined);
     const name = `TM87_${(data.lastName + "_" + data.firstName).replace(/[^A-Za-z0-9_-]+/g, "_").toUpperCase()}.pdf`;
-    return new NextResponse(bytes, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "no-store" } });
+    return new NextResponse(Buffer.from(bytes), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "TM.87 failed" }, { status: 500 });
   }
