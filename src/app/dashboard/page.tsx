@@ -45,7 +45,7 @@ function ranges(): Range[] {
 
 export default function DashboardPage() {
   const R = useMemo(ranges, []);
-  const [range, setRange] = useState<Range>(R[2]);
+  const [range, setRange] = useState<Range>(R[0]);   // opens on today
   const [data, setData] = useState<Resp | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
