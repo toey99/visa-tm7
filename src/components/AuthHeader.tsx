@@ -27,6 +27,7 @@ export default function AuthHeader() {
           <a href="/slips" className="rounded-lg px-2 py-1 font-medium text-teal-600 hover:bg-teal-50">🧾 สลิป</a>
           <a href="/ledger" className="rounded-lg px-2 py-1 font-medium text-emerald-700 hover:bg-emerald-50">📒 บัญชี</a>
           <a href="/dashboard" className="rounded-lg px-2 py-1 font-medium text-pink-600 hover:bg-pink-50">📊 Dashboard</a>
+          <a href="/tm87" className="rounded-lg px-2 py-1 font-medium text-violet-700 hover:bg-violet-50">📄 TM.87</a>
           <a href="/expiry" className="rounded-lg px-2 py-1 font-medium text-amber-700 hover:bg-amber-50">⏰ ใกล้หมดอายุ</a>
           <a href="/overstay" className="rounded-lg px-2 py-1 font-medium text-slate-600 hover:bg-slate-50">เช็ค Overstay</a>
         </nav>
