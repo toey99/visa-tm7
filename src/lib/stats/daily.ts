@@ -128,7 +128,7 @@ export function priceRow(r: StatRow, p: Pricing = DEFAULT_PRICING): Priced {
   }
   if (r.vip) { sale += p.sale.vip; cost += p.cost.vip; }
   if (r.overstayDays > 0) { sale += p.sale.overstayBase + p.sale.overstayPerDay * r.overstayDays; cost += p.cost.overstayPerDay * r.overstayDays; }
-  const collected = r.paidHow === "cash" || r.paidHow === "transfer" ? (r.paidAmount || r.amount) : 0;
+  const collected = r.pay === "collect" && (r.paidHow === "cash" || r.paidHow === "transfer") ? (r.paidAmount || r.amount) : 0;
   return { sale, cost, collected };
 }
 

@@ -64,7 +64,11 @@ function overstayItems(f: Record<string, unknown>, day: string, prices: Prices, 
   return items;
 }
 
+// money the customer handed us at the counter — only while the card still says
+// "เก็บ"; once it is switched to จ่ายแล้ว / ไม่เก็บ / hold the money came another
+// way (the agent's transfer slip), even if an old paidHow is still on the card
 function paidDirect(f: Record<string, unknown>): number {
+  if (str(f.pay) !== "collect") return 0;
   const how = str(f.paidHow);
   if (how !== "cash" && how !== "transfer") return 0;
   return num(f.paidAmount) || num(f.amount);

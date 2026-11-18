@@ -1913,7 +1913,7 @@ function PersonCard({
         <F label="เอเจนซี่ / ผู้ส่ง"><AgentPicker value={f.agent} onChange={(v) => set("agent", v)} others={people.map((x) => x.fields.agent)} /></F>
         <F label="เอเจนซี่ย่อย (โน้ตของเอเจนซี่หลัก)"><input value={f.subAgent ?? ""} onChange={(e) => set("subAgent", e.target.value)} className={inputCls} placeholder="ที่เขาโน้ตมา เช่น 小王" /></F>
         <F label="การเงิน">
-          <select value={f.pay} onChange={(e) => set("pay", e.target.value as PersonFields["pay"])} className={inputCls}>
+          <select value={f.pay} onChange={(e) => { const v = e.target.value as PersonFields["pay"]; if (v !== "collect") onChange({ ...p, fields: { ...p.fields, pay: v, paidHow: "pending", paidAmount: "" } }); else set("pay", v); }} className={inputCls}>
             <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="hold">🔒 รอโอน (hold พาสปอร์ต)</option><option value="nocollect">ไม่เก็บ</option>
           </select>
         </F>
