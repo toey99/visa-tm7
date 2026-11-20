@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { addDays, bkkToday, loadPricing, savePricing, snapshotDay, statsRange, summarize } from "@/lib/stats/daily";
 import { withDefaults, type Pricing } from "@/lib/stats/pricing";
 import { jobsInRange } from "@/lib/jobs/store";
+import { extrasInRange } from "@/lib/extras/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,7 +30,18 @@ export async function GET(req: NextRequest) {
       const ag = (d.byAgent[a] ??= { people: 0, sale: 0, cost: 0 });
       ag.people += 1; ag.sale += j.sale; ag.cost += j.cost;
     }
-    return NextResponse.json({ pricing, days, from, to }, { headers: { "Cache-Control": "no-store" } });
+    // off-board work entered by hand on the dashboard (lump lines: people, sale, cost, counter money)
+    const extras = await extrasInRange(from, to).catch(() => []);
+    for (const x of extras) {
+      const d = days.find((y) => y.day === x.day);
+      if (!d) continue;
+      d.people += x.people; d.arrived += x.people; d.extras = (d.extras ?? 0) + x.people;
+      d.sale += x.sale; d.cost += x.cost; d.profit = d.sale - d.cost;
+      if (x.how !== "none") d.collected += x.sale;
+      const ag = (d.byAgent[x.agent || "ลูกค้าตรง"] ??= { people: 0, sale: 0, cost: 0 });
+      ag.people += x.people; ag.sale += x.sale; ag.cost += x.cost;
+    }
+    return NextResponse.json({ pricing, days, extras, from, to }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "stats failed" }, { status: 500 });
   }

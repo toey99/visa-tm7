@@ -6,14 +6,16 @@
 // Reads /api/stats (daily snapshots priced with pricing/config.json; today is
 // live from the boards). Charts are plain SVG: stacked people-per-day by
 // office in the office colours, profit per day, and an agent table for the
-// period. ⚙️ edits the price / cost table.
+// period. ⚙️ edits the price / cost table. "งานนอกบอร์ด" adds work that never
+// went through a board as a lump line (people, sale, profit, cash/transfer).
 
 import { useEffect, useMemo, useState } from "react";
 import { OFFICES, type OfficeId } from "@/lib/offices";
 import type { DaySummary } from "@/lib/stats/daily";
 import type { Pricing } from "@/lib/stats/pricing";
+import type { Extra } from "@/lib/extras/store";
 
-type Resp = { pricing: Pricing; days: DaySummary[]; from: string; to: string; error?: string };
+type Resp = { pricing: Pricing; days: DaySummary[]; extras?: Extra[]; from: string; to: string; error?: string };
 const OFFICE_ORDER: { key: string; label: string; color: string }[] = [
   { key: "BANGKOK", label: "IT", color: OFFICES.BANGKOK.summaryAccent },
   { key: "NONTHABURI", label: "นนท์", color: OFFICES.NONTHABURI.summaryAccent },
@@ -66,7 +68,7 @@ export default function DashboardPage() {
 
   const days = data?.days ?? [];
   const tot = useMemo(() => {
-    const t = { people: 0, arrived: 0, sale: 0, cost: 0, profit: 0, collected: 0, toCollect: 0, waiting: 0, hold: 0, vip: 0, overstay: 0, d90: 0, run: 0, jobs: 0 };
+    const t = { people: 0, arrived: 0, sale: 0, cost: 0, profit: 0, collected: 0, toCollect: 0, waiting: 0, hold: 0, vip: 0, overstay: 0, d90: 0, run: 0, jobs: 0, extras: 0 };
     for (const d of days) for (const k of Object.keys(t) as (keyof typeof t)[]) t[k] += d[k] ?? 0;
     return t;
   }, [days]);
@@ -86,14 +88,14 @@ export default function DashboardPage() {
           <button className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-sm" onClick={() => setShowCfg((v) => !v)}>⚙️</button>
         </div>
       </header>
-      <p className="mb-3 text-xs text-slate-500">{dm(range.from)} – {dm(range.to)} · รายได้ = ยอดขายเอเย่นต์ตามตารางราคา · วันนี้อ่านสดจากบอร์ด วันอื่นจากสถิติที่เก็บไว้ตอน 23:30</p>
+      <p className="mb-3 text-xs text-slate-500">{dm(range.from)} – {dm(range.to)} · รายได้ = ยอดขายเอเย่นต์ตามตารางราคา · วันนี้อ่านสดจากบอร์ด วันอื่นจากสถิติที่เก็บไว้ตอน 23:30 · งานนอกบอร์ดกรอกเองด้านล่าง</p>
       {error && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
       {busy && <div className="mb-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">{busy}</div>}
       {showCfg && data && <PricingPanel pricing={data.pricing} onSaved={() => void load()} />}
 
       {/* headline tiles */}
       <section className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile label="ลูกค้า" value={`${tot.people}`} sub={`มาแล้ว ${tot.arrived} · รัน ${tot.run} · 90 วัน ${tot.d90} ใบ${tot.jobs ? ` · วีซ่ายาว ${tot.jobs}` : ""}`} tone="pink" />
+        <Tile label="ลูกค้า" value={`${tot.people}`} sub={`มาแล้ว ${tot.arrived} · รัน ${tot.run} · 90 วัน ${tot.d90} ใบ${tot.jobs ? ` · วีซ่ายาว ${tot.jobs}` : ""}${tot.extras ? ` · นอกบอร์ด ${tot.extras}` : ""}`} tone="pink" />
         <Tile label="ยอดขาย" value={money(tot.sale)} sub={`ต้นทุน ${money(tot.cost)}`} tone="blue" />
         <Tile label="กำไรขั้นต้น" value={money(tot.profit)} sub={tot.sale ? `${Math.round((tot.profit / tot.sale) * 100)}% ของยอดขาย` : ""} tone={tot.profit >= 0 ? "green" : "rose"} big />
         <Tile label="เงินหน้างาน" value={money(tot.collected)} sub={`ต้องเก็บ ${money(tot.toCollect)} · รอโอน ${money(tot.waiting)}${tot.hold ? ` · hold ${tot.hold}` : ""}`} tone="amber" />
@@ -132,6 +134,8 @@ export default function DashboardPage() {
         </table>
       </Card>
 
+      <ExtrasCard extras={data?.extras ?? []} defaultDay={range.to} onChanged={() => void load()} />
+
       <Card title="รายวัน">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -153,6 +157,91 @@ export default function DashboardPage() {
         </div>
       </Card>
     </main>
+  );
+}
+
+// off-board work: lump lines typed in by hand (profit is entered, cost = sale − profit)
+function ExtrasCard({ extras, defaultDay, onChanged }: { extras: Extra[]; defaultDay: string; onChanged: () => void }) {
+  const blank = { day: defaultDay, label: "", people: "", per: "", sale: "", profit: "", how: "cash" as Extra["how"], agent: "ลูกค้าตรง" };
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState(blank);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => setF((v) => ({ ...v, day: defaultDay })), [defaultDay]);
+  const n = (s: string) => Number(s.replace(/[^\d.]/g, "")) || 0;
+  // total = people × per-head price unless a total is typed
+  const sale = n(f.sale) || n(f.people) * n(f.per);
+  const cost = Math.max(0, sale - n(f.profit));
+  const HOW: Record<Extra["how"], string> = { cash: "เงินสด", transfer: "โอน", none: "ไม่นับเงินหน้างาน" };
+  async function post(body: unknown) {
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/extras", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      return true;
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); return false; }
+    finally { setBusy(false); }
+  }
+  async function add() {
+    if (!f.label.trim()) { setErr("ใส่ชื่อรายการก่อน"); return; }
+    if (!sale) { setErr("ใส่ยอดขาย (หรือ จำนวนคน × ราคาต่อคน)"); return; }
+    if (n(f.profit) > sale) { setErr("กำไรมากกว่ายอดขาย"); return; }
+    if (await post({ extra: { day: f.day, label: f.label, people: n(f.people), sale, cost, how: f.how, agent: f.agent } })) { setF({ ...blank, day: f.day }); setOpen(false); onChanged(); }
+  }
+  async function del(x: Extra) {
+    if (!confirm(`ลบ "${x.label}" (${dm(x.day)}) ?`)) return;
+    if (await post({ delete: { day: x.day, id: x.id } })) onChanged();
+  }
+  return (
+    <section className="mb-3 rounded-xl border border-violet-200 bg-violet-50/40 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-violet-800">🧺 งานนอกบอร์ด</h2>
+        <span className="text-[11px] text-slate-500">งานที่ไม่ได้ลงบอร์ด — รวมเข้ายอดด้านบนแล้ว</span>
+        <button className="ml-auto rounded-lg bg-violet-500 px-2.5 py-1 text-sm font-semibold text-white" onClick={() => setOpen((v) => !v)}>{open ? "ปิด" : "+ เพิ่มรายการ"}</button>
+      </div>
+      {err && <div className="mb-2 rounded-lg bg-rose-50 px-3 py-1.5 text-xs text-rose-700">{err}</div>}
+      {open && (
+        <div className="mb-3 rounded-lg bg-white p-2 text-xs">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <label className="col-span-2 flex flex-col gap-0.5">รายการ<input className="xinp" placeholder="เช่น ค่าบริการ VFS ลูกค้าเก่า" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></label>
+            <label className="flex flex-col gap-0.5">วันที่<input type="date" className="xinp" max={bkkToday()} value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })} /></label>
+            <label className="flex flex-col gap-0.5">กลุ่ม (ตารางเอเย่นต์)<input className="xinp" value={f.agent} onChange={(e) => setF({ ...f, agent: e.target.value })} /></label>
+            <label className="flex flex-col gap-0.5">จำนวนคน<input className="xinp" inputMode="numeric" value={f.people} onChange={(e) => setF({ ...f, people: e.target.value })} /></label>
+            <label className="flex flex-col gap-0.5">เก็บคนละ<input className="xinp" inputMode="numeric" value={f.per} onChange={(e) => setF({ ...f, per: e.target.value })} /></label>
+            <label className="flex flex-col gap-0.5">หรือ ยอดขายรวม<input className="xinp" inputMode="numeric" placeholder={n(f.people) * n(f.per) ? money(n(f.people) * n(f.per)) : ""} value={f.sale} onChange={(e) => setF({ ...f, sale: e.target.value })} /></label>
+            <label className="flex flex-col gap-0.5">กำไรรวม<input className="xinp" inputMode="numeric" value={f.profit} onChange={(e) => setF({ ...f, profit: e.target.value })} /></label>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {(Object.keys(HOW) as Extra["how"][]).map((h) => <button key={h} className={`rounded-lg px-2 py-1 ${f.how === h ? "bg-violet-500 font-semibold text-white" : "border border-slate-200 bg-white"}`} onClick={() => setF({ ...f, how: h })}>{HOW[h]}</button>)}
+            <span className="text-slate-600">ขาย <b className="tabular-nums">{money(sale)}</b> · ต้นทุน <b className="tabular-nums">{money(cost)}</b> · กำไร <b className="tabular-nums text-emerald-700">{money(sale - cost)}</b></span>
+            <button disabled={busy} className="ml-auto rounded-lg bg-pink-500 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" onClick={() => void add()}>{busy ? "กำลังบันทึก…" : "บันทึก"}</button>
+          </div>
+        </div>
+      )}
+      {extras.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs text-slate-400"><th>วัน</th><th>รายการ</th><th className="text-right">คน</th><th className="text-right">ขาย</th><th className="text-right">ต้นทุน</th><th className="text-right">กำไร</th><th className="text-right">รับเงิน</th><th /></tr></thead>
+            <tbody>
+              {extras.map((x) => (
+                <tr key={x.id} className="border-t border-violet-100">
+                  <td className="py-1">{dm(x.day)}</td>
+                  <td>{x.label}{x.agent && x.agent !== "ลูกค้าตรง" ? <span className="text-xs text-slate-400"> · {x.agent}</span> : null}</td>
+                  <td className="text-right tabular-nums">{x.people}</td>
+                  <td className="text-right tabular-nums">{money(x.sale)}</td>
+                  <td className="text-right tabular-nums text-slate-500">{money(x.cost)}</td>
+                  <td className="text-right font-semibold tabular-nums text-emerald-700">{money(x.sale - x.cost)}</td>
+                  <td className="text-right text-xs">{x.how === "none" ? "–" : HOW[x.how]}</td>
+                  <td className="text-right"><button disabled={busy} className="px-1 text-rose-500" title="ลบ" onClick={() => void del(x)}>✕</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : !open && <div className="text-xs text-slate-400">ช่วงนี้ยังไม่มีรายการ</div>}
+      <style>{`.xinp { border: 1px solid #e2e8f0; border-radius: .4rem; padding: .3rem .45rem; font-size: .8rem; background: #fff; width: 100%; }`}</style>
+    </section>
   );
 }
 

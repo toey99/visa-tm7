@@ -140,6 +140,7 @@ export type DaySummary = {
   sale: number; cost: number; profit: number; collected: number; toCollect: number; waiting: number; hold: number;
   d90: number;
   jobs?: number;            // long-stay visa jobs filed that day
+  extras?: number;          // people in off-board lines entered by hand
 };
 
 export function summarize(s: DayStats, p: Pricing): DaySummary {
