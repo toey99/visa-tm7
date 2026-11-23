@@ -754,6 +754,37 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       downloadBlob(blob, `summary_${meta.date.replace(/\//g, "")}_${meta.jobType}${summaryAgent ? "_" + summaryAgent : ""}.png`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
+  // ---------- counter-money sheet: only the people to collect from, big type ----------
+  // On a busy day the amounts on the summary are too small to read on a phone;
+  // this one lists just the collect / hold people so nobody leaves unpaid.
+  const moneySheetRef = useRef<HTMLDivElement>(null);
+  const [moneySheetOn, setMoneySheetOn] = useState(false);
+  const moneyPeople = active.filter((p) => p.fields.pay === "collect" || p.fields.pay === "hold");
+  async function makeMoneySheet(): Promise<Blob> {
+    if (!moneyPeople.length) throw new Error("วันนี้ไม่มีรายการเก็บเงินหน้างาน");
+    setMoneySheetOn(true);
+    try {
+      await new Promise((r) => setTimeout(r, 700));   // let the sheet mount and the photos decode
+      const blob = moneySheetRef.current ? await captureNode(moneySheetRef.current) : null;
+      if (!blob) throw new Error("สร้างรูปเก็บเงินไม่สำเร็จ");
+      return blob;
+    } finally { setMoneySheetOn(false); }
+  }
+  async function downloadMoneySheet() {
+    setError(""); setWorking(true); setStatus("กำลังทำรูปเก็บเงินหน้างาน…");
+    try { downloadBlob(await makeMoneySheet(), `เก็บเงิน_${meta.date.replace(/\//g, "")}_${meta.jobType}.png`); setStatus(""); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); setStatus(""); }
+    finally { setWorking(false); }
+  }
+  async function sendMoneySheetToLine() {
+    setError(""); setWorking(true);
+    try {
+      const blob = await makeMoneySheet();
+      const left = moneyPeople.filter((p) => p.fields.pay === "collect" && p.fields.paidHow !== "cash" && p.fields.paidHow !== "transfer" && p.fields.paidHow !== "agent").length;
+      await sendImagesToLine([{ name: "collect.png", blob }], `💰 เก็บเงินหน้างาน · ${OFFICES[meta.office].label} ${meta.date} · ยังไม่ได้รับ ${left} คน`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setWorking(false); }
+  }
   // one summary per main agent: switch the filter, let React paint, capture, repeat
   async function makeAgentSummaries(): Promise<{ name: string; blob: Blob }[]> {
     const out: { name: string; blob: Blob }[] = [];
@@ -1239,12 +1270,19 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                   🏢 {a} · มาแล้ว {active.filter((p) => p.fields.agent === a && p.arrived).length}/{active.filter((p) => p.fields.agent === a).length}
                 </button>
               ))}
-              <button onClick={sendSummaryToLine} disabled={working || !!lineBusy} className={btnCls + " ml-auto"}>📲 → LINE</button>
+              <button onClick={downloadMoneySheet} disabled={working || !moneyPeople.length} className="ml-auto rounded-lg bg-pink-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-pink-600 disabled:cursor-not-allowed disabled:bg-slate-300" title="รูปเฉพาะคนที่ต้องเก็บเงินหน้างาน ตัวใหญ่ อ่านได้ไม่ต้องซูม">💰 รูปเก็บเงิน ({moneyPeople.length})</button>
+              <button onClick={sendMoneySheetToLine} disabled={working || !!lineBusy || !moneyPeople.length} className={btnCls}>💰 → LINE</button>
+              <button onClick={sendSummaryToLine} disabled={working || !!lineBusy} className={btnCls}>📲 → LINE</button>
               <button onClick={downloadSummary} disabled={working} className={btnPrimaryCls}>⬇ ส่งรูป Summary{summaryAgent ? ` · ${summaryAgent}` : ""}</button>
             </div>
             <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">
               <SummarySheet ref={summaryRef} people={summaryAgent ? people.filter((p) => p.fields.agent === summaryAgent) : people} meta={meta} mode={mode} agentFilter={summaryAgent} />
             </div>
+            {moneySheetOn && (
+              <div style={{ position: "absolute", left: -20000, top: 0 }}>
+                <MoneySheet ref={moneySheetRef} people={people} meta={meta} mode={mode} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1372,6 +1410,8 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           <button onClick={downloadSummary} disabled={working || !people.length} className={btnPrimaryCls}>⬇ Summary (PNG){summaryAgent ? ` · ${summaryAgent}` : ""}</button>
           <button onClick={sendSummaryToLine} disabled={working || !!lineBusy || !people.length} className={btnCls} title="บอทโพสต์รูป summary นี้เข้ากลุ่ม LINE ของหน้างานนี้">📲 Summary → LINE</button>
           {summaryAgents.length > 1 && <button onClick={downloadAgentSummaries} disabled={working} className={btnCls} title="ออก summary คนละรูปต่อเอเจนซี่หลัก เห็นเฉพาะลูกค้าของเขา พร้อมโน้ตเอเจนซี่ย่อย">⬇ Summary แยกเอเจนซี่ ({summaryAgents.length})</button>}
+          <button onClick={downloadMoneySheet} disabled={working || !moneyPeople.length} className="rounded-lg bg-pink-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-pink-600 disabled:cursor-not-allowed disabled:bg-slate-300" title="รูปเฉพาะคนที่ต้องเก็บเงินหน้างาน ตัวใหญ่ อ่านได้ไม่ต้องซูม — กันหลุดเก็บเงิน">💰 รูปเก็บเงินหน้างาน ({moneyPeople.length})</button>
+          <button onClick={sendMoneySheetToLine} disabled={working || !!lineBusy || !moneyPeople.length} className={btnCls} title="บอทโพสต์รูปเก็บเงินเข้ากลุ่ม LINE ของหน้างานนี้">💰 เก็บเงิน → LINE</button>
           <button onClick={collectAll} disabled={working || !people.length} className={btnCls}>฿ รูปเรียกเก็บทุกคน</button>
           <button onClick={() => openBill(active.filter((p) => p.fields.pay === "collect"))} disabled={!active.some((p) => p.fields.pay === "collect")} className={btnCls} title="บิลรวมคนที่ต้องเก็บเงิน (สูงสุด 5 คน)">🧾 บิลรวม</button>
           <button onClick={() => setShowAgents((v) => !v)} disabled={!people.length} className={btnCls} title="สรุปราคาเอเจนซี่/ต้นทุน/กำไรของวันนี้">Σ สรุปเอเจนซี่</button>
@@ -1520,6 +1560,11 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       {runSheetRows && (
         <div style={{ position: "absolute", left: -20000, top: 0 }}>
           <RunDaySheet ref={runSheetRef} rows={runSheetRows} date={meta.date} />
+        </div>
+      )}
+      {moneySheetOn && (
+        <div style={{ position: "absolute", left: -20000, top: 0 }}>
+          <MoneySheet ref={moneySheetRef} people={people} meta={meta} mode={mode} />
         </div>
       )}
       {costSheet && (
@@ -2183,7 +2228,85 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   );
 });
 
-function SummaryPhoto({ person: p }: { person: Person }) {
+// Counter-money sheet: one big row per person we must take money from (or
+// whose passport is on hold), still-to-collect first. Narrow (640px) so the
+// amounts stay readable on a phone without zooming. Numbers match the summary.
+const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta; mode: BoardMode }>(function MoneySheet({ people: all, meta, mode }, ref) {
+  const o = OFFICES[meta.office];
+  const isRun = mode === "run";
+  const font = "system-ui, 'Noto Sans Thai', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif";
+  const money = (v: unknown) => (Number(v) || 0).toLocaleString();
+  type Kind = "todo" | "waiting" | "hold" | "got" | "agent";
+  const kindOf = (f: PersonFields): Kind => f.pay === "hold" ? "hold" : f.paidHow === "cash" || f.paidHow === "transfer" ? "got" : f.paidHow === "waiting" ? "waiting" : f.paidHow === "agent" ? "agent" : "todo";
+  const ORDER: Kind[] = ["todo", "waiting", "hold", "got", "agent"];
+  const rows = all.map((p, i) => ({ p, no: i + 1 }))
+    .filter(({ p }) => !p.cancelled && !p.movedTo && (p.fields.pay === "collect" || p.fields.pay === "hold"))
+    .map((r) => ({ ...r, kind: kindOf(r.p.fields) }))
+    .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.no - b.no);
+  const collect = rows.filter((r) => r.p.fields.pay === "collect");
+  const amt = (r: { p: Person }) => Number(r.p.fields.amount) || 0;
+  const todo = collect.filter((r) => r.kind === "todo"), waiting = collect.filter((r) => r.kind === "waiting"), got = collect.filter((r) => r.kind === "got");
+  const sum = (xs: { p: Person }[]) => xs.reduce((s, r) => s + amt(r), 0);
+  const gotSum = got.reduce((s, r) => s + (Number(r.p.fields.paidAmount || r.p.fields.amount) || 0), 0);
+  const LOOK: Record<Kind, { bg: string; edge: string; fg: string; label: string }> = {
+    todo: { bg: "#fff3b0", edge: "#f59e0b", fg: "#be123c", label: "💰 ต้องเก็บ" },
+    waiting: { bg: "#ede9fe", edge: "#8b5cf6", fg: "#5b21b6", label: "🕓 รอโอน" },
+    hold: { bg: "#f5d0fe", edge: "#c026d3", fg: "#86198f", label: "🔒 รอโอน · hold พาส" },
+    got: { bg: "#d2f4dd", edge: "#22c55e", fg: "#166534", label: "" },
+    agent: { bg: "#cfe9ff", edge: "#38bdf8", fg: "#0b3d6b", label: "🏢 จ่ายที่เอเจนซี่" },
+  };
+  const tile = (bg: string, fg: string, label: string, big: string, sub: string) => (
+    <div style={{ flex: 1, background: bg, color: fg, borderRadius: 14, padding: "10px 12px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
+      <div style={{ fontSize: 16, fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 34, fontWeight: 900, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{big}</div>
+      <div style={{ fontSize: 15, fontWeight: 600, opacity: 0.85 }}>{sub}</div>
+    </div>
+  );
+  return (
+    <div ref={ref} style={{ width: 640, padding: 16, background: o.summaryBg, fontFamily: font, boxSizing: "border-box" }}>
+      <div style={{ background: o.summaryAccent, color: "#fff", borderRadius: 16, padding: "12px 16px", boxShadow: "0 4px 14px rgba(0,0,0,.15)" }}>
+        <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.15 }}>💰 เก็บเงินหน้างาน</div>
+        <div style={{ fontSize: 18, fontWeight: 700, opacity: 0.95, marginTop: 2 }}>{o.emoji} {isRun ? `VISA RUN · ${o.summaryTitle}` : o.summaryTitle} · {meta.date}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        {tile(todo.length ? "#fff3b0" : "#d2f4dd", todo.length ? "#be123c" : "#166534", "ยังไม่ได้เก็บ", todo.length ? money(sum(todo)) : "ครบแล้ว ✅", `${todo.length} คน`)}
+        {tile("#d2f4dd", "#166534", "รับแล้ว", money(gotSum), `${got.length}/${collect.length} คน`)}
+        {waiting.length > 0 && tile("#ede9fe", "#5b21b6", "รอโอน", money(sum(waiting)), `${waiting.length} คน`)}
+      </div>
+      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map(({ p, no, kind }) => {
+          const f = p.fields;
+          const k = LOOK[kind];
+          const done = kind === "got";
+          const label = done ? (f.paidHow === "cash" ? "💵 รับเงินสดแล้ว" : "📲 โอนแล้ว") : k.label;
+          const shownAmt = done ? Number(f.paidAmount || f.amount) || 0 : Number(f.amount) || 0;
+          const who = [f.agent, f.subAgent ? `↳ ${f.subAgent}` : ""].filter(Boolean).join(" ");
+          return (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, background: k.bg, borderLeft: `10px solid ${k.edge}`, borderRadius: 14, padding: "8px 12px 8px 10px", opacity: done || kind === "agent" ? 0.8 : 1, boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
+              <div style={{ width: 44, height: 44, flex: "none", borderRadius: "50%", background: o.summaryAccent, color: "#fff", fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{no}</div>
+              <div style={{ flex: "none", position: "relative" }}>
+                <SummaryPhoto person={p} w={66} h={88} />
+                {f.vip && <span style={{ position: "absolute", top: -10, right: -10, fontSize: 22, lineHeight: 1 }}>👑</span>}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, overflowWrap: "anywhere" }}>{[f.lastName, f.firstName].filter(Boolean).join(" ") || f.passportNo || "—"}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#334155", lineHeight: 1.2 }}>{f.chineseName}</div>
+                {who && <div style={{ fontSize: 15, color: "#475569", marginTop: 1, overflowWrap: "anywhere" }}>{who}</div>}
+              </div>
+              <div style={{ flex: "none", textAlign: "right" }}>
+                {kind !== "hold" && kind !== "agent" && <div style={{ fontSize: 40, fontWeight: 900, color: k.fg, lineHeight: 1, fontVariantNumeric: "tabular-nums", textDecoration: done ? "line-through" : undefined }}>{shownAmt ? money(shownAmt) : "?"}</div>}
+                <div style={{ fontSize: 16, fontWeight: 800, color: k.fg, marginTop: 4, whiteSpace: "nowrap" }}>{label}{p.arrived && !done ? " · มาแล้ว" : ""}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 10, textAlign: "center", fontSize: 15, fontWeight: 700, color: "#475569" }}>แผนเก็บ {collect.length} คน รวม {money(sum(collect))} บาท · เลขตรงกับรูป Summary</div>
+    </div>
+  );
+});
+
+function SummaryPhoto({ person: p, w = 90, h = 120 }: { person: Person; w?: number; h?: number }) {
   const blob = p.photo ?? p.files.find((x) => x.kind === "selfie")?.blob ?? p.files.find((x) => x.kind === "passport")?.blob ?? null;
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -2193,7 +2316,7 @@ function SummaryPhoto({ person: p }: { person: Person }) {
     return () => URL.revokeObjectURL(u);
   }, [blob]);
   // eslint-disable-next-line @next/next/no-img-element
-  return url ? <img src={url} alt="" style={{ width: 90, height: 120, objectFit: "cover", borderRadius: 4, boxShadow: "0 1px 3px rgba(0,0,0,.25)" }} /> : <div style={{ width: 90, height: 120, background: "#eee", borderRadius: 4, margin: "0 auto" }} />;
+  return url ? <img src={url} alt="" style={{ width: w, height: h, objectFit: "cover", borderRadius: 4, boxShadow: "0 1px 3px rgba(0,0,0,.25)" }} /> : <div style={{ width: w, height: h, background: "#eee", borderRadius: 4, margin: "0 auto" }} />;
 }
 
 function Thumb({ doc }: { doc: DocFile }) {
