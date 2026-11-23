@@ -17,6 +17,7 @@ import { listSlips } from "@/lib/slips/store";
 import { jobsInRange } from "@/lib/jobs/store";
 import { bkkTime, counted } from "@/lib/slips/types";
 import { overstayInfo } from "@/lib/today/types";
+import { carKey } from "@/lib/visarun/cars";
 import {
   addDays, bkkToday, DEFAULT_PRICES, LEDGER_BOOKS, type Adjustment, type ChargeLine, type CreditLine, type DayComputed, type DayEdits,
   type DayLedger, type LedgerBook, type LedgerConfig, type Prices,
@@ -114,11 +115,11 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
     const people = (await readBoard("run", day, office)).filter(active);
     if (!people.length) return;
     const perCar = new Map<string, number>();
-    for (const p of people) { const car = str(p.fields?.car); perCar.set(car, (perCar.get(car) ?? 0) + 1); }
+    for (const p of people) { const car = carKey(p.fields); perCar.set(car, (perCar.get(car) ?? 0) + 1); }   // car + round = one ride
     for (const p of people) {
       const f = p.fields ?? {};
       if (!isAgent(f, agent)) continue;
-      const car = str(f.car);
+      const car = carKey(f);
       const solo = !!car && perCar.get(car) === 1;
       const items = [{ label: solo ? "วีซ่ารัน (รถ 1 คน)" : "วีซ่ารัน", amount: solo ? prices.runSolo : prices.runShared }];
       if (f.run === "RUN30") items.push({ label: "🐰 +30 วัน", amount: prices.run30 });

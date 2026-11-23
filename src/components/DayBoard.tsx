@@ -24,7 +24,7 @@ import {
 } from "@/lib/today/types";
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
-import { CARS, RUN_SLOTS, carById } from "@/lib/visarun/cars";
+import { CARS, RUN_SLOTS, carById, carKey, tripTh } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
 import RunDaySheet from "@/components/RunDaySheet";
@@ -785,14 +785,18 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const [carView, setCarView] = useState<"customer" | "driver">("customer");
   const carsInUse = CARS.filter((c) => active.some((p) => p.fields.car === c.id));
   const unassigned = active.filter((p) => !p.fields.car);
+  // one card per ride: a car that runs twice (รอบ 2) gets a second card
+  const rides = carsInUse.flatMap((c) => (["", "2"] as const)
+    .map((trip) => ({ car: c, trip, key: trip ? `${c.id}#2` : c.id, riders: active.filter((p) => carKey(p.fields) === (trip ? `${c.id}#2` : c.id)) }))
+    .filter((r) => r.riders.length > 0));
   async function makeCarCards(which: ("customer" | "driver")[] = ["customer", "driver"]): Promise<{ name: string; blob: Blob }[]> {
     const out: { name: string; blob: Blob }[] = [];
     for (const v of which) {
-      for (const c of carsInUse) {
-        const el = (v === "driver" ? driverRefs : carRefs).current[c.id];
+      for (const { car: c, trip, key } of rides) {
+        const el = (v === "driver" ? driverRefs : carRefs).current[key];
         if (!el) continue;
         const blob = await captureNode(el);
-        if (blob) out.push({ name: `car-${c.id}-${c.plate.replace(/\s+/g, "")}-${v === "driver" ? "คนขับ" : "ลูกค้า"}.png`, blob });
+        if (blob) out.push({ name: `car-${c.id}-${c.plate.replace(/\s+/g, "")}${trip ? "-รอบ2" : ""}-${v === "driver" ? "คนขับ" : "ลูกค้า"}.png`, blob });
       }
     }
     return out;
@@ -834,7 +838,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
     setWorking(true);
     try {
       const cards = await makeCarCards([which]);
-      await sendImagesToLine(cards, `${which === "driver" ? "🧑‍✈️ การ์ดคนขับ" : "🚗 การ์ดลูกค้า"} · ${OFFICES[meta.office].label} ${meta.date} · ${cards.length} คัน`);
+      await sendImagesToLine(cards, `${which === "driver" ? "🧑‍✈️ การ์ดคนขับ" : "🚗 การ์ดลูกค้า"} · ${OFFICES[meta.office].label} ${meta.date} · ${cards.length} ใบ`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setWorking(false); }
   }
@@ -873,7 +877,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
           name: [f.lastName, f.firstName].filter(Boolean).join(" "),
           flight: f.flight || meta.flight || "", land: f.landTime || meta.landTime || "", returnBy: f.returnBy || meta.returnBy || "",
           expiry: e.expiry ? fmtDdmmyyyy(e.expiry) : "",
-          carId: f.car || "", carLabel: car ? `${car.color} ${car.plate.replace(/\D/g, "")}` : "",
+          carId: f.car || "", carLabel: car ? `${car.color} ${car.plate.replace(/\D/g, "")}${tripTh(f)}` : "",
           detail, bear: !!f.cambodia, cash: cashAtDriver,
           fine: f.overstay ? 2000 + 500 * osDays : 0,
         };
@@ -899,14 +903,14 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       const j = (await r.json()) as { pricing?: Pricing; error?: string };
       if (!r.ok || !j.pricing) throw new Error(j.error || "โหลดตารางราคาไม่ได้");
       const perCar = new Map<string, number>();
-      for (const p of active) if (p.fields.car) perCar.set(p.fields.car, (perCar.get(p.fields.car) ?? 0) + 1);
+      for (const p of active) if (p.fields.car) perCar.set(carKey(p.fields), (perCar.get(carKey(p.fields)) ?? 0) + 1);   // car + round = one ride
       const rows: RunCostRow[] = active.map((p) => {
         const f = p.fields;
         const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
         const osDays = f.overstay ? (Number(f.overstayDays) || (ov?.days ?? 0)) : 0;
         return {
           name: [f.lastName, f.firstName].filter(Boolean).join(" "), cn: f.chineseName || "",
-          carId: f.car || "", carSize: perCar.get(f.car || "") ?? 0,
+          carId: f.car || "", trip: f.carTrip === "2" ? "2" : "", carSize: perCar.get(carKey(f)) ?? 0,
           run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(f.nationality || ""), overstayDays: osDays,
           cash: f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0,
         };
@@ -1573,34 +1577,34 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
       {isRun && (
         <div className="mt-8">
           <div className="mb-2 flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-slate-700">การ์ดรถ (1 รูปต่อคัน)</h2>
+            <h2 className="text-sm font-semibold text-slate-700">การ์ดรถ (1 รูปต่อคัน · รถวิ่ง 2 รอบได้ 2 รูป)</h2>
             {(["customer", "driver"] as const).map((v) => (
               <button key={v} type="button" onClick={() => setCarView(v)} className={`rounded-full px-3 py-0.5 text-xs ${carView === v ? "bg-indigo-600 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{v === "customer" ? "🚗 แบบลูกค้า (มีจุดนัดพบ)" : "🧑‍✈️ แบบคนขับ"}</button>
             ))}
           </div>
           {carsInUse.length === 0 && <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">เลือก "รถ" ในการ์ดของแต่ละคน แล้วการ์ดรถจะโผล่ตรงนี้</p>}
           <div className="flex flex-wrap gap-4">
-            {carsInUse.map((c) => {
-              const riders = active.filter((p) => p.fields.car === c.id);
+            {rides.map(({ car: c, trip, key, riders }) => {
               return (
-                <div key={c.id}>
-                  {riders.length > c.seats && <p className="mb-1 text-xs font-semibold text-red-600">⚠ {c.name} นั่งได้ {c.seats} คน แต่จัดไว้ {riders.length} คน</p>}
+                <div key={key}>
+                  {trip && <p className="mb-1 text-xs font-semibold text-fuchsia-700">🔁 {c.name} {c.plate} · รอบ 2</p>}
+                  {riders.length > c.seats && <p className="mb-1 text-xs font-semibold text-red-600">⚠ {c.name}{trip ? " รอบ 2" : ""} นั่งได้ {c.seats} คน แต่จัดไว้ {riders.length} คน</p>}
                   {carView === "customer" && (
                     <div className="mb-1 flex items-center gap-1 text-xs text-slate-600">
-                      <span>ภาษาบนการ์ด {c.name}:</span>
+                      <span>ภาษาบนการ์ด {c.name}{trip ? " รอบ 2" : ""}:</span>
                       {(["zh", "en", "both"] as const).map((l) => {
                         const auto = carCardLang(riders);
-                        const cur = carLangs[c.id] ?? auto;
-                        return <button key={l} type="button" onClick={() => setCarLangs((m) => ({ ...m, [c.id]: l }))} className={`rounded-full px-2 py-0.5 ${cur === l ? "bg-orange-500 text-white" : "border border-slate-300 bg-white"}`}>{l === "zh" ? "中文" : l === "en" ? "English" : "中文 + English"}{auto === l ? " ·auto" : ""}</button>;
+                        const cur = carLangs[key] ?? auto;
+                        return <button key={l} type="button" onClick={() => setCarLangs((m) => ({ ...m, [key]: l }))} className={`rounded-full px-2 py-0.5 ${cur === l ? "bg-orange-500 text-white" : "border border-slate-300 bg-white"}`}>{l === "zh" ? "中文" : l === "en" ? "English" : "中文 + English"}{auto === l ? " ·auto" : ""}</button>;
                       })}
                     </div>
                   )}
                   {/* both variants stay mounted so either can be exported; the one not being viewed sits off-screen */}
                   <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "customer" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
-                    <CarCard ref={(el) => { carRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="customer" lang={carLangs[c.id] ?? carCardLang(riders)} />
+                    <CarCard ref={(el) => { carRefs.current[key] = el; }} car={c} people={riders} meta={meta} trip={trip} variant="customer" lang={carLangs[key] ?? carCardLang(riders)} />
                   </div>
                   <div className="overflow-auto rounded-2xl ring-1 ring-slate-200" style={carView === "driver" ? undefined : { position: "absolute", left: -20000, top: 0 }}>
-                    <CarCard ref={(el) => { driverRefs.current[c.id] = el; }} car={c} people={riders} meta={meta} variant="driver" overstayDays={overstayByPerson} />
+                    <CarCard ref={(el) => { driverRefs.current[key] = el; }} car={c} people={riders} meta={meta} trip={trip} variant="driver" overstayDays={overstayByPerson} />
                   </div>
                 </div>
               );
@@ -1720,7 +1724,7 @@ function PersonCard({
               {[f.lastName, f.firstName].filter(Boolean).join(" ") || <span className="text-slate-400">ยังไม่มีชื่อ</span>}
               {f.chineseName && <span className="ml-2 text-slate-600">{f.chineseName}</span>}
               {f.vip && <span className="ml-2 rounded bg-yellow-300 px-2 py-0.5 text-xs font-extrabold text-yellow-900">👑 VIP +500</span>}
-              {isRun && car && <span className="ml-2 rounded px-2 py-0.5 text-xs font-semibold text-white" style={{ background: car.accent }}>🚗 {car.id} {car.plate}</span>}
+              {isRun && car && <span className="ml-2 rounded px-2 py-0.5 text-xs font-semibold text-white" style={{ background: car.accent }}>🚗 {car.id} {car.plate}{tripTh(f)}</span>}
               {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">🐰 +30 วัน</span>}
               {isRun && f.cambodia && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">🐻 กัมพูชา</span>}
               {isRun && f.overstay && <span className="ml-2 rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-900">🐢 overstay{f.overstayDays ? ` ${f.overstayDays} วัน` : ""}</span>}
@@ -1778,7 +1782,8 @@ function PersonCard({
           ))}
           <span className="ml-2 text-xs font-semibold text-indigo-900">รถ:</span>
           {CARS.map((c) => {
-            const n = people.filter((x) => !x.cancelled && !x.movedTo && x.fields.car === c.id).length;
+            // seats taken in this person's round of that car
+            const n = people.filter((x) => !x.cancelled && !x.movedTo && x.fields.car === c.id && (x.fields.carTrip === "2") === (f.carTrip === "2")).length;
             const on = f.car === c.id;
             return (
               <button key={c.id} type="button" onClick={() => set("car", on ? "" : c.id)} title={`${c.name} ${c.plate} · ${n}/${c.seats}`}
@@ -1787,6 +1792,10 @@ function PersonCard({
               </button>
             );
           })}
+          {f.car && (
+            <button type="button" onClick={() => set("carTrip", f.carTrip === "2" ? "" : "2")} title="รถคันนี้วิ่ง 2 รอบในวันเดียว — คนนี้ไปรอบที่ 2 (การ์ดรถ ที่นั่ง และราคาต่อหัว แยกจากรอบแรก)"
+              className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.carTrip === "2" ? "bg-fuchsia-500 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🔁 รอบ 2</button>
+          )}
           <button type="button" onClick={() => set("cambodia", !f.cambodia)} title="พาสปอร์ตมีประวัติเข้าออกกัมพูชา → ติด 🐻 ที่รูปในการ์ดคนขับ"
             className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.cambodia ? "bg-amber-700 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🐻 {f.cambodia ? "มีประวัติกัมพูชา" : "กัมพูชา?"}</button>
           <button type="button" onClick={() => set("overstay", !f.overstay)} title="เล่มนี้มีประวัติ overstay → ติด 🐢 ที่รูปในการ์ดคนขับ (ค่าปรับ 2,000 + วันละ 500)"
@@ -2117,7 +2126,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                   )}
                   <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
                   {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
-                  {isRun && carById(f.car) && <span style={{ position: "absolute", top: -6, right: -6, background: carById(f.car)!.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>🚗{f.car}</span>}
+                  {isRun && carById(f.car) && <span style={{ position: "absolute", top: -6, right: -6, background: carById(f.car)!.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>🚗{f.car}{f.carTrip === "2" ? "·2" : ""}</span>}
                   {f.vip && <span style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, fontSize: 26, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.45))" }}>👑</span>}
                   {isRun && f.cambodia && <span style={{ position: "absolute", top: 18, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐻</span>}
                   {isRun && f.overstay && <span style={{ position: "absolute", top: 44, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐢</span>}

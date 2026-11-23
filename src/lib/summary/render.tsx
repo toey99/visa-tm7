@@ -205,7 +205,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
               {!!moved && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 56, fontWeight: 700 }}>➡</div>}
               <div style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: 11, background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</div>
               {!!ov && ov.days > 0 && <div style={{ position: "absolute", bottom: -6, right: -6, display: "flex", background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</div>}
-              {!!car && <div style={{ position: "absolute", top: -6, right: -6, display: "flex", background: car.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>🚗{car.id}</div>}
+              {!!car && <div style={{ position: "absolute", top: -6, right: -6, display: "flex", background: car.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>🚗{car.id}{f.carTrip === "2" ? "·2" : ""}</div>}
               {!!f.vip && <div style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, display: "flex", fontSize: 26, lineHeight: 1 }}>👑</div>}
               {isRun && !!f.cambodia && <div style={{ position: "absolute", top: 18, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐻</div>}
               {isRun && !!f.overstay && <div style={{ position: "absolute", top: 44, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐢</div>}

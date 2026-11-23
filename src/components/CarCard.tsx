@@ -39,14 +39,19 @@ const COLOR_EN: Record<string, string> = { "สีขาว": "white", "สี�
 // overstayDays: person id → days over the admitted-until date (computed by the
 // board, which knows the holiday list); shown as 🐢 with the day count on the
 // driver card — the driver must know the fine is coming (2,000 + 500/day)
-const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: DayMeta; variant?: CarCardVariant; overstayDays?: Record<string, number>; lang?: CarCardLang }>(function CarCard({ car, people, meta, variant = "customer", overstayDays = {}, lang = "zh" }, ref) {
+const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: DayMeta; variant?: CarCardVariant; overstayDays?: Record<string, number>; lang?: CarCardLang; trip?: string }>(function CarCard({ car, people, meta, variant = "customer", overstayDays = {}, lang = "zh", trip = "" }, ref) {
   const driver = variant === "driver";
   // L(zh, en): the second-language line(s) for this car
   const L = (zh: string, en: string) => (lang === "zh" ? zh : lang === "en" ? en : `${zh} · ${en}`);
   const colorEn = COLOR_EN[car.color] ?? car.color;
   const PH = driver ? { w: 220, h: 290 } : { w: 180, h: 236 };
   const [dd, mm] = meta.date.split("/");
-  const slot = RUN_SLOTS.find((s) => s.id === (meta.slot || "morning")) ?? RUN_SLOTS[0];
+  // the car's second round (trip "2") is later in the day than the board's slot:
+  // take the slot from its riders' landing time when there is one
+  const land2 = trip === "2" ? (people.map((p) => p.fields.landTime || meta.landTime).find((t) => /^\d{1,2}:\d{2}$/.test(t || "")) ?? "") : "";
+  const h2 = land2 ? Number(land2.split(":")[0]) : -1;
+  const slotId = h2 < 0 ? (meta.slot || "morning") : h2 < 11 ? "morning" : h2 < 14 ? "noon" : h2 < 17 ? "afternoon" : "evening";
+  const slot = RUN_SLOTS.find((s) => s.id === slotId) ?? RUN_SLOTS[0];
   const dateTh = dd && mm ? `${dd} ${TH_MONTHS[Number(mm) - 1] ?? mm} ${slot.th}` : "";
   const dateZh = dd && mm ? `${Number(mm)}月${dd}号${slot.zh}` : "";
   const dateEn = dd && mm ? `${Number(dd)} ${EN_MONTHS[Number(mm) - 1] ?? mm} · ${slot.id === "morning" ? "morning" : slot.id === "noon" ? "noon" : slot.id === "afternoon" ? "afternoon" : "evening"} trip` : "";
@@ -84,8 +89,8 @@ const CarCard = forwardRef<HTMLDivElement, { car: Car; people: Person[]; meta: D
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>VISA RUN{lang !== "en" ? " · 签证跑" : ""}</div>
-          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>{dateTh}{driver ? " · 🧑‍✈️ คนขับ" : ""}</div>
-          <div style={{ fontSize: 15, opacity: 0.95 }}>{L(dateZh, dateEn)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>{dateTh}{trip === "2" ? " · รอบ 2" : ""}{driver ? " · 🧑‍✈️ คนขับ" : ""}</div>
+          <div style={{ fontSize: 15, opacity: 0.95 }}>{L(dateZh + (trip === "2" ? " · 第2趟" : ""), dateEn + (trip === "2" ? " · 2nd round" : ""))}</div>
         </div>
       </div>
 

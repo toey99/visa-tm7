@@ -55,6 +55,7 @@ export type PersonFields = {
   // visa-run board only
   run: "RUN" | "RUN30";         // ordinary run, or run + 30-day extension (needs the TM.7 packet)
   car: string;                  // car id from CARS ("" = not assigned yet)
+  carTrip?: string;             // "2" = that car's second round of the day (else first round)
   flight: string;               // per-person flight when it differs from the day's (else "")
   landTime: string;             // HH:MM landing time when it differs from the day's
   returnBy: string;             // HH:MM "back at the airport before" when it differs from the day's

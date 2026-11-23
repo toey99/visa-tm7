@@ -30,6 +30,16 @@ export function carById(id: string | undefined): Car | undefined {
   return CARS.find((c) => c.id === id);
 }
 
+// A car can do two rounds in one day (drops the first flight's riders back at
+// the airport, then picks up the next flight). carTrip "2" on the person marks
+// the second round; a car + round is one ride: its own card, its own seat
+// count and its own per-head price. "" = no car yet.
+export function carKey(f: { car?: unknown; carTrip?: unknown } | undefined | null): string {
+  const car = typeof f?.car === "string" ? f.car : "";
+  return car && f?.carTrip === "2" ? `${car}#2` : car;
+}
+export const tripTh = (f: { carTrip?: unknown } | undefined | null) => (f?.carTrip === "2" ? " รอบ 2" : "");
+
 // Time-of-day slot shown on the card ("05 พ.ย. เช้า" / "11月05号早上").
 export const RUN_SLOTS: { id: string; th: string; zh: string }[] = [
   { id: "morning", th: "เช้า", zh: "早上" },

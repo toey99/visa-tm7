@@ -14,6 +14,7 @@ import { bkkDay, buildCases } from "@/lib/d90/types";
 import { OFFICE_IDS, type OfficeId } from "@/lib/offices";
 import { overstayInfo, type PersonFields } from "@/lib/today/types";
 import { DEFAULT_PRICING, extSale, runSale, withDefaults, type Pricing } from "./pricing";
+import { carKey } from "@/lib/visarun/cars";
 
 export type StatRow = {
   ns: "days" | "run";
@@ -54,7 +55,7 @@ async function boardRows(ns: "days" | "run", day: string, office: OfficeId): Pro
   if (!m) return [];
   const recs = await readRecords(folder, Object.keys(m.entries));
   const perCar = new Map<string, number>();
-  if (ns === "run") for (const p of recs) { if (p.cancelled || p.movedTo) continue; const car = str(p.fields?.car); if (car) perCar.set(car, (perCar.get(car) ?? 0) + 1); }
+  if (ns === "run") for (const p of recs) { if (p.cancelled || p.movedTo) continue; const car = carKey(p.fields); if (car) perCar.set(car, (perCar.get(car) ?? 0) + 1); }
   return recs.map((p: PersonRec): StatRow => {
     const f = (p.fields ?? {}) as Partial<PersonFields> & Record<string, unknown>;
     let overstayDays = Math.max(0, Math.floor(num(f.overstayDays)));
@@ -63,7 +64,7 @@ async function boardRows(ns: "days" | "run", day: string, office: OfficeId): Pro
       ns, office,
       agent: str(f.agent).trim(), sub: str(f.subAgent).trim(),
       run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(str(f.nationality)), vip: !!f.vip, overstayDays,
-      carSize: ns === "run" ? (perCar.get(str(f.car)) ?? 0) : 0,
+      carSize: ns === "run" ? (perCar.get(carKey(f)) ?? 0) : 0,
       arrived: !!p.arrived, cancelled: !!p.cancelled, moved: !!p.movedTo,
       pay: str(f.pay), paidHow: str(f.paidHow), amount: num(f.amount), paidAmount: num(f.paidAmount),
     };

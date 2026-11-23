@@ -15,6 +15,7 @@ import type { Pricing } from "@/lib/stats/pricing";
 
 export type RunCostRow = {
   name: string; cn: string; carId: string; carSize: number;
+  trip?: string;           // "2" = the car's second round (carSize counts that round only)
   run30: boolean; cambodia: boolean; indian: boolean; overstayDays: number;
   cash: number;            // cash the driver collected from this customer
 };
@@ -37,7 +38,7 @@ export function costOfRow(r: RunCostRow, p: Pricing) {
 }
 
 const RunCostSheet = forwardRef<HTMLDivElement, { rows: RunCostRow[]; date: string; pricing: Pricing }>(function RunCostSheet({ rows, date, pricing }, ref) {
-  const sorted = [...rows].sort((a, b) => (a.carId || "9").localeCompare(b.carId || "9"));
+  const sorted = [...rows].sort((a, b) => (a.carId || "9").localeCompare(b.carId || "9") || (a.trip || "").localeCompare(b.trip || ""));
   const priced = sorted.map((r) => ({ r, c: costOfRow(r, pricing) }));
   const total = priced.reduce((s, x) => s + x.c.total, 0);
   const cash = rows.reduce((s, r) => s + r.cash, 0);
@@ -83,7 +84,7 @@ const RunCostSheet = forwardRef<HTMLDivElement, { rows: RunCostRow[]; date: stri
                   <div key={idx} style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", background: t?.bg ?? "#f8fafc", borderLeft: `6px solid ${t?.edge ?? "#cbd5e1"}`, borderBottom: "1px solid #f1e4d8" }}>
                     <div style={{ ...td, textAlign: "center", fontWeight: 700, color: "#475569" }}>{idx}</div>
                     <div style={{ ...td, textAlign: "left" }}><span style={{ fontWeight: 700, fontFamily: "'Courier New', ui-monospace, monospace" }}>{r.name || "—"}</span>{r.cn ? <span style={{ marginLeft: 8, color: "#334155" }}>{r.cn}</span> : null}{r.indian ? <span style={{ marginLeft: 8 }}>🇮🇳</span> : null}</div>
-                    <div style={{ ...td, textAlign: "left" }}>{g.car.id ? `${g.car.color} ${g.car.plate.replace(/\D/g, "")}` : "—"}</div>
+                    <div style={{ ...td, textAlign: "left" }}>{g.car.id ? `${g.car.color} ${g.car.plate.replace(/\D/g, "")}${r.trip === "2" ? " รอบ 2" : ""}` : "—"}</div>
                     <div style={{ ...td, textAlign: "center" }}>{r.carSize || "—"}</div>
                     <div style={td}>{n(c.base)}</div>
                     {anyExt && <div style={{ ...td, color: "#c2410c" }}>{n(c.ext)}</div>}
