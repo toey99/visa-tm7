@@ -133,7 +133,9 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
   const payParts: string[] = [];
 
   // extension work: one line per office at the base price, VIP and overstay extras pulled out
-  const ext = d.charges.filter((c) => c.src === "ext");
+  // long-stay / one-off jobs from /jobs (id "job-…") are priced per case: listed by name further down
+  const jobs = d.charges.filter((c) => c.src === "ext" && c.id.startsWith("job-"));
+  const ext = d.charges.filter((c) => c.src === "ext" && !c.id.startsWith("job-"));
   const byOffice = new Map<string, { label: string; price: number; n: number }>();
   let vipN = 0, vipSum = 0;
   const extras: string[] = [];
@@ -152,6 +154,14 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
   if (vipN) { L.push(`vip ${vipN} คน 500*${vipN} = ${f(vipSum)}`); payParts.push(f(vipSum)); }
   for (const x of extras) L.push(x);
   if (extrasSum) payParts.push(f(extrasSum));
+
+  if (jobs.length) {
+    const sum = jobs.reduce((s, c) => s + c.amount, 0);
+    L.push(""); L.push(`วีซ่ายาว / งานอื่น ${jobs.length} เคส`);
+    for (const c of jobs) L.push(`${c.name} ${c.items[0]?.label ?? ""} ${f(c.amount)}`.replace(/\s+/g, " "));
+    if (jobs.length > 1) L.push(`รวม ${jobs.map((c) => f(c.amount)).join("+")} = ${f(sum)}`);
+    payParts.push(f(sum));
+  }
 
   const d90 = d.charges.filter((c) => c.src === "d90");
   if (d90.length) { const sum = d90.reduce((s, c) => s + c.amount, 0); L.push(""); L.push(`รายงานตัว 90 วัน ${d90.length} ใบ`); L.push(`${d90[0].amount}*${d90.length} = ${f(sum)}`); payParts.push(f(sum)); }
