@@ -269,7 +269,7 @@ export function serviceZh(c: ChargeLine): string {
 export function buildStatement(days: DayLedger[], from: string, to: string): Statement {
   const span = days.filter((d) => d.day >= from && d.day <= to);
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const openingDue = span.length ? r2(-span[0].carryIn) : 0;
+  const openingDue = span.length ? r2(-span[0].carryIn) || 0 : 0;   // || 0: no "-0" when the book opens at zero
   let due = openingDue, fees = 0, received = 0;
   const rows: StatementRow[] = [];
   const push = (day: string, client: string, sub: string, service: string, fee: number, recv: number, kind: StatementRow["kind"]) => {
