@@ -75,6 +75,17 @@ async function getXLSX(): Promise<XLSXLike> {
   return (window as unknown as { XLSX: XLSXLike }).XLSX;
 }
 
+/** A plain one-sheet .xlsx from rows of cells (first rows = headers). */
+export async function buildSimpleXlsx(rows: (string | number | null)[][], sheet: string, widths: number[]): Promise<Blob> {
+  const XLSX = await getXLSX();
+  const ws = XLSX.utils.aoa_to_sheet(rows as (string | null)[][]);
+  ws["!cols"] = widths.map((w) => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheet);
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);

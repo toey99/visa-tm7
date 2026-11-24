@@ -8,9 +8,12 @@
 // carry-in of the next. Positive balance = the agent's money still with us;
 // negative = the agent owes us.
 
-export type LedgerBook = "ARTAO";
-export const LEDGER_BOOKS: Record<LedgerBook, { agent: string; label: string; slipBook: "ARTAO" }> = {
+export type LedgerBook = "ARTAO" | "UU";
+// slipBook: the transfer-slip room that feeds the book (null = transfers are typed in as + adjustments)
+// statement: the agent gets a running 对账单 (Chinese / English) for a period instead of the Thai daily closing note
+export const LEDGER_BOOKS: Record<LedgerBook, { agent: string; label: string; slipBook: "ARTAO" | null; statement?: boolean }> = {
   ARTAO: { agent: "อาเต่า", label: "บัญชีอาเต่า", slipBook: "ARTAO" },
+  UU: { agent: "uu", label: "บัญชี uu", slipBook: null, statement: true },
 };
 export const isLedgerBook = (s: unknown): s is LedgerBook => typeof s === "string" && s in LEDGER_BOOKS;
 
@@ -49,6 +52,12 @@ export const DEFAULT_PRICES: Prices = {
   d90: 1000,
   chargeD90: true,
 };
+
+// what a book charges when nothing has been saved for it yet
+const BOOK_PRICES: Partial<Record<LedgerBook, Partial<Prices>>> = {
+  UU: { extBANGKOK: 3500, extNONTHABURI: 4500, extRAYONG: 4700, vfs: 3200, vfsPattaya: 4500, chargeD90: false },
+};
+export const defaultPrices = (book: LedgerBook): Prices => ({ ...DEFAULT_PRICES, ...(BOOK_PRICES[book] ?? {}) });
 
 export const PRICE_LABELS: Record<keyof Prices, string> = {
   extBANGKOK: "ต่อ 30 วัน IT Square",
@@ -90,6 +99,8 @@ export type ChargeLine = {
   src: "ext" | "run" | "d90";
   office: string;             // OfficeId or "" for d90
   name: string;
+  cn?: string;                // Chinese name, when the card has one (statement books show it first)
+  lf?: string;                // passport name, surname first
   passport: string;
   items: { label: string; amount: number }[];
   amount: number;             // sum of items
@@ -228,3 +239,66 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
 }
 
 const OFFICE_NOTE: Record<string, string> = { BANGKOK: "IT", NONTHABURI: "นนท์", RAYONG: "ระยอง", CHIANG_SAEN: "เชียงแสน", VFS_BANGKOK: "VFS", VFS_PATTAYA: "VFS พัทยา" };
+
+// ---------- statement (对账单) for books whose agent reads Chinese / English ----------
+// One row per job, payment or adjustment over a period, with a running
+// "balance due" (what the agent owes us; negative = the agent is in credit).
+export type StatementRow = { day: string; client: string; sub: string; service: string; fee: number; received: number; due: number; kind: "charge" | "payment" | "extra" };
+export type Statement = { from: string; to: string; openingDue: number; rows: StatementRow[]; fees: number; received: number; due: number };
+
+const EXT_ZH: Record<string, string> = {
+  BANGKOK: "续签30天 Extension · IT Square", NONTHABURI: "续签30天 Extension · 暖武里 Nonthaburi", RAYONG: "续签30天 Extension · 罗勇 Rayong",
+  VFS_BANGKOK: "续签30天 Extension · VFS 曼谷 Bangkok", VFS_PATTAYA: "续签30天 Extension · VFS 芭提雅 Pattaya",
+};
+function extraZh(label: string): string {
+  if (label === "VIP") return "VIP 快速通道";
+  if (label === "overstay") return "逾期处理 Overstay";
+  const fine = /^ค่าปรับ (\d+) วัน$/.exec(label);
+  if (fine) return `逾期罚款 Fine ${fine[1]}天`;
+  if (label.startsWith("🐰")) return "+30天续签 Extension";
+  if (label.startsWith("🐻")) return "柬埔寨记录 Cambodia";
+  return label;
+}
+export function serviceZh(c: ChargeLine): string {
+  const base = c.src === "run" ? (c.items[0]?.amount && /1 คน/.test(c.items[0].label) ? "Visa Run 边境签 (1人1车)" : "Visa Run 边境签")
+    : c.src === "d90" ? "90天报到 90-day report"
+    : EXT_ZH[c.office] ?? (c.items[0]?.label || "");   // jobs from /jobs keep the type · note as typed
+  return [base, ...c.items.slice(1).map((i) => extraZh(i.label))].filter(Boolean).join(" + ");
+}
+
+export function buildStatement(days: DayLedger[], from: string, to: string): Statement {
+  const span = days.filter((d) => d.day >= from && d.day <= to);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const openingDue = span.length ? r2(-span[0].carryIn) : 0;
+  let due = openingDue, fees = 0, received = 0;
+  const rows: StatementRow[] = [];
+  const push = (day: string, client: string, sub: string, service: string, fee: number, recv: number, kind: StatementRow["kind"]) => {
+    due = r2(due + fee - recv); fees = r2(fees + fee); received = r2(received + recv);
+    rows.push({ day, client, sub, service, fee, received: recv, due, kind });
+  };
+  for (const d of span) {
+    for (const c of d.charges) push(d.day, c.cn || c.lf || c.name, c.cn ? (c.lf || c.name) : "", serviceZh(c), c.amount, c.paidDirect, "charge");
+    for (const s of d.credits.filter((x) => x.kind === "slip")) push(d.day, "转账 Transfer", s.label, "", 0, s.amount, "payment");
+    for (const a of d.adjustments) {
+      if (a.amount > 0) push(d.day, "收款 Payment", "", a.label, 0, a.amount, "payment");
+      else if (a.amount < 0) push(d.day, a.label || "其他费用 Other", "", "", -a.amount, 0, "extra");
+    }
+  }
+  return { from, to, openingDue, rows, fees, received, due };
+}
+
+/** The statement as a table (header row first) — for Excel and for copy / paste. */
+export function statementTable(agent: string, s: Statement): (string | number)[][] {
+  const out: (string | number)[][] = [
+    [`对账单 Statement · ${agent}`, `${dayTh(s.from)} – ${dayTh(s.to)}`],
+    [],
+    ["日期 Date", "客户 Client", "护照姓名 Passport name", "项目 Service", "费用 Fee", "已收 Received", "应付余额 Balance due"],
+    ["", "上期结余 Previous balance", "", "", "", "", s.openingDue],
+  ];
+  for (const r of s.rows) out.push([dayTh(r.day), r.client, r.sub, r.service, r.fee || "", r.received || "", r.due]);
+  out.push([]);
+  out.push(["", "费用合计 Total fees", "", "", s.fees, "", ""]);
+  out.push(["", "已收合计 Total received", "", "", "", s.received, ""]);
+  out.push(["", s.due < 0 ? "预存余额 Credit balance (THB)" : "应付余额 Balance due (THB)", "", "", "", "", Math.abs(s.due)]);
+  return out;
+}

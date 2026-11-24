@@ -19,12 +19,12 @@ import { bkkTime, counted } from "@/lib/slips/types";
 import { overstayInfo } from "@/lib/today/types";
 import { carKey } from "@/lib/visarun/cars";
 import {
-  addDays, bkkToday, DEFAULT_PRICES, LEDGER_BOOKS, type Adjustment, type ChargeLine, type CreditLine, type DayComputed, type DayEdits,
+  addDays, bkkToday, defaultPrices, LEDGER_BOOKS, type Adjustment, type ChargeLine, type CreditLine, type DayComputed, type DayEdits,
   type DayLedger, type LedgerBook, type LedgerConfig, type Prices,
 } from "./types";
 
 // Where each book starts when nothing has been saved yet (the last hand-written closing)
-const OPENING: Partial<Record<LedgerBook, { day: string; amount: number }>> = { ARTAO: { day: "2026-11-15", amount: 162607.8 } };
+const OPENING: Partial<Record<LedgerBook, { day: string; amount: number }>> = { ARTAO: { day: "2026-11-15", amount: 162607.8 }, UU: { day: "2026-11-25", amount: 0 } };
 const root = (book: LedgerBook) => `ledger/${book}/`;
 const cfgPath = (book: LedgerBook) => `${root(book)}config.json`;
 const dayPath = (book: LedgerBook, day: string) => `${root(book)}days/${day}.json`;
@@ -37,7 +37,7 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "");
 
 export async function loadLedgerConfig(book: LedgerBook): Promise<LedgerConfig> {
   const c = await blobGetJson<LedgerConfig>(cfgPath(book));
-  const prices: Prices = { ...DEFAULT_PRICES, ...(c?.prices ?? {}) };
+  const prices: Prices = { ...defaultPrices(book), ...(c?.prices ?? {}) };
   return { prices, opening: c?.opening ?? OPENING[book] ?? { day: bkkToday(), amount: 0 }, lineGroupId: c?.lineGroupId, updatedAt: c?.updatedAt };
 }
 export async function saveLedgerConfig(book: LedgerBook, c: LedgerConfig): Promise<void> {
@@ -76,6 +76,7 @@ function paidDirect(f: Record<string, unknown>): number {
   return num(f.paidAmount) || num(f.amount);
 }
 
+const nameLF = (f: Record<string, unknown>) => [str(f.lastName), str(f.firstName)].filter(Boolean).join(" ").trim();
 function personName(f: Record<string, unknown>): string {
   const en = [str(f.firstName), str(f.lastName)].filter(Boolean).join(" ").trim();
   return en || str(f.chineseName) || str(f.passportNo);
@@ -106,7 +107,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       if (f.vip && prices.chargeVip) items.push({ label: "VIP", amount: prices.vip });
       items.push(...overstayItems(f, day, prices, true));
       const flags = [f.vip ? "👑" : "", f.overstay ? "🐢" : ""].filter(Boolean).join("");
-      charges.push({ id: p.id, src: "ext", office, name: personName(f), passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
+      charges.push({ id: p.id, src: "ext", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
     }
   }));
 
@@ -126,7 +127,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       if (f.cambodia) items.push({ label: "🐻 กัมพูชา", amount: prices.cambodia });
       items.push(...overstayItems(f, day, prices, false));
       const flags = [f.run === "RUN30" ? "🐰" : "", f.cambodia ? "🐻" : "", f.overstay ? "🐢" : "", f.vip ? "👑" : ""].filter(Boolean).join("");
-      charges.push({ id: p.id, src: "run", office, name: personName(f), passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
+      charges.push({ id: p.id, src: "run", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
     }
   }));
 
@@ -149,7 +150,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
   } catch { /* no jobs file yet */ }
 
   // transfers in (slip room, that round)
-  const slips = (await listSlips(slipBook, day)).filter(counted).sort((a, b) => a.ts - b.ts);
+  const slips = slipBook ? (await listSlips(slipBook, day)).filter(counted).sort((a, b) => a.ts - b.ts) : [];
   for (const s of slips) credits.push({ id: s.id, kind: "slip", label: [s.sender, s.ref].filter(Boolean).join(" · ") || "สลิปโอน", amount: s.amount, time: bkkTime(s.ts) });
   for (const c of charges) if (c.paidDirect) credits.push({ id: `direct-${c.id}`, kind: "direct", label: `${c.name} จ่ายหน้างาน`, amount: c.paidDirect });
 

@@ -37,9 +37,9 @@ export type Pricing = {
 export const DEFAULT_PRICING: Pricing = {
   sale: {
     ext: {
-      BANGKOK: { default: 4000, byAgent: { "อาเต่า": 3700, "พี่ปิ๊ก": 3800 } },
+      BANGKOK: { default: 4000, byAgent: { "อาเต่า": 3700, "พี่ปิ๊ก": 3800, "uu": 3500 } },
       NONTHABURI: { default: 4500, byAgent: { "อาเต่า": 4700 } },
-      RAYONG: { default: 5000, byAgent: { "อาเต่า": 4700 } },
+      RAYONG: { default: 5000, byAgent: { "อาเต่า": 4700, "uu": 4700 } },
       VFS_BANGKOK: { default: 3200, byAgent: {} },
       VFS_PATTAYA: { default: 4500, byAgent: {} },
       CHIANG_SAEN: { default: 4500, byAgent: {} },
