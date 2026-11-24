@@ -281,7 +281,12 @@ export function buildStatement(days: DayLedger[], from: string, to: string): Sta
     for (const s of d.credits.filter((x) => x.kind === "slip")) push(d.day, "转账 Transfer", s.label, "", 0, s.amount, "payment");
     for (const a of d.adjustments) {
       if (a.amount > 0) push(d.day, "收款 Payment", "", a.label, 0, a.amount, "payment");
-      else if (a.amount < 0) push(d.day, a.label || "其他费用 Other", "", "", -a.amount, 0, "extra");
+      else if (a.amount < 0) {
+        // a job typed in by hand: "陈盛辉 CHEN SHENGHUI | 续签30天 …" → client (Chinese name first, passport name under it) | service
+        const [who, ...rest] = (a.label || "其他费用 Other").split("|").map((x) => x.trim());
+        const m = /^([\u3400-\u9fff·]+)\s+(.+)$/.exec(who);
+        push(d.day, m ? m[1] : who, m ? m[2] : "", rest.join(" | "), -a.amount, 0, "extra");
+      }
     }
   }
   return { from, to, openingDue, rows, fees, received, due };
