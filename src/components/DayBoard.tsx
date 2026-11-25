@@ -24,6 +24,7 @@ import {
 } from "@/lib/today/types";
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
+import { Crown } from "@/lib/summary/crown";
 import { CARS, RUN_SLOTS, carById, carKey, tripTh } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
 import CollectCard from "@/components/CollectCard";
@@ -2151,7 +2152,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
       {/* people */}
       <div style={{ background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, boxShadow: "0 2px 10px rgba(0,0,0,.06)", position: "relative" }}>
         {shown.length === 0 && <div style={{ textAlign: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "16px 10px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "22px 10px" }}>
           {shown.map((p, i) => {
             const ghost = !!(p.cancelled || p.movedTo);
             const f = p.fields;
@@ -2172,6 +2173,8 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
               <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1, minWidth: 0 }}>
                 <div style={{ position: "relative", display: "inline-block", filter: ghost ? "grayscale(1)" : undefined }}>
                   <SummaryPhoto person={p} />
+                  {/* VIP: a big crown worn on the head — centred over the top edge of the photo, under the corner badges */}
+                  {f.vip && <span style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", lineHeight: 0, filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}><Crown w={64} /></span>}
                   {p.cancelled && (
                     <span style={{ position: "absolute", inset: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                       <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -2185,7 +2188,6 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
                   <span style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: "50%", background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{i + 1}</span>
                   {ov && ov.days > 0 && <span style={{ position: "absolute", bottom: -6, right: -6, background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</span>}
                   {isRun && carById(f.car) && <span style={{ position: "absolute", top: -6, right: -6, background: carById(f.car)!.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>🚗{f.car}{f.carTrip === "2" ? "·2" : ""}</span>}
-                  {f.vip && <span style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, fontSize: 26, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.45))" }}>👑</span>}
                   {isRun && f.cambodia && <span style={{ position: "absolute", top: 18, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐻</span>}
                   {isRun && f.overstay && <span style={{ position: "absolute", top: 44, right: -8, fontSize: 22, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }}>🐢</span>}
                   {isRun && f.run === "RUN30" && <span style={{ position: "absolute", bottom: -6, left: -6, background: "#ea580c", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>+30</span>}
@@ -2299,7 +2301,7 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
               <div style={{ width: 44, height: 44, flex: "none", borderRadius: "50%", background: o.summaryAccent, color: "#fff", fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{no}</div>
               <div style={{ flex: "none", position: "relative" }}>
                 <SummaryPhoto person={p} w={66} h={88} />
-                {f.vip && <span style={{ position: "absolute", top: -10, right: -10, fontSize: 22, lineHeight: 1 }}>👑</span>}
+                {f.vip && <span style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", lineHeight: 0, filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}><Crown w={46} /></span>}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, overflowWrap: "anywhere" }}>{[f.lastName, f.firstName].filter(Boolean).join(" ") || f.passportNo || "—"}</div>

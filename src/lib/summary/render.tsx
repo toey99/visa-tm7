@@ -9,6 +9,7 @@
 // Thai + Latin (public/fonts, with a bolder cut fetched from Google Fonts),
 // Chinese names come from a Noto Sans SC subset fetched for exactly the
 // characters on the sheet, emoji are drawn as Twemoji by next/og.
+import { Crown } from "@/lib/summary/crown";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { CSSProperties } from "react";
@@ -167,7 +168,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
 
   // the sheet grows with its rows; satori needs a fixed height, so estimate it
   const rows = Math.max(1, Math.ceil(shown.length / cols));
-  const height = 22 + 70 + 12 + 32 + rows * 212 + 14 + 12 + 70 + 22;
+  const height = 22 + 70 + 12 + 32 + rows * 218 + 14 + 12 + 70 + 22;   // 218 = card 196 + row gap 22
 
   const element = (
     <div style={{ display: "flex", flexDirection: "column", width: sheetW, height, padding: 22, backgroundColor: firstColor(o.summaryBg), backgroundImage: plain ? undefined : tidyGradient(o.summaryBg), fontFamily: font, position: "relative" }}>
@@ -192,7 +193,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
         </div>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", rowGap: 16, columnGap: 10, background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, flexGrow: 1 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", rowGap: 22, columnGap: 10, background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, flexGrow: 1 }}>
         {cards.length === 0 && <div style={{ display: "flex", width: "100%", justifyContent: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
         {cards.map(({ p, f, i, ghost, tag, ov, car, img, cancelled, moved, arrived }) => (
           <div key={p.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW, opacity: ghost ? 0.75 : 1 }}>
@@ -201,12 +202,12 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={img} alt="" width={90} height={120} style={{ width: 90, height: 120, objectFit: "cover", borderRadius: 4, filter: ghost ? "grayscale(1)" : undefined }} />
                 : <div style={{ display: "flex", width: 90, height: 120, background: "#eee", borderRadius: 4 }} />}
+              {!!f.vip && <div style={{ position: "absolute", top: -22, left: 13, display: "flex" }}><Crown w={64} /></div>}
               {cancelled && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626", fontSize: 64, fontWeight: 700 }}>✕</div>}
               {!!moved && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 56, fontWeight: 700 }}>➡</div>}
               <div style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: 11, background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</div>
               {!!ov && ov.days > 0 && <div style={{ position: "absolute", bottom: -6, right: -6, display: "flex", background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</div>}
               {!!car && <div style={{ position: "absolute", top: -6, right: -6, display: "flex", background: car.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>🚗{car.id}{f.carTrip === "2" ? "·2" : ""}</div>}
-              {!!f.vip && <div style={{ position: "absolute", top: isRun ? 70 : -10, right: -10, display: "flex", fontSize: 26, lineHeight: 1 }}>👑</div>}
               {isRun && !!f.cambodia && <div style={{ position: "absolute", top: 18, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐻</div>}
               {isRun && !!f.overstay && <div style={{ position: "absolute", top: 44, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐢</div>}
               {isRun && f.run === "RUN30" && <div style={{ position: "absolute", bottom: -6, left: -6, display: "flex", background: "#ea580c", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>+30</div>}
