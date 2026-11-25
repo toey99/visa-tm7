@@ -151,7 +151,7 @@ export const statusLine = (p: PersonRec, all: PersonRec[]): string => {
     f.pay === "collect" ? `💰 เก็บ ${money(f.amount)}${f.paidHow === "cash" ? ` · 💵 รับสดแล้ว ${money(f.paidAmount || f.amount)}` : f.paidHow === "transfer" ? ` · 🏦 โอนแล้ว ${money(f.paidAmount || f.amount)}` : f.paidHow === "waiting" ? " · 🕓 รอโอน" : f.paidHow === "agent" ? " · เก็บที่เอเย่นต์" : " · ยังไม่จ่าย"}` : "";
   return [
     `${p.cancelled ? "🚫 ยกเลิก" : p.arrived ? "✅ มาแล้ว" : "⏳ ยังไม่มา"} · ${nameOf(p)}${f.chineseName && f.chineseName !== nameOf(p) ? ` ${f.chineseName}` : ""}${pos ? ` · คิว ${pos}/${live.length}` : ""}`,
-    [f.passportNo, f.agent && `🏢 ${f.agent}`, f.vip && "👑 VIP", f.run === "RUN30" && "🐰 +30", f.cambodia && "🐻", f.overstay && "🐢"].filter(Boolean).join(" · "),
+    [f.passportNo, f.agent && `🏢 ${f.agent}`, f.vip && "👑 VIP", f.run === "RUN30" && "🐰 +30", f.cambodia && "🐻", f.overstay && "🐢", f.dtv && "DTV", f.wetPassport && "💧 เล่มเปียกน้ำ", f.runVip && "⏰ VIP นอกเวลา"].filter(Boolean).join(" · "),
     pay,
   ].filter(Boolean).join("\n");
 };

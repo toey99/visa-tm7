@@ -17,6 +17,7 @@ export type RunCostRow = {
   name: string; cn: string; carId: string; carSize: number;
   trip?: string;           // "2" = the car's second round (carSize counts that round only)
   run30: boolean; cambodia: boolean; indian: boolean; overstayDays: number;
+  wet?: boolean;           // water-damaged passport: the checkpoint charges extra
   cash: number;            // cash the driver collected from this customer
 };
 
@@ -34,7 +35,8 @@ export function costOfRow(r: RunCostRow, p: Pricing) {
   const kh = r.cambodia ? p.cost.cambodia : 0;
   const lao = r.indian ? p.cost.runIndian : 0;
   const fine = r.overstayDays > 0 ? p.cost.overstayPerDay * r.overstayDays : 0;
-  return { base, ext, kh, lao, fine, total: base + ext + kh + lao + fine };
+  const wet = r.wet ? p.cost.runWet : 0;
+  return { base, ext, kh, lao, fine, wet, total: base + ext + kh + lao + fine + wet };
 }
 
 const RunCostSheet = forwardRef<HTMLDivElement, { rows: RunCostRow[]; date: string; pricing: Pricing }>(function RunCostSheet({ rows, date, pricing }, ref) {
@@ -43,8 +45,8 @@ const RunCostSheet = forwardRef<HTMLDivElement, { rows: RunCostRow[]; date: stri
   const total = priced.reduce((s, x) => s + x.c.total, 0);
   const cash = rows.reduce((s, r) => s + r.cash, 0);
   const carsUsed = CARS.filter((c) => rows.some((r) => r.carId === c.id));
-  const anyExt = rows.some((r) => r.run30), anyKh = rows.some((r) => r.cambodia), anyLao = rows.some((r) => r.indian), anyFine = rows.some((r) => r.overstayDays > 0);
-  const cols = ["40px", "1fr", "150px", "60px", "110px", anyExt ? "100px" : "", anyKh ? "100px" : "", anyLao ? "110px" : "", anyFine ? "110px" : "", "120px"].filter(Boolean).join(" ");
+  const anyExt = rows.some((r) => r.run30), anyKh = rows.some((r) => r.cambodia), anyLao = rows.some((r) => r.indian), anyFine = rows.some((r) => r.overstayDays > 0), anyWet = rows.some((r) => r.wet);
+  const cols = ["40px", "1fr", "150px", "60px", "110px", anyExt ? "100px" : "", anyKh ? "100px" : "", anyLao ? "110px" : "", anyFine ? "110px" : "", anyWet ? "110px" : "", "120px"].filter(Boolean).join(" ");
   const th: React.CSSProperties = { fontSize: 13, fontWeight: 800, color: "#1e293b", padding: "8px", textAlign: "right", borderBottom: "2px solid #7c2d12" };
   const td: React.CSSProperties = { fontSize: 15, color: "#0f172a", padding: "7px 8px", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
   const rate = pricing.cost.runPerHead;
@@ -70,7 +72,7 @@ const RunCostSheet = forwardRef<HTMLDivElement, { rows: RunCostRow[]; date: stri
       <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 12px rgba(124,45,18,.12)" }}>
         <div style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", background: "#fff1e6" }}>
           <div style={{ ...th, textAlign: "center" }}>ที่</div><div style={{ ...th, textAlign: "left" }}>ชื่อลูกค้า</div><div style={{ ...th, textAlign: "left" }}>รถ</div><div style={{ ...th, textAlign: "center" }}>คน/คัน</div><div style={th}>ค่าเหมา</div>
-          {anyExt && <div style={th}>ต่อ 30 วัน</div>}{anyKh && <div style={th}>🐻 กัมพูชา</div>}{anyLao && <div style={th}>🇮🇳 วีซ่าลาว</div>}{anyFine && <div style={th}>🐢 ค่าปรับ</div>}
+          {anyExt && <div style={th}>ต่อ 30 วัน</div>}{anyKh && <div style={th}>🐻 กัมพูชา</div>}{anyLao && <div style={th}>🇮🇳 วีซ่าลาว</div>}{anyFine && <div style={th}>🐢 ค่าปรับ</div>}{anyWet && <div style={th}>💧 เล่มเปียกน้ำ</div>}
           <div style={th}>รวม</div>
         </div>
         {groups.map((g) => {
@@ -91,13 +93,14 @@ const RunCostSheet = forwardRef<HTMLDivElement, { rows: RunCostRow[]; date: stri
                     {anyKh && <div style={{ ...td, color: "#92400e" }}>{n(c.kh)}</div>}
                     {anyLao && <div style={{ ...td, color: "#1d4ed8" }}>{n(c.lao)}</div>}
                     {anyFine && <div style={{ ...td, color: "#15803d" }}>{c.fine ? `${n(c.fine)} (${r.overstayDays} วัน)` : ""}</div>}
+                    {anyWet && <div style={{ ...td, color: "#0369a1" }}>{n(c.wet)}</div>}
                     <div style={{ ...td, fontWeight: 800 }}>{n(c.total)}</div>
                   </div>
                 );
               })}
               <div style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", background: "#fafafa", borderLeft: `6px solid ${t?.edge ?? "#cbd5e1"}`, borderBottom: "2px solid #e7d5c6", color: "#7c2d12", fontWeight: 800 }}>
                 <div></div><div style={{ ...td, textAlign: "left", fontSize: 13 }}>รวม {g.car.id ? `${g.car.name} ${g.car.plate}` : "ไม่ระบุรถ"} · {g.items.length} คน</div>
-                <div></div><div></div><div></div>{anyExt && <div></div>}{anyKh && <div></div>}{anyLao && <div></div>}{anyFine && <div></div>}
+                <div></div><div></div><div></div>{anyExt && <div></div>}{anyKh && <div></div>}{anyLao && <div></div>}{anyFine && <div></div>}{anyWet && <div></div>}
                 <div style={{ ...td, fontSize: 16 }}>{n(sub)}</div>
               </div>
             </div>

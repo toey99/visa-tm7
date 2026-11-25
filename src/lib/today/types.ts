@@ -56,6 +56,10 @@ export type PersonFields = {
   run: "RUN" | "RUN30";         // ordinary run, or run + 30-day extension (needs the TM.7 packet)
   car: string;                  // car id from CARS ("" = not assigned yet)
   carTrip?: string;             // "2" = that car's second round of the day (else first round)
+  // visa-run toppings (priced in the dashboard ⚙️ / ledger ⚙️)
+  dtv?: boolean;                // DTV holder: + on the sale, checkpoint cost unchanged
+  wetPassport?: boolean;        // water-damaged passport: + on the sale and the same + on the checkpoint cost
+  runVip?: boolean;             // outside the normal hours (out before 09:30 / back before 19:00): + on the sale, only when alone in the car
   flight: string;               // per-person flight when it differs from the day's (else "")
   landTime: string;             // HH:MM landing time when it differs from the day's
   returnBy: string;             // HH:MM "back at the airport before" when it differs from the day's

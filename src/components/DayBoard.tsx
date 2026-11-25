@@ -901,7 +901,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, holidays, false);
         const osDays = Number(f.overstayDays) || (ov?.days ?? 0);
         const indian = /india/i.test(f.nationality || "");
-        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", f.overstay ? `🐢 อยู่เกิน${osDays ? ` ${osDays} วัน` : ""}` : "", indian ? "🇮🇳 อินเดีย · วีซ่าลาว +2,000" : ""].filter(Boolean).join(" + ");
+        const detail = [f.run === "RUN30" ? "ต่ออายุ 30 วัน" : "", f.overstay ? `🐢 อยู่เกิน${osDays ? ` ${osDays} วัน` : ""}` : "", indian ? "🇮🇳 อินเดีย · วีซ่าลาว +2,000" : "", f.dtv ? "DTV" : "", f.wetPassport ? "💧 พาสปอร์ตเปียกน้ำ" : "", f.runVip ? "⏰ VIP นอกช่วงเวลา" : ""].filter(Boolean).join(" + ");
         const e = expiryOf(p);
         const cashAtDriver = f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0;
         return {
@@ -942,7 +942,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         return {
           name: [f.lastName, f.firstName].filter(Boolean).join(" "), cn: f.chineseName || "",
           carId: f.car || "", trip: f.carTrip === "2" ? "2" : "", carSize: perCar.get(carKey(f)) ?? 0,
-          run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(f.nationality || ""), overstayDays: osDays,
+          run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(f.nationality || ""), overstayDays: osDays, wet: !!f.wetPassport,
           cash: f.pay === "collect" && f.paidHow !== "transfer" && f.paidHow !== "agent" ? Number(f.amount) || 0 : 0,
         };
       });
@@ -1773,6 +1773,9 @@ function PersonCard({
               {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">🐰 +30 วัน</span>}
               {isRun && f.cambodia && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">🐻 กัมพูชา</span>}
               {isRun && f.overstay && <span className="ml-2 rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-900">🐢 overstay{f.overstayDays ? ` ${f.overstayDays} วัน` : ""}</span>}
+              {isRun && f.dtv && <span className="ml-2 rounded bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">DTV +1,000</span>}
+              {isRun && f.wetPassport && <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">💧 เล่มเปียกน้ำ +3,000</span>}
+              {isRun && f.runVip && <span className="ml-2 rounded bg-pink-100 px-2 py-0.5 text-xs font-semibold text-pink-800">⏰ VIP นอกเวลา +2,000</span>}
               {p.cancelled && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">❌ ไม่มา / ยกเลิก</span>}
               {p.movedTo && <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">➡️ เลื่อนไป {p.movedTo}</span>}
             </div>
@@ -1843,6 +1846,12 @@ function PersonCard({
           )}
           <button type="button" onClick={() => set("cambodia", !f.cambodia)} title="พาสปอร์ตมีประวัติเข้าออกกัมพูชา → ติด 🐻 ที่รูปในการ์ดคนขับ"
             className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.cambodia ? "bg-amber-700 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🐻 {f.cambodia ? "มีประวัติกัมพูชา" : "กัมพูชา?"}</button>
+          <button type="button" onClick={() => set("dtv", !f.dtv)} title="ลูกค้าถือ DTV → บวกราคาขาย 1,000 ต้นทุนด่านเท่าเดิม"
+            className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.dtv ? "bg-violet-500 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>DTV{f.dtv ? " +1,000" : "?"}</button>
+          <button type="button" onClick={() => set("wetPassport", !f.wetPassport)} title="พาสปอร์ตเปียกน้ำ → บวกราคาขาย 3,000 และต้นทุนด่าน +3,000"
+            className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.wetPassport ? "bg-sky-500 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>💧 {f.wetPassport ? "เล่มเปียกน้ำ +3,000" : "เล่มเปียกน้ำ?"}</button>
+          <button type="button" onClick={() => set("runVip", !f.runVip)} title="นอกช่วงเวลาปกติ (ขาไปก่อน 09:30 / ขากลับก่อน 19:00) → VIP +2,000 คิดเฉพาะเมื่อไปคนเดียวในรถ ต้นทุนด่านเท่าเดิม"
+            className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.runVip ? "bg-pink-500 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>⏰ {f.runVip ? "VIP นอกเวลา +2,000" : "VIP นอกเวลา?"}</button>
           <button type="button" onClick={() => set("overstay", !f.overstay)} title="เล่มนี้มีประวัติ overstay → ติด 🐢 ที่รูปในการ์ดคนขับ (ค่าปรับ 2,000 + วันละ 500)"
             className={`ml-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold ${f.overstay ? "bg-green-700 text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"}`}>🐢 {f.overstay ? "overstay" : "overstay?"}</button>
           {f.overstay && (

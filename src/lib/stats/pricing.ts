@@ -15,6 +15,9 @@ export type Pricing = {
     runIndianByAgent: Record<string, number>;  // per-head run price for an INDIAN passport, by agent (Chinese riders: the normal price)
     runIndian: number;                     // per-head run price for an Indian passport, other agents (0 = normal price)
     run30: number;                         // 🐰 +30 per head (on top of the run)
+    runDtv: number;                        // topping: DTV holder, per head (no extra cost)
+    runWet: number;                        // topping: water-damaged passport, per head (cost.runWet goes up too)
+    runVipSolo: number;                    // topping: outside normal hours, only when alone in the car (no extra cost)
     cambodia: number;                      // 🐻 per head
     overstayBase: number;                  // overstay handling per head
     overstayPerDay: number;                // fine per day (passed on)
@@ -26,6 +29,7 @@ export type Pricing = {
     runPerHead: Record<1 | 2 | 3 | 4, number>;  // all-in per head by how many ride in the car
     runIndian: number;                     // extra cost per head for an Indian passport
     run30: number;                         // our cost of the +30 at Chiang Saen
+    runWet: number;                        // extra the checkpoint charges for a water-damaged passport
     cambodia: number;
     overstayPerDay: number;                // the fine we pay at the counter
     vip: number;
@@ -49,6 +53,9 @@ export const DEFAULT_PRICING: Pricing = {
     runIndianByAgent: {},
     runIndian: 13000,
     run30: 4500,
+    runDtv: 1000,
+    runWet: 3000,
+    runVipSolo: 2000,
     cambodia: 7500,
     overstayBase: 2000,
     overstayPerDay: 500,
@@ -60,6 +67,7 @@ export const DEFAULT_PRICING: Pricing = {
     runPerHead: { 1: 9800, 2: 9000, 3: 8350, 4: 8150 },
     runIndian: 2000,
     run30: 4000,          // assumed = Chiang Saen extension cost; confirm
+    runWet: 3000,
     cambodia: 7500,
     overstayPerDay: 500,  // the fine itself; the 2,000 handling is margin
     vip: 500,

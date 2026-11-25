@@ -24,6 +24,9 @@ export type StatRow = {
   run30: boolean;
   cambodia: boolean;
   indian: boolean;          // Indian passport (visa run costs more)
+  dtv?: boolean;            // run toppings — see PersonFields
+  wet?: boolean;
+  runVip?: boolean;
   vip: boolean;
   overstayDays: number;
   carSize: number;          // run only: how many rode in that car (0 = no car set)
@@ -64,6 +67,7 @@ async function boardRows(ns: "days" | "run", day: string, office: OfficeId): Pro
       ns, office,
       agent: str(f.agent).trim(), sub: str(f.subAgent).trim(),
       run30: f.run === "RUN30", cambodia: !!f.cambodia, indian: /india/i.test(str(f.nationality)), vip: !!f.vip, overstayDays,
+      dtv: ns === "run" && !!f.dtv, wet: ns === "run" && !!f.wetPassport, runVip: ns === "run" && !!f.runVip,
       carSize: ns === "run" ? (perCar.get(carKey(f)) ?? 0) : 0,
       arrived: !!p.arrived, cancelled: !!p.cancelled, moved: !!p.movedTo,
       pay: str(f.pay), paidHow: str(f.paidHow), amount: num(f.amount), paidAmount: num(f.paidAmount),
@@ -126,6 +130,9 @@ export function priceRow(r: StatRow, p: Pricing = DEFAULT_PRICING): Priced {
     if (r.indian) cost += p.cost.runIndian;
     if (r.run30) { sale += p.sale.run30; cost += p.cost.run30; }
     if (r.cambodia) { sale += p.sale.cambodia; cost += p.cost.cambodia; }
+    if (r.dtv) sale += p.sale.runDtv;
+    if (r.wet) { sale += p.sale.runWet; cost += p.cost.runWet; }
+    if (r.runVip && solo) sale += p.sale.runVipSolo;   // off-hours VIP: only a car with one rider
   }
   if (r.vip) { sale += p.sale.vip; cost += p.cost.vip; }
   if (r.overstayDays > 0) { sale += p.sale.overstayBase + p.sale.overstayPerDay * r.overstayDays; cost += p.cost.overstayPerDay * r.overstayDays; }

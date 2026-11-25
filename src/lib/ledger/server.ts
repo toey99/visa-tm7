@@ -125,6 +125,9 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       const items = [{ label: solo ? "วีซ่ารัน (รถ 1 คน)" : "วีซ่ารัน", amount: solo ? prices.runSolo : prices.runShared }];
       if (f.run === "RUN30") items.push({ label: "🐰 +30 วัน", amount: prices.run30 });
       if (f.cambodia) items.push({ label: "🐻 กัมพูชา", amount: prices.cambodia });
+      if (f.dtv && prices.runDtv) items.push({ label: "DTV", amount: prices.runDtv });
+      if (f.wetPassport && prices.runWet) items.push({ label: "💧 พาสปอร์ตเปียกน้ำ", amount: prices.runWet });
+      if (f.runVip && solo && prices.runVip) items.push({ label: "⏰ VIP นอกช่วงเวลา", amount: prices.runVip });   // off-hours: only a car with one passenger
       items.push(...overstayItems(f, day, prices, false));
       const flags = [f.run === "RUN30" ? "🐰" : "", f.cambodia ? "🐻" : "", f.overstay ? "🐢" : "", f.vip ? "👑" : ""].filter(Boolean).join("");
       charges.push({ id: p.id, src: "run", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });

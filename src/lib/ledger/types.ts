@@ -29,6 +29,9 @@ export type Prices = {
   runShared: number;         // visa run, per person when the car has 2+ passengers
   run30: number;             // 🐰 + 30-day extension after the border, per person
   cambodia: number;          // 🐻 Cambodia history, per person
+  runDtv: number;            // visa-run topping: DTV holder, per person
+  runWet: number;            // visa-run topping: water-damaged passport, per person
+  runVip: number;            // visa-run topping: outside normal hours, only a car with one passenger
   overstayBase: number;      // overstay handling, per person
   overstayPerDay: number;    // fine per day actually overstayed
   d90: number;               // 90-day report, per slip
@@ -47,6 +50,9 @@ export const DEFAULT_PRICES: Prices = {
   runShared: 9500,
   run30: 4500,
   cambodia: 7500,
+  runDtv: 1000,
+  runWet: 3000,
+  runVip: 2000,
   overstayBase: 2000,
   overstayPerDay: 500,
   d90: 1000,
@@ -71,6 +77,9 @@ export const PRICE_LABELS: Record<keyof Prices, string> = {
   runShared: "Visa Run — ต่อคน เมื่อ 2 คนขึ้นไป",
   run30: "🐰 +30 วัน (ต่อคน)",
   cambodia: "🐻 ประวัติกัมพูชา (ต่อคน)",
+  runDtv: "Visa Run — DTV (+ ต่อคน)",
+  runWet: "Visa Run — 💧 พาสปอร์ตเปียกน้ำ (+ ต่อคน)",
+  runVip: "Visa Run — ⏰ VIP นอกช่วงเวลา (+ เฉพาะรถ 1 คน)",
   overstayBase: "Overstay — ค่าดำเนินการ (ต่อคน)",
   overstayPerDay: "Overstay — ค่าปรับต่อวัน",
   d90: "รายงานตัว 90 วัน (ต่อใบที่สำเร็จ — นับวันที่ใบใหม่กลับมาจับคู่)",
@@ -194,6 +203,8 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
     for (const c of run) {
       const over = c.items.filter((i) => i.label.startsWith("overstay") || i.label.startsWith("ค่าปรับ")).reduce((s, i) => s + i.amount, 0);
       if (over) { L.push(`${c.name} ค่าover ${f(over)}`); parts.push(f(over)); }
+      // toppings (DTV, 💧 wet passport, ⏰ off-hours VIP): one line per person
+      for (const it of c.items.slice(1).filter((i) => i.label.startsWith("DTV") || i.label.startsWith("💧") || i.label.startsWith("⏰"))) { L.push(`${c.name} ${it.label} ${f(it.amount)}`); parts.push(f(it.amount)); }
     }
     const sum = run.reduce((s, c) => s + c.amount, 0);
     L.push(parts.length > 1 ? `รวม ${parts.join("+")} = ${f(sum)}` : `รวม ${f(sum)}`); payParts.push(f(sum));
@@ -257,6 +268,9 @@ function extraZh(label: string): string {
   if (fine) return `逾期罚款 Fine ${fine[1]}天`;
   if (label.startsWith("🐰")) return "+30天续签 Extension";
   if (label.startsWith("🐻")) return "柬埔寨记录 Cambodia";
+  if (label.startsWith("DTV")) return "DTV 加收 surcharge";
+  if (label.startsWith("💧")) return "护照水损 Water-damaged passport";
+  if (label.startsWith("⏰")) return "VIP 非常规时段 Off-hours";
   return label;
 }
 export function serviceZh(c: ChargeLine): string {
