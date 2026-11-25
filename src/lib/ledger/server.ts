@@ -24,7 +24,7 @@ import {
 } from "./types";
 
 // Where each book starts when nothing has been saved yet (the last hand-written closing)
-const OPENING: Partial<Record<LedgerBook, { day: string; amount: number }>> = { ARTAO: { day: "2026-11-15", amount: 162607.8 }, UU: { day: "2026-11-25", amount: 0 } };
+const OPENING: Partial<Record<LedgerBook, { day: string; amount: number }>> = { ARTAO: { day: "2026-11-15", amount: 162607.8 }, UU: { day: "2026-11-25", amount: 0 }, NUNA: { day: "2026-11-25", amount: 0 } };
 const root = (book: LedgerBook) => `ledger/${book}/`;
 const cfgPath = (book: LedgerBook) => `${root(book)}config.json`;
 const dayPath = (book: LedgerBook, day: string) => `${root(book)}days/${day}.json`;
@@ -122,13 +122,15 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       if (!isAgent(f, agent)) continue;
       const car = carKey(f);
       const solo = !!car && perCar.get(car) === 1;
-      const items = [{ label: solo ? "วีซ่ารัน (รถ 1 คน)" : "วีซ่ารัน", amount: solo ? prices.runSolo : prices.runShared }];
+      const indian = /india/i.test(str(f.nationality)) && prices.runIndian > 0;   // Indian passport: its own per-head price where the book sets one
+      const items = [indian ? { label: "วีซ่ารัน (🇮🇳 อินเดีย)", amount: prices.runIndian } : { label: solo ? "วีซ่ารัน (รถ 1 คน)" : "วีซ่ารัน", amount: solo ? prices.runSolo : prices.runShared }];
       if (f.run === "RUN30") items.push({ label: "🐰 +30 วัน", amount: prices.run30 });
       if (f.cambodia) items.push({ label: "🐻 กัมพูชา", amount: prices.cambodia });
       if (f.dtv && prices.runDtv) items.push({ label: "DTV", amount: prices.runDtv });
       if (f.wetPassport && prices.runWet) items.push({ label: "💧 พาสปอร์ตเปียกน้ำ", amount: prices.runWet });
       if (f.runVip && solo && prices.runVip) items.push({ label: "⏰ VIP นอกช่วงเวลา", amount: prices.runVip });   // off-hours: only a car with one passenger
       items.push(...overstayItems(f, day, prices, false));
+      if (num(f.ticket) > 0) items.push({ label: "✈ ค่าตั๋ว (สำรองจ่าย)", amount: num(f.ticket) });   // flight ticket we paid up front — passed on at cost
       const flags = [f.run === "RUN30" ? "🐰" : "", f.cambodia ? "🐻" : "", f.overstay ? "🐢" : "", f.vip ? "👑" : ""].filter(Boolean).join("");
       charges.push({ id: p.id, src: "run", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
     }

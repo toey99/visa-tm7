@@ -13,7 +13,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import ClosingNote from "@/components/ClosingNote";
 import { buildSimpleXlsx, captureNode, downloadBlob, jpegPreview } from "@/lib/today/clientTools";
 import {
-  addDays, bkkToday, buildStatement, closingText, dayShort, dayTh, isLedgerBook, LEDGER_BOOKS, money, PRICE_LABELS, signed, statementTable,
+  addDays, bkkToday, buildStatement, closingText, dayShort, dayTh, isLedgerBook, LEDGER_BOOKS, money, PRICE_LABELS, signed, STATEMENT_TEXT, statementTable,
   type Adjustment, type DayLedger, type LedgerBook, type LedgerConfig, type Prices, type Statement,
 } from "@/lib/ledger/types";
 
@@ -115,10 +115,10 @@ export default function LedgerPage() {
   const [stFrom, setStFrom] = useState("");
   const openDay = data?.config.opening.day ?? "";
   const from = stFrom && stFrom >= openDay ? stFrom : openDay;
-  const statement = useMemo(() => (isStatement && data && from && day >= from ? buildStatement(data.days, from, day) : null), [isStatement, data, from, day]);
+  const statement = useMemo(() => (isStatement && data && from && day >= from ? buildStatement(data.days, from, day, LEDGER_BOOKS[BOOK].lang ?? "zh") : null), [isStatement, data, from, day, BOOK]);
   async function statementPng() {
     if (!statement || !stRef.current) return;
-    setBusy("กำลังทำรูป 对账单…"); setError("");
+    setBusy("กำลังทำรูปใบแจ้งยอด…"); setError("");
     try { const b = await captureNode(stRef.current); if (!b) throw new Error("ทำรูปไม่สำเร็จ"); downloadBlob(b, `statement_${who}_${statement.from}_${statement.to}.png`); setBusy(""); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(""); }
   }
@@ -151,7 +151,7 @@ export default function LedgerPage() {
         <h1 className="text-xl font-bold text-emerald-700">📒 บัญชี</h1>
         <div className="flex gap-1">
           {(Object.keys(LEDGER_BOOKS) as LedgerBook[]).map((b) => (
-            <button key={b} onClick={() => switchBook(b)} className={`rounded-full px-3 py-1 text-sm font-semibold ${b === BOOK ? (b === "UU" ? "bg-sky-500 text-white" : "bg-emerald-600 text-white") : "border border-slate-200 bg-white text-slate-600"}`}>{LEDGER_BOOKS[b].agent}</button>
+            <button key={b} onClick={() => switchBook(b)} className={`rounded-full px-3 py-1 text-sm font-semibold ${b === BOOK ? (b === "UU" ? "bg-sky-500 text-white" : b === "NUNA" ? "bg-pink-500 text-white" : "bg-emerald-600 text-white") : "border border-slate-200 bg-white text-slate-600"}`}>{LEDGER_BOOKS[b].agent}</button>
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1">
@@ -203,10 +203,18 @@ export default function LedgerPage() {
           <Card title="✏️ ปรับยอดด้วยมือ" right={adjs.length ? signed(d.adjustTotal) : ""}>
             {adjs.map((a) => <Row key={a.id} left={<span>{a.label || "ปรับยอด"} <button className="ml-1 text-xs text-rose-500" onClick={() => void removeAdj(a.id)}>ลบ</button></span>} right={signed(a.amount)} />)}
             <div className="mt-2 flex flex-wrap gap-1">
-              <input className="inp flex-1" placeholder={isStatement ? "รายการ (พิมพ์จีน/อังกฤษ — ขึ้นในใบ 对账单) เช่น 转账 Transfer" : "รายการ เช่น คืนเงิน / ค่าเอกสาร"} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
+              <input className="inp flex-1" placeholder={LEDGER_BOOKS[BOOK].lang === "zh" ? "รายการ (พิมพ์จีน/อังกฤษ — ขึ้นในใบ 对账单) เช่น 转账 Transfer" : isStatement ? "รายการ เช่น โอนเข้า / ฝากทำเอกสาร" : "รายการ เช่น คืนเงิน / ค่าเอกสาร"} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
               <input className="inp w-28" inputMode="numeric" placeholder="+เข้า / −หัก" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} />
               <button className="btn" onClick={() => void addAdj()}>เพิ่ม</button>
             </div>
+            {(LEDGER_BOOKS[BOOK].quick ?? []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(LEDGER_BOOKS[BOOK].quick ?? []).map((q) => (
+                  <button key={q.label} className="rounded-full border border-pink-200 bg-pink-50 px-2.5 py-1 text-xs font-semibold text-pink-700" title={`เพิ่มบรรทัด ${signed(q.amount)} — เครดิตให้${who}`}
+                    onClick={() => { const next = [...adjs, { id: Date.now().toString(36), label: q.label, amount: q.amount }]; setAdjs(next); void saveEdits({ adjustments: next }); }}>+ {q.label} {money(q.amount)}</button>
+                ))}
+              </div>
+            )}
             <p className="mt-1 text-[11px] text-slate-400">ใส่เลขบวก = เงินเข้า/เครดิตให้{who} · เลขลบ (เช่น -500) = หักเพิ่ม</p>
           </Card>
 
@@ -235,12 +243,12 @@ export default function LedgerPage() {
 
           {isStatement && (<>
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-sky-700">🧾 对账单 Statement</span>
+              <span className="text-sm font-semibold text-sky-700">🧾 {statement ? STATEMENT_TEXT[statement.lang].title : "Statement"}</span>
               <label className="flex items-center gap-1 text-xs text-slate-500">ตั้งแต่ <input type="date" className="inp" min={openDay} max={day} value={from} onChange={(e) => setStFrom(e.target.value)} /></label>
               <span className="text-xs text-slate-500">ถึง {dayTh(day)}</span>
             </div>
             <div className="mb-4 flex flex-wrap gap-2">
-              <button className="btn-sky" disabled={!statement} onClick={() => void statementPng()}>🖼 รูป 对账单</button>
+              <button className="btn-sky" disabled={!statement} onClick={() => void statementPng()}>🖼 รูปใบแจ้งยอด</button>
               <button className="btn-sky" disabled={!statement} onClick={() => void statementXlsx()}>⬇ Excel</button>
               <button className="btn" disabled={!statement} onClick={() => void statementCopy()}>📋 ก๊อปตาราง</button>
               {!d.closedAt && <button className="btn" onClick={() => void saveEdits({ close: true })}>🔒 ปิดยอดวัน</button>}
@@ -301,8 +309,11 @@ const StatementSheet = forwardRef<HTMLDivElement, { agent: string; s: Statement 
   const cols = "62px 1.25fr 1.5fr 84px 84px 96px";
   const cell: React.CSSProperties = { padding: "7px 8px", fontSize: 15, lineHeight: 1.25, minWidth: 0, overflowWrap: "anywhere" };
   const numCell: React.CSSProperties = { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
-  const th: React.CSSProperties = { padding: "8px 8px", fontSize: 13, fontWeight: 800, color: "#0c4a6e", lineHeight: 1.2 };
+  const thCell: React.CSSProperties = { padding: "8px 8px", fontSize: 13, fontWeight: 800, color: "#0c4a6e", lineHeight: 1.2 };
   const dueText = (n: number) => (n < 0 ? `−${money(-n)}` : money(n));
+  const T = STATEMENT_TEXT[s.lang];
+  const th = s.lang === "th";
+  const head = (x: string, right = false) => <div style={{ ...thCell, textAlign: right ? "right" : "left", whiteSpace: "pre-line" }}>{x}</div>;
   const total = (label: string, value: string, bg: string, fg: string, big = false) => (
     <div style={{ flex: big ? 1.3 : 1, background: bg, color: fg, borderRadius: 12, padding: "9px 12px" }}>
       <div style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.85 }}>{label}</div>
@@ -313,7 +324,7 @@ const StatementSheet = forwardRef<HTMLDivElement, { agent: string; s: Statement 
     <div ref={ref} style={{ width: 720, padding: 18, background: "linear-gradient(135deg,#e0f2fe,#fdf2f8 55%,#fef9c3)", fontFamily: font, boxSizing: "border-box", color: "#0f172a" }}>
       <div style={{ background: "#0ea5e9", color: "#fff", borderRadius: 14, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 4px 14px rgba(14,165,233,.3)" }}>
         <div>
-          <div style={{ fontSize: 25, fontWeight: 900, lineHeight: 1.15 }}>对账单 · Statement</div>
+          <div style={{ fontSize: 25, fontWeight: 900, lineHeight: 1.15 }}>{T.title}</div>
           <div style={{ fontSize: 15, fontWeight: 600, opacity: 0.95 }}>{dayTh(s.from)} – {dayTh(s.to)} · THB</div>
         </div>
         <div style={{ fontSize: 26, fontWeight: 900, background: "rgba(255,255,255,.22)", borderRadius: 10, padding: "4px 14px" }}>{agent}</div>
@@ -321,11 +332,10 @@ const StatementSheet = forwardRef<HTMLDivElement, { agent: string; s: Statement 
 
       <div style={{ marginTop: 12, background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,.06)" }}>
         <div style={{ display: "grid", gridTemplateColumns: cols, background: "#bae6fd" }}>
-          <div style={th}>日期<br />Date</div><div style={th}>客户<br />Client</div><div style={th}>项目<br />Service</div>
-          <div style={{ ...th, textAlign: "right" }}>费用<br />Fee</div><div style={{ ...th, textAlign: "right" }}>已收<br />Received</div><div style={{ ...th, textAlign: "right" }}>应付余额<br />Balance</div>
+          {head(T.date)}{head(T.client)}{head(T.service)}{head(T.fee, true)}{head(T.received, true)}{head(T.balance, true)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: cols, background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-          <div style={cell} /><div style={{ ...cell, fontWeight: 700, gridColumn: "2 / span 4" }}>上期结余 Previous balance</div><div style={{ ...numCell, fontWeight: 800 }}>{dueText(s.openingDue)}</div>
+          <div style={cell} /><div style={{ ...cell, fontWeight: 700, gridColumn: "2 / span 4" }}>{T.previous}</div><div style={{ ...numCell, fontWeight: 800 }}>{dueText(s.openingDue)}</div>
         </div>
         {s.rows.map((r, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: cols, background: r.kind === "payment" ? "#dcfce7" : i % 2 ? "#f8fafc" : "#fff", borderBottom: "1px solid #eef2f7" }}>
@@ -337,17 +347,18 @@ const StatementSheet = forwardRef<HTMLDivElement, { agent: string; s: Statement 
             <div style={{ ...numCell, fontWeight: 700, color: r.due < 0 ? "#15803d" : "#0f172a" }}>{dueText(r.due)}</div>
           </div>
         ))}
-        {s.rows.length === 0 && <div style={{ ...cell, textAlign: "center", color: "#94a3b8", padding: 18 }}>本期暂无记录 · No entries in this period</div>}
+        {s.rows.length === 0 && <div style={{ ...cell, textAlign: "center", color: "#94a3b8", padding: 18 }}>{T.empty}</div>}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        {total("费用合计 Total fees", money(s.fees), "#fef3c7", "#92400e")}
-        {total("已收合计 Total received", money(s.received), "#dcfce7", "#166534")}
+        {total(T.totalFees, money(th ? s.fees - s.tickets : s.fees), "#fef3c7", "#92400e")}
+        {(th || s.tickets > 0) && total(T.tickets, money(s.tickets), "#cffafe", "#155e75")}
+        {total(T.totalReceived, money(s.received), "#dcfce7", "#166534")}
         {s.due < 0
-          ? total("预存余额 Credit balance", `${money(-s.due)} THB`, "#bbf7d0", "#14532d", true)
-          : total("应付余额 Balance due", `${money(s.due)} THB`, s.due > 0 ? "#fbcfe8" : "#bbf7d0", s.due > 0 ? "#9d174d" : "#14532d", true)}
+          ? total(T.credit, `${money(-s.due)} THB`, "#bbf7d0", "#14532d", true)
+          : total(T.due, `${money(s.due)} THB`, s.due > 0 ? "#fbcfe8" : "#bbf7d0", s.due > 0 ? "#9d174d" : "#14532d", true)}
       </div>
-      <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", textAlign: "center" }}>应付余额 = 上期结余 + 费用 − 已收 · Balance due = previous balance + fees − received</div>
+      <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", textAlign: "center" }}>{T.formula}</div>
     </div>
   );
 });

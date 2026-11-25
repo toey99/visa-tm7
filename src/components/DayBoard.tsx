@@ -1773,6 +1773,7 @@ function PersonCard({
               {isRun && f.run === "RUN30" && <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">🐰 +30 วัน</span>}
               {isRun && f.cambodia && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">🐻 กัมพูชา</span>}
               {isRun && f.overstay && <span className="ml-2 rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-900">🐢 overstay{f.overstayDays ? ` ${f.overstayDays} วัน` : ""}</span>}
+              {isRun && Number(f.ticket) > 0 && <span className="ml-2 rounded bg-cyan-100 px-2 py-0.5 text-xs font-semibold text-cyan-800">✈ ตั๋ว {Number(f.ticket).toLocaleString()}</span>}
               {isRun && f.dtv && <span className="ml-2 rounded bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">DTV +1,000</span>}
               {isRun && f.wetPassport && <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">💧 เล่มเปียกน้ำ +3,000</span>}
               {isRun && f.runVip && <span className="ml-2 rounded bg-pink-100 px-2 py-0.5 text-xs font-semibold text-pink-800">⏰ VIP นอกเวลา +2,000</span>}
@@ -1867,6 +1868,9 @@ function PersonCard({
           </label>
           <label className="flex items-center gap-1 text-xs text-slate-700">กลับก่อน
             <input value={f.returnBy ?? ""} onChange={(e) => set("returnBy", formatTimeMask(e.target.value))} className={inputCls + " w-16 text-center"} placeholder={meta.returnBy || "18:45"} />
+          </label>
+          <label className="flex items-center gap-1 text-xs text-slate-700" title="ค่าตั๋วเครื่องบินที่เราสำรองจ่ายให้คนนี้ — คิดกับเอเย่นต์ตามจริงในบัญชี ไม่นับเป็นยอดขาย/กำไร">✈ ค่าตั๋วสำรองจ่าย
+            <input value={f.ticket ?? ""} inputMode="numeric" onChange={(e) => set("ticket", e.target.value.replace(/[^\d.]/g, ""))} className={inputCls + " w-20 text-right"} placeholder="0" />
           </label>
           <label className="flex items-center gap-1 text-xs text-slate-700" title="วันหมดอายุหลังรัน คำนวณจากวันนี้ + วันของวีซ่า (+30 ถ้าไปต่อ) — ใส่ทับได้ถ้าตราไม่ตรง">หมดอายุใหม่
             <DateIn value={f.newUntil ?? ""} onChange={(v) => set("newUntil", v)} />

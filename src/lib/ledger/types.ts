@@ -8,12 +8,18 @@
 // carry-in of the next. Positive balance = the agent's money still with us;
 // negative = the agent owes us.
 
-export type LedgerBook = "ARTAO" | "UU";
+export type LedgerBook = "ARTAO" | "UU" | "NUNA";
+export type StatementLang = "zh" | "th";
 // slipBook: the transfer-slip room that feeds the book (null = transfers are typed in as + adjustments)
 // statement: the agent gets a running 对账单 (Chinese / English) for a period instead of the Thai daily closing note
-export const LEDGER_BOOKS: Record<LedgerBook, { agent: string; label: string; slipBook: "ARTAO" | null; statement?: boolean }> = {
+// quick: one-tap adjustment lines for things that recur in that book (+ = credit to the agent, e.g. work we ask the agent to do for us)
+export const LEDGER_BOOKS: Record<LedgerBook, { agent: string; label: string; slipBook: "ARTAO" | null; statement?: boolean; lang?: StatementLang; quick?: { label: string; amount: number }[] }> = {
   ARTAO: { agent: "อาเต่า", label: "บัญชีอาเต่า", slipBook: "ARTAO" },
-  UU: { agent: "uu", label: "บัญชี uu", slipBook: null, statement: true },
+  UU: { agent: "uu", label: "บัญชี uu", slipBook: null, statement: true, lang: "zh" },
+  NUNA: {
+    agent: "หนูนา", label: "บัญชีหนูนา", slipBook: null, statement: true, lang: "th",
+    quick: [{ label: "หนังสือรับรองที่อยู่ (ฝากหนูนาทำ)", amount: 1300 }, { label: "หนังสือสถานทูตพม่า (ฝากหนูนาทำ)", amount: 300 }],
+  },
 };
 export const isLedgerBook = (s: unknown): s is LedgerBook => typeof s === "string" && s in LEDGER_BOOKS;
 
@@ -27,6 +33,7 @@ export type Prices = {
   chargeVip: boolean;
   runSolo: number;           // visa run, car with one passenger
   runShared: number;         // visa run, per person when the car has 2+ passengers
+  runIndian: number;         // visa run, Indian passport, per person (0 = the normal price)
   run30: number;             // 🐰 + 30-day extension after the border, per person
   cambodia: number;          // 🐻 Cambodia history, per person
   runDtv: number;            // visa-run topping: DTV holder, per person
@@ -48,6 +55,7 @@ export const DEFAULT_PRICES: Prices = {
   chargeVip: true,
   runSolo: 10000,
   runShared: 9500,
+  runIndian: 0,
   run30: 4500,
   cambodia: 7500,
   runDtv: 1000,
@@ -62,6 +70,7 @@ export const DEFAULT_PRICES: Prices = {
 // what a book charges when nothing has been saved for it yet
 const BOOK_PRICES: Partial<Record<LedgerBook, Partial<Prices>>> = {
   UU: { extBANGKOK: 3500, extNONTHABURI: 4500, extRAYONG: 4700, vfs: 3200, vfsPattaya: 4500, chargeD90: false },
+  NUNA: { extBANGKOK: 4000, extNONTHABURI: 4500, extRAYONG: 5000, vfs: 3200, vfsPattaya: 4500, runIndian: 13000, chargeD90: false },   // the standard price list
 };
 export const defaultPrices = (book: LedgerBook): Prices => ({ ...DEFAULT_PRICES, ...(BOOK_PRICES[book] ?? {}) });
 
@@ -75,6 +84,7 @@ export const PRICE_LABELS: Record<keyof Prices, string> = {
   chargeVip: "คิด VIP กับเอเย่นต์ด้วย",
   runSolo: "Visa Run — รถ 1 คัน มี 1 คน",
   runShared: "Visa Run — ต่อคน เมื่อ 2 คนขึ้นไป",
+  runIndian: "Visa Run — พาสปอร์ตอินเดีย ต่อคน (0 = ราคาปกติ)",
   run30: "🐰 +30 วัน (ต่อคน)",
   cambodia: "🐻 ประวัติกัมพูชา (ต่อคน)",
   runDtv: "Visa Run — DTV (+ ต่อคน)",
@@ -204,7 +214,7 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
       const over = c.items.filter((i) => i.label.startsWith("overstay") || i.label.startsWith("ค่าปรับ")).reduce((s, i) => s + i.amount, 0);
       if (over) { L.push(`${c.name} ค่าover ${f(over)}`); parts.push(f(over)); }
       // toppings (DTV, 💧 wet passport, ⏰ off-hours VIP): one line per person
-      for (const it of c.items.slice(1).filter((i) => i.label.startsWith("DTV") || i.label.startsWith("💧") || i.label.startsWith("⏰"))) { L.push(`${c.name} ${it.label} ${f(it.amount)}`); parts.push(f(it.amount)); }
+      for (const it of c.items.slice(1).filter((i) => i.label.startsWith("DTV") || i.label.startsWith("💧") || i.label.startsWith("⏰") || i.label.startsWith("✈"))) { L.push(`${c.name} ${it.label} ${f(it.amount)}`); parts.push(f(it.amount)); }
     }
     const sum = run.reduce((s, c) => s + c.amount, 0);
     L.push(parts.length > 1 ? `รวม ${parts.join("+")} = ${f(sum)}` : `รวม ${f(sum)}`); payParts.push(f(sum));
@@ -255,7 +265,7 @@ const OFFICE_NOTE: Record<string, string> = { BANGKOK: "IT", NONTHABURI: "นน
 // One row per job, payment or adjustment over a period, with a running
 // "balance due" (what the agent owes us; negative = the agent is in credit).
 export type StatementRow = { day: string; client: string; sub: string; service: string; fee: number; received: number; due: number; kind: "charge" | "payment" | "extra" };
-export type Statement = { from: string; to: string; openingDue: number; rows: StatementRow[]; fees: number; received: number; due: number };
+export type Statement = { from: string; to: string; openingDue: number; rows: StatementRow[]; fees: number; tickets: number; received: number; due: number; lang: StatementLang };   // tickets = the part of fees that is flight tickets paid up front
 
 const EXT_ZH: Record<string, string> = {
   BANGKOK: "续签30天 Extension · IT Square", NONTHABURI: "续签30天 Extension · 暖武里 Nonthaburi", RAYONG: "续签30天 Extension · 罗勇 Rayong",
@@ -271,6 +281,7 @@ function extraZh(label: string): string {
   if (label.startsWith("DTV")) return "DTV 加收 surcharge";
   if (label.startsWith("💧")) return "护照水损 Water-damaged passport";
   if (label.startsWith("⏰")) return "VIP 非常规时段 Off-hours";
+  if (label.startsWith("✈")) return "机票代付 Flight ticket (advance)";
   return label;
 }
 export function serviceZh(c: ChargeLine): string {
@@ -280,21 +291,31 @@ export function serviceZh(c: ChargeLine): string {
   return [base, ...c.items.slice(1).map((i) => extraZh(i.label))].filter(Boolean).join(" + ");
 }
 
-export function buildStatement(days: DayLedger[], from: string, to: string): Statement {
+/** Thai wording of a charge: its items as they are, with amounts when there is more than one. */
+export function serviceTh(c: ChargeLine): string {
+  return c.items.length > 1 ? c.items.map((i) => `${i.label} ${money(i.amount)}`).join(" + ") : (c.items[0]?.label ?? "");
+}
+
+export function buildStatement(days: DayLedger[], from: string, to: string, lang: StatementLang = "zh"): Statement {
   const span = days.filter((d) => d.day >= from && d.day <= to);
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const openingDue = span.length ? r2(-span[0].carryIn) || 0 : 0;   // || 0: no "-0" when the book opens at zero
-  let due = openingDue, fees = 0, received = 0;
+  let due = openingDue, fees = 0, received = 0, tickets = 0;
+  const th = lang === "th";
   const rows: StatementRow[] = [];
   const push = (day: string, client: string, sub: string, service: string, fee: number, recv: number, kind: StatementRow["kind"]) => {
     due = r2(due + fee - recv); fees = r2(fees + fee); received = r2(received + recv);
     rows.push({ day, client, sub, service, fee, received: recv, due, kind });
   };
   for (const d of span) {
-    for (const c of d.charges) push(d.day, c.cn || c.lf || c.name, c.cn ? (c.lf || c.name) : "", serviceZh(c), c.amount, c.paidDirect, "charge");
-    for (const s of d.credits.filter((x) => x.kind === "slip")) push(d.day, "转账 Transfer", s.label, "", 0, s.amount, "payment");
+    for (const c of d.charges) {
+      tickets = r2(tickets + c.items.filter((i) => i.label.startsWith("✈")).reduce((s, i) => s + i.amount, 0));
+      if (th) push(d.day, c.lf || c.name, c.cn || "", serviceTh(c), c.amount, c.paidDirect, "charge");
+      else push(d.day, c.cn || c.lf || c.name, c.cn ? (c.lf || c.name) : "", serviceZh(c), c.amount, c.paidDirect, "charge");
+    }
+    for (const s of d.credits.filter((x) => x.kind === "slip")) push(d.day, th ? "เงินโอน" : "转账 Transfer", s.label, "", 0, s.amount, "payment");
     for (const a of d.adjustments) {
-      if (a.amount > 0) push(d.day, "收款 Payment", "", a.label, 0, a.amount, "payment");
+      if (a.amount > 0) push(d.day, th ? (a.label || "รับเงิน") : "收款 Payment", "", th ? "" : a.label, 0, a.amount, "payment");
       else if (a.amount < 0) {
         // a job typed in by hand: "陈盛辉 CHEN SHENGHUI | 续签30天 …" → client (Chinese name first, passport name under it) | service
         const [who, ...rest] = (a.label || "其他费用 Other").split("|").map((x) => x.trim());
@@ -303,21 +324,39 @@ export function buildStatement(days: DayLedger[], from: string, to: string): Sta
       }
     }
   }
-  return { from, to, openingDue, rows, fees, received, due };
+  return { from, to, openingDue, rows, fees, tickets, received, due, lang };
 }
+
+/** Every label of the statement in its language. */
+export const STATEMENT_TEXT: Record<StatementLang, { title: string; date: string; client: string; name2: string; service: string; fee: string; received: string; balance: string; previous: string; totalFees: string; tickets: string; totalReceived: string; due: string; credit: string; empty: string; formula: string }> = {
+  zh: { title: "对账单 · Statement", date: "日期\nDate", client: "客户\nClient", name2: "护照姓名 Passport name", service: "项目\nService", fee: "费用\nFee", received: "已收\nReceived", balance: "应付余额\nBalance",
+    previous: "上期结余 Previous balance", totalFees: "费用合计 Total fees", tickets: "其中机票代付 Tickets (advance)", totalReceived: "已收合计 Total received", due: "应付余额 Balance due", credit: "预存余额 Credit balance",
+    empty: "本期暂无记录 · No entries in this period", formula: "应付余额 = 上期结余 + 费用 − 已收 · Balance due = previous balance + fees − received" },
+  th: { title: "ใบแจ้งยอด · Statement", date: "วันที่", client: "ลูกค้า / รายการ", name2: "ชื่อจีน", service: "รายละเอียด", fee: "ยอดคิด", received: "รับแล้ว / หักให้", balance: "ยอดค้างสะสม",
+    previous: "ยอดยกมา", totalFees: "ค่าบริการรวม", tickets: "ค่าตั๋วสำรองจ่าย", totalReceived: "รับแล้ว / หักให้ รวม", due: "ยอดค้างชำระ", credit: "ยอดเงินคงเหลือ (เครดิต)",
+    empty: "ช่วงนี้ยังไม่มีรายการ", formula: "ยอดค้าง = ยอดยกมา + ค่าบริการ + ค่าตั๋วสำรองจ่าย − รับแล้ว/หักให้" },
+};
 
 /** The statement as a table (header row first) — for Excel and for copy / paste. */
 export function statementTable(agent: string, s: Statement): (string | number)[][] {
+  const T = STATEMENT_TEXT[s.lang];
+  const one = (x: string) => x.replace("\n", " ");
   const out: (string | number)[][] = [
-    [`对账单 Statement · ${agent}`, `${dayTh(s.from)} – ${dayTh(s.to)}`],
+    [`${T.title} · ${agent}`, `${dayTh(s.from)} – ${dayTh(s.to)}`],
     [],
-    ["日期 Date", "客户 Client", "护照姓名 Passport name", "项目 Service", "费用 Fee", "已收 Received", "应付余额 Balance due"],
-    ["", "上期结余 Previous balance", "", "", "", "", s.openingDue],
+    [one(T.date), one(T.client), T.name2, one(T.service), one(T.fee), one(T.received), one(T.balance)],
+    ["", T.previous, "", "", "", "", s.openingDue],
   ];
   for (const r of s.rows) out.push([dayTh(r.day), r.client, r.sub, r.service, r.fee || "", r.received || "", r.due]);
   out.push([]);
-  out.push(["", "费用合计 Total fees", "", "", s.fees, "", ""]);
-  out.push(["", "已收合计 Total received", "", "", "", s.received, ""]);
-  out.push(["", s.due < 0 ? "预存余额 Credit balance (THB)" : "应付余额 Balance due (THB)", "", "", "", "", Math.abs(s.due)]);
+  if (s.lang === "th") {
+    out.push(["", T.totalFees, "", "", s.fees - s.tickets, "", ""]);
+    out.push(["", T.tickets, "", "", s.tickets, "", ""]);
+  } else {
+    out.push(["", T.totalFees, "", "", s.fees, "", ""]);
+    if (s.tickets) out.push(["", T.tickets, "", "", s.tickets, "", ""]);
+  }
+  out.push(["", T.totalReceived, "", "", "", s.received, ""]);
+  out.push(["", `${s.due < 0 ? T.credit : T.due} (THB)`, "", "", "", "", Math.abs(s.due)]);
   return out;
 }
