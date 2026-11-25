@@ -145,7 +145,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
   // long-stay visa jobs filed that day for this agent (priced per case on /jobs)
   try {
     for (const j of (await jobsInRange(day, day)).filter((j) => j.status !== "ยกเลิก" && isAgent({ agent: j.agent }, agent))) {
-      charges.push({ id: `job-${j.id}`, src: "ext", office: "", name: j.customer, passport: j.passportNo ?? "", items: [{ label: [j.type !== "อื่น ๆ" ? j.type : "", j.note ?? ""].filter(Boolean).join(" · ") || j.type, amount: j.sale }], amount: j.sale, paidDirect: j.paid === "paid" ? 0 : 0, flags: "🗂" });
+      charges.push({ id: `job-${j.id}`, src: "ext", office: "", name: j.customer, cn: j.cn || undefined, lf: j.customer || undefined, passport: j.passportNo ?? "", items: [{ label: [j.type !== "อื่น ๆ" ? j.type : "", j.note ?? ""].filter(Boolean).join(" · ") || j.type, amount: j.sale }], amount: j.sale, paidDirect: j.paid === "paid" ? 0 : 0, flags: "🗂" });
     }
   } catch { /* no jobs file yet */ }
 
