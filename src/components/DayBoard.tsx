@@ -24,6 +24,7 @@ import {
 } from "@/lib/today/types";
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
+import RunPlanner from "@/components/RunPlanner";
 import { Crown } from "@/lib/summary/crown";
 import { CARS, RUN_SLOTS, carById, carKey, tripTh } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
@@ -1622,6 +1623,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
 
       {isRun && (
         <div className="mt-8">
+          <RunPlanner people={active} meta={meta} />
           <div className="mb-2 flex items-center gap-3">
             <h2 className="text-sm font-semibold text-slate-700">การ์ดรถ (1 รูปต่อคัน · รถวิ่ง 2 รอบได้ 2 รูป)</h2>
             {(["customer", "driver"] as const).map((v) => (
