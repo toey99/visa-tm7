@@ -20,12 +20,12 @@ export const safeDay = (d: unknown) => (typeof d === "string" && /^\d{4}-\d{2}-\
 
 export async function loadSlipState(book: SlipBookId): Promise<SlipState> {
   const s = await blobGetJson<SlipState>(`${root(book)}state.json`);
-  return s && s.closed ? s : { closed: {} };
+  return s && s.closed ? s : { ...(s ?? {}), closed: {} };
 }
 export async function saveSlipState(book: SlipBookId, s: SlipState): Promise<void> {
   // keep the last ~120 closings — older ones only matter to rounds long finished
   const keep = Object.entries(s.closed).sort(([a], [b]) => b.localeCompare(a)).slice(0, 120);
-  await blobPut(`${root(book)}state.json`, JSON.stringify({ closed: Object.fromEntries(keep) }), "application/json");
+  await blobPut(`${root(book)}state.json`, JSON.stringify({ closed: Object.fromEntries(keep), outSenders: s.outSenders, inSenders: s.inSenders }), "application/json");
 }
 
 export async function saveSlip(book: SlipBookId, item: SlipItem): Promise<void> {

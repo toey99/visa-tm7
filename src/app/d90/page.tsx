@@ -185,6 +185,7 @@ export default function D90Page() {
               {(Object.keys(OFFICES) as OfficeId[]).map((o) => <option key={o} value={`days:${o}`}>{OFFICES[o].emoji} ต่อวีซ่า {OFFICES[o].label}</option>)}
               <option value="run:CHIANG_SAEN">🚗 วีซ่ารัน (เชียงแสน)</option>
               <option value="slips:ARTAO">🧾 สลิปโอน อาเต่า</option>
+              <option value="slips:NUNA">🧾 สลิป หนูนา (ค่าตั๋ว + โอนเข้า)</option>
             </select>
             <BtnBase disabled={busy} tone="rose" onClick={() => void post({ action: "group", groupId: id, allow: false })}>ไม่ใช่</BtnBase>
           </span>

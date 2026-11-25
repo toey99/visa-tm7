@@ -14,6 +14,7 @@ import { OFFICES, type OfficeId } from "@/lib/offices";
 import type { DaySummary } from "@/lib/stats/daily";
 import type { Pricing } from "@/lib/stats/pricing";
 import type { Extra } from "@/lib/extras/store";
+import { LEDGER_BOOKS, type DayLedger, type LedgerBook } from "@/lib/ledger/types";
 
 type Resp = { pricing: Pricing; days: DaySummary[]; extras?: Extra[]; from: string; to: string; error?: string };
 const OFFICE_ORDER: { key: string; label: string; color: string }[] = [
@@ -134,6 +135,8 @@ export default function DashboardPage() {
         </table>
       </Card>
 
+      <AgentBalances from={range.from} to={range.to} />
+
       <ExtrasCard extras={data?.extras ?? []} defaultDay={range.to} onChanged={() => void load()} />
 
       <Card title="รายวัน">
@@ -157,6 +160,52 @@ export default function DashboardPage() {
         </div>
       </Card>
     </main>
+  );
+}
+
+// where each agent's running account stands (from /ledger) and the flight tickets we paid up front
+// for them in this period — pass-through money, never part of sale / cost / profit above
+function AgentBalances({ from, to }: { from: string; to: string }) {
+  const [rows, setRows] = useState<{ book: LedgerBook; balance: number | null; tickets: number; asOf: string }[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    (async () => {
+      const out = await Promise.all((Object.keys(LEDGER_BOOKS) as LedgerBook[]).map(async (book) => {
+        try {
+          const r = await fetch(`/api/ledger?book=${book}&to=${to}`, { cache: "no-store" });
+          const j = (await r.json()) as { days?: DayLedger[] };
+          const days = (j.days ?? []).filter((d) => d.day <= to);
+          const last = days[days.length - 1];
+          const tickets = days.filter((d) => d.day >= from).reduce((s, d) => s + d.charges.reduce((x, c) => x + c.items.filter((i) => i.label.startsWith("✈")).reduce((y, i) => y + i.amount, 0), 0), 0);
+          return { book, balance: last ? last.carryOut : null, tickets, asOf: last?.day ?? "" };
+        } catch { return { book, balance: null, tickets: 0, asOf: "" }; }
+      }));
+      if (alive) setRows(out);
+    })();
+    return () => { alive = false; };
+  }, [from, to]);
+  return (
+    <section className="mb-3 rounded-xl border border-sky-200 bg-sky-50/40 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-sky-800">📒 ยอดบัญชีเอเย่นต์</h2>
+        <span className="text-[11px] text-slate-500">ณ {dm(to)} · ค่าตั๋วสำรองจ่ายไม่นับเป็นยอดขาย/ต้นทุนด้านบน</span>
+      </div>
+      {!rows ? <div className="text-xs text-slate-400">กำลังโหลด…</div> : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-xs text-slate-400"><th>เอเย่นต์</th><th className="text-right">ยอดคงเหลือ</th><th className="text-right">✈ ค่าตั๋วสำรองจ่าย (ช่วงนี้)</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.book} className="border-t border-sky-100">
+                <td className="py-1"><a className="font-medium text-sky-700 underline-offset-2 hover:underline" href={r.book === "ARTAO" ? "/ledger" : `/ledger?book=${r.book}`}>{LEDGER_BOOKS[r.book].agent}</a></td>
+                <td className={`text-right font-semibold tabular-nums ${r.balance === null ? "text-slate-400" : r.balance < 0 ? "text-rose-600" : "text-emerald-700"}`}>{r.balance === null ? "–" : r.balance < 0 ? `ค้างเรา ${money(-r.balance)}` : `เงินอยู่กับเรา ${money(r.balance)}`}</td>
+                <td className="text-right tabular-nums text-cyan-700">{r.tickets ? money(r.tickets) : "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 

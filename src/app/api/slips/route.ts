@@ -7,7 +7,7 @@
 //   close   { day } / reopen { day }
 import { NextRequest, NextResponse } from "next/server";
 import { deleteSlip, getSlip, listSlips, loadSlipState, moveSlip, safeDay, safeSlipId, saveSlip, saveSlipState } from "@/lib/slips/store";
-import { isSlipBook, roundFor, type SlipItem } from "@/lib/slips/types";
+import { isSlipBook, learnSender, roundFor, type SlipItem } from "@/lib/slips/types";
 
 export const runtime = "nodejs";
 const noStore = { headers: { "Cache-Control": "no-store" } };
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-type Body = { book?: string; action?: string; id?: string; day?: string; to?: string; patch?: Partial<Pick<SlipItem, "amount" | "excluded" | "note" | "isSlip">> & { dupOf?: null } };
+type Body = { book?: string; action?: string; id?: string; day?: string; to?: string; patch?: Partial<Pick<SlipItem, "amount" | "excluded" | "note" | "isSlip" | "out">> & { dupOf?: null } };
 
 export async function POST(req: NextRequest) {
   let body: Body;
@@ -55,6 +55,10 @@ export async function POST(req: NextRequest) {
       if (typeof p.isSlip === "boolean") next.isSlip = p.isSlip;
       if (typeof p.note === "string") next.note = p.note.slice(0, 200);
       if (p.dupOf === null) delete next.dupOf;                 // "it is not a duplicate after all"
+      if (typeof p.out === "boolean" && p.out !== !!item.out) {  // direction set by hand → remember it for this payer
+        next.out = p.out;
+        if (next.sender) await saveSlipState(book, learnSender(await loadSlipState(book), next.sender, p.out));
+      }
       await saveSlip(book, next);
     } else if (body.action === "move") {
       const to = safeDay(body.to);

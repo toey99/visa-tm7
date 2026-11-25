@@ -9,15 +9,24 @@
 // the daily closing note — and the place to fix what the AI got wrong.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SLIP_BOOKS, addDays, bkkTime, byArrival, counted, dayTh, formula, money, total, type SlipBookId, type SlipItem } from "@/lib/slips/types";
+import { SLIP_BOOKS, addDays, bkkTime, byArrival, counted, dayTh, formula, isSlipBook, money, total, totalIn, totalOut, type SlipBookId, type SlipItem } from "@/lib/slips/types";
 import SlipSheet from "@/components/SlipSheet";
 import { captureNode, downloadBlob } from "@/lib/today/clientTools";
 
 type Data = { book: SlipBookId; day: string; round: string; closed: Record<string, number>; items: SlipItem[] };
-const BOOK: SlipBookId = "ARTAO";
 const fileUrl = (path: string) => `/api/slips/file?path=${encodeURIComponent(path)}`;
 
 export default function SlipsPage() {
+  // which agency's slip room: /slips (อาเต่า) or /slips?book=NUNA
+  const [bookState, setBookState] = useState<SlipBookId | null>(null);
+  useEffect(() => { const b = new URLSearchParams(window.location.search).get("book"); setBookState(isSlipBook(b) ? b : "ARTAO"); }, []);
+  const BOOK: SlipBookId = bookState ?? "ARTAO";
+  const twoWay = !!SLIP_BOOKS[BOOK].twoWay;
+  function switchBook(b: SlipBookId) {
+    if (b === BOOK) return;
+    setData(null); setDay(""); setBookState(b);
+    try { window.history.replaceState(null, "", b === "ARTAO" ? "/slips" : `/slips?book=${b}`); } catch { /* keep going */ }
+  }
   const [data, setData] = useState<Data | null>(null);
   const [day, setDay] = useState("");            // "" = the open round
   const [error, setError] = useState("");
@@ -49,16 +58,19 @@ export default function SlipsPage() {
   }, [data]);
 
   const load = useCallback(async (d: string) => {
+    if (!bookState) return;
     setBusy(true); setError("");
     try {
       const r = await fetch(`/api/slips?book=${BOOK}${d ? `&day=${d}` : ""}`, { cache: "no-store" });
       const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      if ((j as Data).book !== BOOK) return;   // a slow answer for the other book
       setData(j as Data);
       setDraft({});
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    setBusy(false);
-  }, []);
+    finally { setBusy(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookState]);
 
   useEffect(() => { void load(day); }, [load, day]);
   useEffect(() => {
@@ -120,7 +132,12 @@ export default function SlipsPage() {
     <main className="mx-auto w-full max-w-3xl px-3 pb-24 pt-4 sm:px-6">
       <div className="rounded-3xl bg-gradient-to-r from-teal-100 via-sky-100 to-violet-100 p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-bold text-slate-800">🧾 สลิปโอน · {SLIP_BOOKS[BOOK].label}</h1>
+          <h1 className="text-xl font-bold text-slate-800">🧾 สลิปโอน</h1>
+          <div className="flex gap-1">
+            {(Object.keys(SLIP_BOOKS) as SlipBookId[]).map((b) => (
+              <button key={b} type="button" onClick={() => switchBook(b)} className={`rounded-full px-3 py-1 text-sm font-semibold ${b === BOOK ? "bg-pink-500 text-white" : "bg-white/80 text-slate-600"}`}>{SLIP_BOOKS[b].label}</button>
+            ))}
+          </div>
           <button type="button" disabled={busy} onClick={() => void load(day)} className="rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-teal-700 disabled:opacity-50">{busy ? "กำลังโหลด…" : "↻ รีเฟรช"}</button>
         </div>
         {data && (
@@ -136,10 +153,12 @@ export default function SlipsPage() {
             </div>
             <div className="mt-3 rounded-2xl bg-white/85 p-3">
               <p className="text-xs font-semibold text-slate-500">เงินโอน รอบ {dayTh(data.day)} · {items.filter(counted).length} ใบ</p>
-              <p className="mt-1 break-words text-lg font-bold text-slate-800">{line}</p>
+              {twoWay
+                ? <p className="mt-1 text-lg font-bold text-slate-800"><span className="text-cyan-700">✈ สำรองจ่าย {money(totalOut(items))}</span> · <span className="text-emerald-700">💰 โอนเข้า {money(totalIn(items))}</span><span className="block text-xs font-normal text-slate-500">สลิปที่เราจ่าย = คิด{SLIP_BOOKS[BOOK].label}ในบัญชี · สลิปที่{SLIP_BOOKS[BOOK].label}โอน = เงินเข้า — กดปุ่มบนสลิปเพื่อสลับทาง</span></p>
+                : <p className="mt-1 break-words text-lg font-bold text-slate-800">{line}</p>}
               <div className="mt-2 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void copyLine()} className="rounded-full bg-sky-400 px-3 py-1 text-sm font-semibold text-white">📋 คัดลอกบรรทัดนี้</button>
-                <button type="button" disabled={exporting || !items.length} onClick={() => void exportSheet()} className="rounded-full bg-violet-500 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">{exporting ? "กำลังทำรูป…" : "🖼 รูปสรุปรอบ (ทุกสลิป+ตาราง)"}</button>
+                {!twoWay && <button type="button" onClick={() => void copyLine()} className="rounded-full bg-sky-400 px-3 py-1 text-sm font-semibold text-white">📋 คัดลอกบรรทัดนี้</button>}
+                {!twoWay && <button type="button" disabled={exporting || !items.length} onClick={() => void exportSheet()} className="rounded-full bg-violet-500 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">{exporting ? "กำลังทำรูป…" : "🖼 รูปสรุปรอบ (ทุกสลิป+ตาราง)"}</button>}
                 {closedAt
                   ? <button type="button" disabled={busy} onClick={() => void post({ action: "reopen" }, "เปิดรอบแล้ว")} className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 disabled:opacity-50">🔓 เปิดรอบอีกครั้ง</button>
                   : <button type="button" disabled={busy} onClick={() => { if (window.confirm(`ตัดจบรอบ ${dayTh(data.day)}? สลิปที่มาหลังจากนี้จะขึ้นเป็นรอบวันถัดไป`)) void post({ action: "close" }, "ตัดจบแล้ว"); }} className="rounded-full bg-pink-400 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">✅ ตัดจบรอบนี้</button>}
@@ -176,6 +195,7 @@ export default function SlipsPage() {
                     className="w-32 rounded-lg border border-slate-200 px-2 py-1 text-base font-bold text-slate-800"
                   />
                   <span className="text-slate-500">บาท</span>
+                  {twoWay && it.isSlip && <button type="button" disabled={busy} onClick={() => void post({ action: "update", id: it.id, patch: { out: !it.out } }, it.out ? "เปลี่ยนเป็นโอนเข้าแล้ว" : "เปลี่ยนเป็นสำรองจ่ายแล้ว")} title="กดเพื่อสลับทาง" className={`rounded-full px-2.5 py-0.5 text-xs font-bold disabled:opacity-50 ${it.out ? "bg-cyan-100 text-cyan-800" : "bg-emerald-100 text-emerald-800"}`}>{it.out ? "✈ เราสำรองจ่าย" : "💰 โอนเข้า"} ⇄</button>}
                   {it.dupOf && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">ซ้ำ ไม่นับ</span>}
                   {!it.isSlip && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">ไม่ใช่สลิป</span>}
                   {it.excluded && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">ตัดออก</span>}
@@ -183,6 +203,10 @@ export default function SlipsPage() {
                 </div>
                 <p className="mt-1 text-slate-700">{[it.paidDate, it.paidTime].filter(Boolean).join(" ") || "ไม่ทราบเวลาโอน"}{it.sender ? ` · ${it.sender}` : ""}{it.bank ? ` (${it.bank})` : ""}</p>
                 <p className="truncate text-xs text-slate-400">{it.ref ? `อ้างอิง ${it.ref} · ` : ""}ส่งเข้ากลุ่ม {bkkTime(it.ts)}{it.note ? ` · ${it.note}` : ""}</p>
+                {twoWay && (
+                  <input defaultValue={it.note ?? ""} placeholder="โน้ต เช่น ชื่อลูกค้า / ไฟลต์ (ขึ้นในใบแจ้งยอด)" onBlur={(e) => { const v = e.target.value.trim(); if (v !== (it.note ?? "")) void post({ action: "update", id: it.id, patch: { note: v } }, "บันทึกโน้ตแล้ว"); }}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700" />
+                )}
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                   <button type="button" disabled={busy} onClick={() => void post({ action: "update", id: it.id, patch: { excluded: !it.excluded } }, it.excluded ? "นับแล้ว" : "ตัดออกแล้ว")} className="rounded-full border border-slate-200 px-2.5 py-1 font-medium text-slate-600 disabled:opacity-50">{it.excluded ? "นับใบนี้" : "ไม่นับใบนี้"}</button>
                   {it.dupOf && <button type="button" disabled={busy} onClick={() => void post({ action: "update", id: it.id, patch: { dupOf: null } }, "นับใบนี้แล้ว")} className="rounded-full border border-amber-200 px-2.5 py-1 font-medium text-amber-700 disabled:opacity-50">ไม่ซ้ำ นับด้วย</button>}
@@ -197,9 +221,9 @@ export default function SlipsPage() {
           );
         })}
       </div>
-      {data && items.length > 0 && <p className="mt-4 text-right text-sm font-semibold text-slate-700">รวมที่นับ {money(total(items))} บาท</p>}
+      {data && items.length > 0 && !twoWay && <p className="mt-4 text-right text-sm font-semibold text-slate-700">รวมที่นับ {money(total(items))} บาท</p>}
 
-      {data && items.length > 0 && (
+      {data && items.length > 0 && !twoWay && (
         <div className="mt-8">
           <h2 className="mb-2 text-sm font-semibold text-slate-700">ตัวอย่างรูปสรุปรอบ</h2>
           <div className="overflow-auto rounded-2xl ring-1 ring-slate-200">

@@ -24,7 +24,7 @@ import { blobPut as blobPutJson } from "@/lib/blob";
 import { OFFICES, type OfficeId } from "@/lib/offices";
 import { readSlipImage } from "@/lib/slips/ocr";
 import { claimTransfer, listSlips, loadSlipState, saveSlip, saveSlipState, slipImgPath } from "@/lib/slips/store";
-import { SLIP_BOOKS, addDays, bkkDay as slipDay, counted, dayShort, dayTh, formula, isSlipBook, money, parseDay, roundFor, summaryText, total, type SlipBookId, type SlipItem } from "@/lib/slips/types";
+import { SLIP_BOOKS, addDays, bkkDay as slipDay, counted, dayShort, dayTh, formula, guessOut, isSlipBook, learnSender, money, parseDay, roundFor, summaryText, total, totalIn, totalOut, type SlipBookId, type SlipItem } from "@/lib/slips/types";
 
 export const runtime = "nodejs";
 // where LINE fetches the pictures we push (signed links under /api/pub)
@@ -77,7 +77,7 @@ async function handle(ev: LineEvent): Promise<void> {
   if (target && target.ns === "slips" && isSlipBook(target.office)) {
     if (ev.message.type === "image") return handleSlipImage(ev, target.office);
     if (ev.message.type === "text") return handleSlipText(ev, target.office);
-    if (ev.message.type === "sticker") return closeSlipRound(ev, target.office, "");   // a sticker = "ตัดจบ", the way the day is closed by hand
+    if (ev.message.type === "sticker" && !SLIP_BOOKS[target.office].twoWay) return closeSlipRound(ev, target.office, "");   // a sticker = "ตัดจบ", the way the day is closed by hand (not in a two-way chat group)
     return;
   }
   if (target && (target.ns === "days" || target.ns === "run") && target.office in OFFICES) {
@@ -269,6 +269,7 @@ async function handleSlipImage(ev: LineEvent, book: SlipBookId): Promise<void> {
   await blobPut(img, bytes, mime);
 
   const state = await loadSlipState(book);
+  const twoWay = !!SLIP_BOOKS[book].twoWay;
   const item: SlipItem = { id: m.id, ts, day: roundFor(state, ts), img, isSlip: true, amount: 0, paidDate: "", paidTime: "", sender: "", bank: "", receiver: "", ref: "" };
   let failed = false;
   try {
@@ -278,6 +279,7 @@ async function handleSlipImage(ev: LineEvent, book: SlipBookId): Promise<void> {
     item.note = "AI อ่านไม่สำเร็จ";
     console.error("[line webhook] slip read failed", m.id, e);
   }
+  if (twoWay && !failed && item.isSlip) item.out = guessOut(state, item.sender);
   let dup: { id: string; day: string } | null = null;
   if (!failed && item.isSlip) {
     dup = await claimTransfer(book, item).catch(() => null);
@@ -286,7 +288,7 @@ async function handleSlipImage(ev: LineEvent, book: SlipBookId): Promise<void> {
   await saveSlip(book, item);
 
   if (failed) return lineReply(ev.replyToken, `⚠️ อ่านสลิปนี้ไม่สำเร็จ — เก็บรูปไว้ในรอบ ${dayShort(item.day)} แล้ว ยังไม่นับยอด ใส่ยอดเองได้ที่ ${SLIPS_URL}`);
-  if (!item.isSlip) return lineReply(ev.replyToken, `ℹ️ รูปนี้ไม่ใช่สลิปโอน — เก็บรูปไว้ ไม่นับยอด`);
+  if (!item.isSlip) return twoWay ? undefined : lineReply(ev.replyToken, `ℹ️ รูปนี้ไม่ใช่สลิปโอน — เก็บรูปไว้ ไม่นับยอด`);   // a chat group: stay quiet about ordinary pictures
   if (dup) return lineReply(ev.replyToken, `⚠️ สลิปซ้ำ — ใบนี้ (${money(item.amount)} บาท) เคยส่งแล้วในรอบ ${dayShort(dup.day)} ไม่นับเพิ่ม`);
   if (!item.amount) return lineReply(ev.replyToken, `⚠️ อ่านยอดเงินจากสลิปไม่ได้ — เก็บรูปไว้ในรอบ ${dayShort(item.day)} แล้ว ใส่ยอดเองได้ที่ ${SLIPS_URL}`);
 
@@ -297,6 +299,12 @@ async function handleSlipImage(ev: LineEvent, book: SlipBookId): Promise<void> {
   if (!items.some((i) => i.id === item.id)) items.push(item);
   const ok = items.filter(counted);
   const when = [item.paidDate ? item.paidDate.slice(0, 5) : "", item.paidTime].filter(Boolean).join(" ");
+  if (twoWay) {
+    return lineReply(ev.replyToken, [
+      `${item.out ? "✈ สำรองจ่าย (คิด" + SLIP_BOOKS[book].label + ")" : "💰 " + SLIP_BOOKS[book].label + "โอนเข้า"} ${money(item.amount)} บาท${when ? ` · ${when}` : ""}`,
+      `วันนี้ ✈ จ่ายแทน ${money(totalOut(items))} · 💰 โอนเข้า ${money(totalIn(items))} · ถ้าผิดทางพิมพ์ “${item.out ? "เข้า" : "ออก"}”`,
+    ].join("\n"));
+  }
   const late = item.paidDate && item.day !== `${item.paidDate.slice(6)}-${item.paidDate.slice(3, 5)}-${item.paidDate.slice(0, 2)}` ? ` (โอนวันที่ ${item.paidDate.slice(0, 5)})` : "";
   return lineReply(ev.replyToken, [
     `🧾 ${money(item.amount)} บาท${when ? ` · โอน ${when}` : ""}${item.sender ? ` · ${item.sender}` : ""}${item.bank ? ` (${item.bank})` : ""}`,
@@ -344,5 +352,16 @@ async function handleSlipText(ev: LineEvent, book: SlipBookId): Promise<void> {
     }
     return lineReply(ev.replyToken, summaryText(book, day, items, state.closed[day]));
   }
-  if (/^(ช่วย|help|\?|？)$/i.test(text)) return lineReply(ev.replyToken, SLIP_HELP);
+  // two-way group: "เข้า" / "ออก" flips the direction of the latest slip and remembers it for that payer
+  if (SLIP_BOOKS[book].twoWay && (m = text.match(/^(เข้า|ออก)$/))) {
+    const state = await loadSlipState(book);
+    const day = roundFor(state, now);
+    const last = (await listSlips(book, day)).filter(counted).sort((a, b) => b.ts - a.ts)[0];
+    if (!last) return lineReply(ev.replyToken, "ยังไม่มีสลิปของวันนี้ให้แก้");
+    const out = m[1] === "ออก";
+    await saveSlip(book, { ...last, out });
+    if (last.sender) await saveSlipState(book, learnSender(state, last.sender, out));
+    return lineReply(ev.replyToken, `แก้แล้ว: ${money(last.amount)} บาท = ${out ? "✈ เราสำรองจ่าย (คิด" + SLIP_BOOKS[book].label + ")" : "💰 " + SLIP_BOOKS[book].label + "โอนเข้า"}`);
+  }
+  if (/^(ช่วย|help|\?|？)$/i.test(text)) return SLIP_BOOKS[book].twoWay ? undefined : lineReply(ev.replyToken, SLIP_HELP);
 }

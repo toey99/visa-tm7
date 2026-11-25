@@ -18,7 +18,7 @@ import {
 } from "@/lib/ledger/types";
 
 type Resp = { config: LedgerConfig; days: DayLedger[]; groups: { id: string; name: string }[]; sent?: string; error?: string };
-const SRC_LABEL = { ext: "ต่อวีซ่า", run: "วีซ่ารัน", d90: "90 วัน" } as const;
+const SRC_LABEL = { ext: "ต่อวีซ่า", run: "วีซ่ารัน", d90: "90 วัน", adv: "สำรองจ่าย" } as const;
 const OFFICE_SHORT: Record<string, string> = { BANGKOK: "IT", NONTHABURI: "นนท์", RAYONG: "ระยอง", CHIANG_SAEN: "เชียงแสน", VFS_BANGKOK: "VFS กทม.", VFS_PATTAYA: "VFS พัทยา" };
 
 export default function LedgerPage() {

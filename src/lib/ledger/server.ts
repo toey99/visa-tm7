@@ -15,7 +15,8 @@ import { bkkDay, buildCases } from "@/lib/d90/types";
 import { OFFICE_IDS, type OfficeId } from "@/lib/offices";
 import { listSlips } from "@/lib/slips/store";
 import { jobsInRange } from "@/lib/jobs/store";
-import { bkkTime, counted } from "@/lib/slips/types";
+import { SLIP_BOOKS, bkkTime, counted } from "@/lib/slips/types";
+import { loadConfig as loadGroups } from "@/lib/d90/store";
 import { overstayInfo } from "@/lib/today/types";
 import { carKey } from "@/lib/visarun/cars";
 import {
@@ -94,6 +95,13 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
   const { agent, slipBook } = LEDGER_BOOKS[book];
   const charges: ChargeLine[] = [];
   const credits: CreditLine[] = [];
+  // Two-way slip room linked to a LINE group → the ticket slips posted there are what the agent is
+  // charged (on the day we paid); the ✈ amount typed on a visa-run card is then only a note, so
+  // the same ticket is never charged twice.
+  let ticketsFromSlips = false;
+  if (slipBook && SLIP_BOOKS[slipBook].twoWay) {
+    try { ticketsFromSlips = Object.values((await loadGroups()).groups).some((g) => g.status === "allowed" && g.target?.ns === "slips" && g.target.office === slipBook); } catch { /* treat as not linked */ }
+  }
 
   // extension boards
   await Promise.all(OFFICE_IDS.map(async (office) => {
@@ -130,7 +138,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       if (f.wetPassport && prices.runWet) items.push({ label: "💧 พาสปอร์ตเปียกน้ำ", amount: prices.runWet });
       if (f.runVip && solo && prices.runVip) items.push({ label: "⏰ VIP นอกช่วงเวลา", amount: prices.runVip });   // off-hours: only a car with one passenger
       items.push(...overstayItems(f, day, prices, false));
-      if (num(f.ticket) > 0) items.push({ label: "✈ ค่าตั๋ว (สำรองจ่าย)", amount: num(f.ticket) });   // flight ticket we paid up front — passed on at cost
+      if (num(f.ticket) > 0 && !ticketsFromSlips) items.push({ label: "✈ ค่าตั๋ว (สำรองจ่าย)", amount: num(f.ticket) });   // flight ticket we paid up front — passed on at cost
       const flags = [f.run === "RUN30" ? "🐰" : "", f.cambodia ? "🐻" : "", f.overstay ? "🐢" : "", f.vip ? "👑" : ""].filter(Boolean).join("");
       charges.push({ id: p.id, src: "run", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
     }
@@ -156,7 +164,10 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
 
   // transfers in (slip room, that round)
   const slips = slipBook ? (await listSlips(slipBook, day)).filter(counted).sort((a, b) => a.ts - b.ts) : [];
-  for (const s of slips) credits.push({ id: s.id, kind: "slip", label: [s.sender, s.ref].filter(Boolean).join(" · ") || "สลิปโอน", amount: s.amount, time: bkkTime(s.ts) });
+  for (const s of slips) {
+    if (s.out) charges.push({ id: `slip-${s.id}`, src: "adv", office: "", name: `สลิปจ่ายค่าตั๋ว ${bkkTime(s.ts)}${s.note ? ` · ${s.note}` : ""}`, passport: "", items: [{ label: "✈ ค่าตั๋ว (สำรองจ่าย)", amount: s.amount }], amount: s.amount, paidDirect: 0, flags: "✈" });
+    else credits.push({ id: s.id, kind: "slip", label: [s.sender, s.ref].filter(Boolean).join(" · ") || "สลิปโอน", amount: s.amount, time: bkkTime(s.ts) });
+  }
   for (const c of charges) if (c.paidDirect) credits.push({ id: `direct-${c.id}`, kind: "direct", label: `${c.name} จ่ายหน้างาน`, amount: c.paidDirect });
 
   charges.sort((a, b) => a.src.localeCompare(b.src) || a.office.localeCompare(b.office) || a.name.localeCompare(b.name));

@@ -9,10 +9,15 @@
 //
 // Keep this file free of "@/…" imports so it can be unit-tested with plain node.
 
-export const SLIP_BOOKS = {
+// twoWay: the group holds slips in BOTH directions — the agent's transfers to us (money in) and
+// our own payments on the agent's behalf, e.g. flight tickets (money out → charged to the agent).
+// Such a group is an ordinary chat too, so the bot stays quiet about pictures that are not slips
+// and a sticker does not close the round.
+export type SlipBookId = "ARTAO" | "NUNA";
+export const SLIP_BOOKS: Record<SlipBookId, { label: string; twoWay?: boolean }> = {
   ARTAO: { label: "อาเต่า" },
-} as const;
-export type SlipBookId = keyof typeof SLIP_BOOKS;
+  NUNA: { label: "หนูนา", twoWay: true },
+};
 export const isSlipBook = (s: unknown): s is SlipBookId => typeof s === "string" && s in SLIP_BOOKS;
 
 export type SlipItem = {
@@ -30,9 +35,29 @@ export type SlipItem = {
   ref: string;           // the bank's transaction / reference number
   dupOf?: string;        // id of the slip this one repeats (same reference) — not counted
   excluded?: boolean;    // set by hand: keep the picture, leave it out of the total
+  out?: boolean;         // two-way books: true = WE paid this (ticket advance, charged to the agent); false / unset = the agent paid us
   note?: string;
 };
-export type SlipState = { closed: Record<string, number> };   // round (YYYY-MM-DD) → when it was closed
+// closed: round (YYYY-MM-DD) → when it was closed. outSenders / inSenders (two-way books): payer names
+// learnt from slips whose direction was set by hand, so the next slip from that account is filed the same way.
+export type SlipState = { closed: Record<string, number>; outSenders?: string[]; inSenders?: string[] };
+const nameKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F\u4e00-\u9fff]/g, "");
+/** Direction of a new slip in a two-way book: as learnt for that payer, else money OUT (the group exists for our ticket payments). */
+export function guessOut(state: SlipState, sender: string): boolean {
+  const k = nameKey(sender);
+  if (k && (state.inSenders ?? []).includes(k)) return false;
+  return true;
+}
+/** Remember which way slips from this payer go (latest choice wins). */
+export function learnSender(state: SlipState, sender: string, out: boolean): SlipState {
+  const k = nameKey(sender);
+  if (!k) return state;
+  const add = (xs: string[] | undefined) => [...(xs ?? []).filter((x) => x !== k), k].slice(-40);
+  const drop = (xs: string[] | undefined) => (xs ?? []).filter((x) => x !== k);
+  return out ? { ...state, outSenders: add(state.outSenders), inSenders: drop(state.inSenders) } : { ...state, inSenders: add(state.inSenders), outSenders: drop(state.outSenders) };
+}
+export const totalOut = (items: SlipItem[]) => Math.round(items.filter((i) => counted(i) && i.out).reduce((s, i) => s + i.amount, 0) * 100) / 100;
+export const totalIn = (items: SlipItem[]) => Math.round(items.filter((i) => counted(i) && !i.out).reduce((s, i) => s + i.amount, 0) * 100) / 100;
 
 const BKK = 7 * 3600 * 1000;
 export const bkkDay = (ts: number) => new Date(ts + BKK).toISOString().slice(0, 10);
@@ -83,6 +108,11 @@ export function formula(items: SlipItem[]): string {
 export function summaryText(book: SlipBookId, day: string, items: SlipItem[], closedAt?: number): string {
   const list = byArrival(items);
   const ok = list.filter(counted);
+  if (SLIP_BOOKS[book].twoWay) {
+    if (!ok.length) return `🧾 สลิป ${SLIP_BOOKS[book].label} · ${dayTh(day)}\nยังไม่มีสลิปในวันนี้`;
+    const row = (i: SlipItem) => `${i.out ? "✈ จ่ายแทน" : "💰 โอนเข้า"} ${money(i.amount)}${i.paidTime ? ` · ${i.paidTime}` : ""}${i.note ? ` · ${i.note}` : ""}`;
+    return [`🧾 สลิป ${SLIP_BOOKS[book].label} · ${dayTh(day)} · ${ok.length} ใบ`, ok.map(row).join("\n"), `✈ สำรองจ่ายรวม ${money(totalOut(ok))}\n💰 โอนเข้ารวม ${money(totalIn(ok))}`].join("\n\n");
+  }
   const head = `🧾 เงินโอน ${SLIP_BOOKS[book].label} · รอบ ${dayTh(day)} · ${ok.length} ใบ${closedAt ? " (ตัดจบแล้ว)" : ""}`;
   if (!list.length) return `${head}\nยังไม่มีสลิปในรอบนี้`;
   const rows = ok.map((i, k) => `${k + 1}. ${[i.paidDate ? `${i.paidDate.slice(0, 5)}` : "", i.paidTime].filter(Boolean).join(" ")} · ${money(i.amount)}${i.sender ? ` · ${i.sender}` : ""}`);

@@ -13,11 +13,11 @@ export type StatementLang = "zh" | "th";
 // slipBook: the transfer-slip room that feeds the book (null = transfers are typed in as + adjustments)
 // statement: the agent gets a running 对账单 (Chinese / English) for a period instead of the Thai daily closing note
 // quick: one-tap adjustment lines for things that recur in that book (+ = credit to the agent, e.g. work we ask the agent to do for us)
-export const LEDGER_BOOKS: Record<LedgerBook, { agent: string; label: string; slipBook: "ARTAO" | null; statement?: boolean; lang?: StatementLang; quick?: { label: string; amount: number }[] }> = {
+export const LEDGER_BOOKS: Record<LedgerBook, { agent: string; label: string; slipBook: "ARTAO" | "NUNA" | null; statement?: boolean; lang?: StatementLang; quick?: { label: string; amount: number }[] }> = {
   ARTAO: { agent: "อาเต่า", label: "บัญชีอาเต่า", slipBook: "ARTAO" },
   UU: { agent: "uu", label: "บัญชี uu", slipBook: null, statement: true, lang: "zh" },
   NUNA: {
-    agent: "หนูนา", label: "บัญชีหนูนา", slipBook: null, statement: true, lang: "th",
+    agent: "หนูนา", label: "บัญชีหนูนา", slipBook: "NUNA", statement: true, lang: "th",
     quick: [{ label: "หนังสือรับรองที่อยู่ (ฝากหนูนาทำ)", amount: 1300 }, { label: "หนังสือสถานทูตพม่า (ฝากหนูนาทำ)", amount: 300 }],
   },
 };
@@ -115,7 +115,7 @@ export type DayEdits = {
 
 export type ChargeLine = {
   id: string;                 // person id / case id
-  src: "ext" | "run" | "d90";
+  src: "ext" | "run" | "d90" | "adv";   // adv = money we paid on the agent's behalf (a ticket slip from the two-way slip room)
   office: string;             // OfficeId or "" for d90
   name: string;
   cn?: string;                // Chinese name, when the card has one (statement books show it first)
