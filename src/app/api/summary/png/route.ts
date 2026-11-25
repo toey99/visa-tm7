@@ -18,6 +18,6 @@ export async function GET(req: NextRequest) {
     const r = await renderSummaryPng({ ns, office: office as OfficeId }, day, q.get("agent") ?? "");
     return new NextResponse(r.png, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store" } });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "render failed" }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : "render failed", where: e instanceof Error ? (e.stack ?? "").split("\n").slice(1, 7).map((l) => l.trim()) : [] }, { status: 500 });
   }
 }

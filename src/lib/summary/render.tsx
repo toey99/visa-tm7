@@ -200,7 +200,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
             <div style={{ display: "flex", position: "relative", width: 90, height: 120 }}>
               {img
                 // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={img} alt="" width={90} height={120} style={{ width: 90, height: 120, objectFit: "cover", borderRadius: 4, filter: ghost ? "grayscale(1)" : undefined }} />
+                ? <img src={img} alt="" width={90} height={120} style={{ width: 90, height: 120, objectFit: "cover", borderRadius: 4, ...(ghost ? { filter: "grayscale(1)" } : {}) }} />
                 : <div style={{ display: "flex", width: 90, height: 120, background: "#eee", borderRadius: 4 }} />}
               {!!f.vip && <div style={{ position: "absolute", top: -22, left: 13, display: "flex" }}><Crown w={64} /></div>}
               {cancelled && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626", fontSize: 64, fontWeight: 700 }}>✕</div>}
