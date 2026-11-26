@@ -11,7 +11,7 @@ export default function AuthHeader() {
   if (!user) return null;
 
   return (
-    <div className="border-b border-slate-200 bg-white">
+    <div className="border-b border-slate-200 bg-white print:hidden">
       <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
           <span className="hidden sm:inline text-slate-400">Signed in as</span>
@@ -29,6 +29,7 @@ export default function AuthHeader() {
           <a href="/dashboard" className="rounded-lg px-2 py-1 font-medium text-pink-600 hover:bg-pink-50">📊 Dashboard</a>
           <a href="/tm87" className="rounded-lg px-2 py-1 font-medium text-violet-700 hover:bg-violet-50">📄 TM.87</a>
           <a href="/jobs" className="rounded-lg px-2 py-1 font-medium text-indigo-700 hover:bg-indigo-50">🗂 วีซ่ายาว</a>
+          <a href="/nonb" className="rounded-lg px-2 py-1 font-medium text-sky-600 hover:bg-sky-50">✅ เช็ค Non-B</a>
           <a href="/expiry" className="rounded-lg px-2 py-1 font-medium text-amber-700 hover:bg-amber-50">⏰ ใกล้หมดอายุ</a>
           <a href="/overstay" className="rounded-lg px-2 py-1 font-medium text-slate-600 hover:bg-slate-50">เช็ค Overstay</a>
         </nav>
