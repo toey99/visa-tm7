@@ -111,6 +111,9 @@ export type DayEdits = {
   note: string;
   closedAt?: string;          // ISO — once closed, `snapshot` is used instead of re-reading the boards
   snapshot?: DayComputed;
+  // the frozen figures as they stood before the day was last reopened — a reopened old day is
+  // re-read from boards that the weekly clean-up may already have emptied, so the lock can be put back
+  backup?: { snapshot: DayComputed; closedAt?: string };
 };
 
 export type ChargeLine = {
@@ -145,6 +148,7 @@ export type DayLedger = DayComputed & {
   carryOut: number;           // carryIn + creditTotal + adjustTotal − chargeTotal
   note: string;
   closedAt?: string;
+  backupAt?: string;         // when the figures kept from before the last reopen were locked (they can be restored)
 };
 
 export const money = (n: number) => (Math.round(n) === n ? n.toLocaleString("en-US") : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { linePush } from "@/lib/d90/line";
 import { loadConfig } from "@/lib/d90/store";
-import { ledgerRange, loadLedgerConfig, safeDay, saveLedgerConfig, updateDay } from "@/lib/ledger/server";
+import { ledgerRange, loadLedgerConfig, ReopenNeedsConfirm, safeDay, saveLedgerConfig, updateDay } from "@/lib/ledger/server";
 import { bkkToday, closingText, DEFAULT_PRICES, isLedgerBook, type Adjustment, type LedgerConfig, type Prices } from "@/lib/ledger/types";
 
 export const runtime = "nodejs";
@@ -38,6 +38,8 @@ type Body = {
   note?: string;
   close?: boolean;
   reopen?: boolean;
+  force?: boolean;            // reopen even though the day's figures will change
+  restore?: boolean;          // put back the figures that were locked before the last reopen
   send?: boolean;
   config?: { prices?: Partial<Prices>; opening?: { day: string; amount: number }; lineGroupId?: string };
 };
@@ -66,8 +68,13 @@ export async function POST(req: NextRequest) {
     }
 
     const day = safeDay(body.day);
-    if (day && (body.adjustments || typeof body.note === "string" || body.close || body.reopen)) {
-      await updateDay(book, day, { adjustments: body.adjustments, note: body.note, close: body.close, reopen: body.reopen }, cfg.prices);
+    if (day && (body.adjustments || typeof body.note === "string" || body.close || body.reopen || body.restore)) {
+      try {
+        await updateDay(book, day, { adjustments: body.adjustments, note: body.note, close: body.close, reopen: body.reopen, force: body.force, restore: body.restore }, cfg.prices);
+      } catch (e) {
+        if (e instanceof ReopenNeedsConfirm) return NextResponse.json({ error: "reopen-changes-figures", needConfirm: { was: e.was, now: e.now } }, { status: 409 });
+        throw e;
+      }
     }
 
     const to = day && day > bkkToday() ? day : bkkToday();

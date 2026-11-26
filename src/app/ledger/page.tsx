@@ -69,6 +69,27 @@ export default function LedgerPage() {
   useEffect(() => { if (bookState) void call(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [bookState]);
 
   const saveEdits = (patch: Record<string, unknown>) => call({ day, ...patch }, "กำลังบันทึก…");
+  // Reopening a locked day re-reads the boards. Ask first, and ask again with the numbers when they would change
+  // (an old day's boards may already be cleaned up — its work and counter cash would drop out of the account).
+  async function reopenDay() {
+    if (!confirm(`เปิดยอดวัน ${dayTh(day)} ใหม่?\nตัวเลขที่ล็อกไว้จะถูกอ่านใหม่จากบอร์ด`)) return;
+    setBusy("กำลังตรวจ…"); setError("");
+    try {
+      const send = (force: boolean) => fetch("/api/ledger", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ book: BOOK, day, reopen: true, force }) });
+      let r = await send(false);
+      if (r.status === 409) {
+        const j = (await r.json()) as { needConfirm?: { was: { charge: number; credit: number }; now: { charge: number; credit: number } } };
+        const c = j.needConfirm;
+        setBusy("");
+        if (!c || !confirm(`⚠ ถ้าเปิดใหม่ ยอดของ ${dayTh(day)} จะเปลี่ยน\n\nค่างาน ${money(c.was.charge)} → ${money(c.now.charge)}\nเงินเข้า ${money(c.was.credit)} → ${money(c.now.credit)}\n\nข้อมูลบอร์ดของวันเก่าอาจถูกล้างไปแล้ว ยอดคงเหลือทุกวันถัดไปจะเปลี่ยนตาม\nยืนยันเปิดใหม่?`)) return;
+        setBusy("กำลังบันทึก…");
+        r = await send(true);
+      }
+      if (!r.ok) { const j = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(j.error || `HTTP ${r.status}`); }
+      setBusy("");
+      await call();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(""); }
+  }
   async function addAdj() {
     const amount = Number(newAmount.replace(/[^\d.-]/g, ""));
     if (!Number.isFinite(amount) || !amount) return;
@@ -177,7 +198,8 @@ export default function LedgerPage() {
             <Stat label="ค่างาน" value={`−${money(d.chargeTotal)}`} tone="warn" />
             <Stat label="ยกไป" value={money(d.carryOut)} tone={d.carryOut < 0 ? "bad" : "good"} big />
           </section>
-          {d.closedAt && <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700">🔒 ปิดยอดวันนี้แล้ว (ตัวเลขถูกตรึงไว้ ไม่อ่านจากบอร์ดอีก) <button className="ml-2 underline" onClick={() => void saveEdits({ reopen: true })}>เปิดใหม่</button></div>}
+          {d.closedAt && <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700">🔒 ปิดยอดวันนี้แล้ว (ตัวเลขถูกตรึงไว้ ไม่อ่านจากบอร์ดอีก) <button className="ml-2 underline" onClick={() => void reopenDay()}>เปิดใหม่</button></div>}
+          {!d.closedAt && d.backupAt && <div className="mb-3 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">⚠ วันนี้ถูกเปิดใหม่ — ตัวเลขอ่านสดจากบอร์ด (ยอดที่ล็อกไว้เดิมยังเก็บอยู่) <button className="ml-2 font-semibold underline" onClick={() => { if (confirm(`คืนยอดของ ${dayTh(day)} กลับเป็นชุดที่ล็อกไว้เดิม?`)) void saveEdits({ restore: true }); }}>↩ คืนยอดที่ล็อกไว้เดิม</button></div>}
 
           {/* money in */}
           <Card title={`💰 เงินเข้า · ${d.credits.length} รายการ`} right={`+${money(d.creditTotal)}`}>

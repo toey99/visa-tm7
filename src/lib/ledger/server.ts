@@ -46,7 +46,7 @@ export async function saveLedgerConfig(book: LedgerBook, c: LedgerConfig): Promi
 }
 export async function loadDayEdits(book: LedgerBook, day: string): Promise<DayEdits> {
   const e = await blobGetJson<DayEdits>(dayPath(book, day));
-  return { adjustments: e?.adjustments ?? [], note: e?.note ?? "", closedAt: e?.closedAt, snapshot: e?.snapshot };
+  return { adjustments: e?.adjustments ?? [], note: e?.note ?? "", closedAt: e?.closedAt, snapshot: e?.snapshot, backup: e?.backup };
 }
 export async function saveDayEdits(book: LedgerBook, day: string, e: DayEdits): Promise<void> {
   await blobPut(dayPath(book, day), JSON.stringify(e), "application/json");
@@ -182,7 +182,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
 
 const withEdits = (c: DayComputed, e: DayEdits, carryIn: number): DayLedger => {
   const adjustTotal = e.adjustments.reduce((s, a) => s + (Number.isFinite(a.amount) ? a.amount : 0), 0);
-  return { ...c, carryIn, adjustments: e.adjustments, adjustTotal, carryOut: Math.round((carryIn + c.creditTotal + adjustTotal - c.chargeTotal) * 100) / 100, note: e.note, closedAt: e.closedAt };
+  return { ...c, carryIn, adjustments: e.adjustments, adjustTotal, carryOut: Math.round((carryIn + c.creditTotal + adjustTotal - c.chargeTotal) * 100) / 100, note: e.note, closedAt: e.closedAt, backupAt: e.backup ? (e.backup.closedAt ?? "?") : undefined };
 };
 
 /**
@@ -216,11 +216,26 @@ export async function ledgerRange(book: LedgerBook, to: string, cfg?: LedgerConf
   return { config, days: out };
 }
 
-export async function updateDay(book: LedgerBook, day: string, patch: { adjustments?: Adjustment[]; note?: string; close?: boolean; reopen?: boolean }, prices: Prices): Promise<DayEdits> {
+/** Thrown when reopening a locked day would change its figures and the caller has not confirmed it. */
+export class ReopenNeedsConfirm extends Error {
+  constructor(public was: { charge: number; credit: number }, public now: { charge: number; credit: number }) { super("reopen needs confirm"); }
+}
+
+export async function updateDay(book: LedgerBook, day: string, patch: { adjustments?: Adjustment[]; note?: string; close?: boolean; reopen?: boolean; force?: boolean; restore?: boolean }, prices: Prices): Promise<DayEdits> {
   const e = await loadDayEdits(book, day);
   if (patch.adjustments) e.adjustments = patch.adjustments.filter((a) => a && typeof a.id === "string").map((a) => ({ id: a.id.slice(0, 40), label: String(a.label ?? "").slice(0, 120), amount: Number.isFinite(Number(a.amount)) ? Number(a.amount) : 0 }));
   if (typeof patch.note === "string") e.note = patch.note.slice(0, 2000);
-  if (patch.reopen) { delete e.closedAt; delete e.snapshot; }
+  if (patch.reopen && e.snapshot) {
+    // A locked day keeps its own figures; reopening re-reads the boards, and for an old day those
+    // may be gone (weekly clean-up) — its work and counter cash would silently drop out. So look
+    // first: if the fresh figures differ, the caller must confirm, and the locked ones are kept as a backup.
+    const fresh = await computeDay(book, day, prices);
+    const was = { charge: e.snapshot.chargeTotal, credit: e.snapshot.creditTotal }, now = { charge: fresh.chargeTotal, credit: fresh.creditTotal };
+    if (!patch.force && (Math.abs(was.charge - now.charge) > 0.005 || Math.abs(was.credit - now.credit) > 0.005)) throw new ReopenNeedsConfirm(was, now);
+    e.backup = { snapshot: e.snapshot, closedAt: e.closedAt };
+    delete e.closedAt; delete e.snapshot;
+  }
+  if (patch.restore && e.backup) { e.snapshot = e.backup.snapshot; e.closedAt = e.backup.closedAt ?? new Date().toISOString(); delete e.backup; }
   if (patch.close) { e.snapshot = await computeDay(book, day, prices); e.closedAt = new Date().toISOString(); }
   await saveDayEdits(book, day, e);
   return e;
