@@ -15,8 +15,9 @@ export type PayGroup<T extends Rec = Person> = { key: string; index: number; let
 
 // one bright pastel per group (A, B, C… cycle) — tint behind the member, edge for frames and badges
 export const GROUP_COLORS = [
-  { bg: "#fce7f3", edge: "#ec4899", fg: "#9d174d" }, { bg: "#e0f2fe", edge: "#0ea5e9", fg: "#075985" }, { bg: "#dcfce7", edge: "#22c55e", fg: "#166534" },
-  { bg: "#ede9fe", edge: "#8b5cf6", fg: "#5b21b6" }, { bg: "#ffedd5", edge: "#f97316", fg: "#9a3412" }, { bg: "#fef9c3", edge: "#eab308", fg: "#854d0e" },
+  // sky first: pink and purple are the IT Square and VFS sheet colours, so they come last
+  { bg: "#e0f2fe", edge: "#0ea5e9", fg: "#075985" }, { bg: "#dcfce7", edge: "#22c55e", fg: "#166534" }, { bg: "#ffedd5", edge: "#f97316", fg: "#9a3412" },
+  { bg: "#fef9c3", edge: "#eab308", fg: "#854d0e" }, { bg: "#ede9fe", edge: "#8b5cf6", fg: "#5b21b6" }, { bg: "#fce7f3", edge: "#ec4899", fg: "#9d174d" },
 ];
 export const groupColor = (g: { index: number }) => GROUP_COLORS[g.index % GROUP_COLORS.length];
 
