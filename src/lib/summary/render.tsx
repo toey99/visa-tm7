@@ -10,6 +10,7 @@
 // Chinese names come from a Noto Sans SC subset fetched for exactly the
 // characters on the sheet, emoji are drawn as Twemoji by next/og.
 import { Crown } from "@/lib/summary/crown";
+import { groupColor, groupTotal, payGroups } from "@/lib/today/groups";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { CSSProperties } from "react";
@@ -105,6 +106,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
   const want = agent.trim().toLowerCase();
   const shown = want ? recs.filter((p) => String((p.fields as Partial<PersonFields>)?.agent ?? "").trim().toLowerCase() === want) : recs;
   const people = shown.filter((p) => !p.cancelled && !p.movedTo);
+  const grouping = payGroups(shown);   // customers who pay in one lump: tinted card + letter + legend
   const o = OFFICES[target.office];
   const isRun = target.ns === "run";
   const accent = o.summaryAccent;
@@ -157,6 +159,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
     o.summaryTitle, o.subtitle, dateEn, dateTh, dateCn, agent, "VISA RUN ISSUE DATE รอบ ลง กลับถึงสนามบินก่อน ต่อวีซ่า วัน คน มาแล้ว ต้องเก็บ รวม บาท รอโอน hold พาสปอร์ต รอเอเจนซี่ยืนยันโอน รับแล้ว ไม่มีรายการเก็บเงิน overstay VIP คัน ไปต่อ 30 ไม่มา เลื่อนวัน ยังไม่มีลูกค้า 诚信经营 · 用心服务 ซื่อสัตย์ จริงใจ ใส่ใจบริการ Integrity in Business, Care in Service 0123456789,.+/·↳➡✓",
     runSlot?.th ?? "", meta.flight ?? "", meta.landTime ?? "", meta.returnBy ?? "", meta.extensionDays ?? "",
     ...cards.flatMap((c) => [c.f.lastName ?? "", c.f.firstName ?? "", c.f.chineseName ?? "", c.f.subAgent ?? "", c.f.note ?? "", c.tag.t, c.car?.id ?? ""]),
+    ...grouping.groups.map((g) => g.label), "เก็บรวม กลุ่ม ↳ · ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789,",
   ].join("");
   const fonts = await loadFonts(text);
   const font = "Sarabun, 'Noto Sans SC'";
@@ -168,7 +171,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
 
   // the sheet grows with its rows; satori needs a fixed height, so estimate it
   const rows = Math.max(1, Math.ceil(shown.length / cols));
-  const height = 22 + 70 + 12 + 32 + rows * 218 + 14 + 12 + 70 + 22;   // 218 = card 196 + row gap 22
+  const height = 22 + 70 + 12 + 32 + rows * 218 + 14 + 12 + 70 + 22 + (grouping.groups.length ? 12 + Math.ceil(grouping.groups.length / 2) * 32 : 0);   // 218 = card 196 + row gap 22; + the group legend
 
   const element = (
     <div style={{ display: "flex", flexDirection: "column", width: sheetW, height, padding: 22, backgroundColor: firstColor(o.summaryBg), backgroundImage: plain ? undefined : tidyGradient(o.summaryBg), fontFamily: font, position: "relative" }}>
@@ -195,8 +198,11 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
 
       <div style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", rowGap: 22, columnGap: 10, background: "rgba(255,255,255,.92)", borderRadius: 14, padding: "18px 16px 14px", marginTop: 12, flexGrow: 1 }}>
         {cards.length === 0 && <div style={{ display: "flex", width: "100%", justifyContent: "center", color: "#999", padding: 30 }}>ยังไม่มีลูกค้า</div>}
-        {cards.map(({ p, f, i, ghost, tag, ov, car, img, cancelled, moved, arrived }) => (
-          <div key={p.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW, opacity: ghost ? 0.75 : 1 }}>
+        {cards.map(({ p, f, i, ghost, tag, ov, car, img, cancelled, moved, arrived }) => {
+          const grp = grouping.of.get(p.id);
+          const gc = grp ? groupColor(grp) : null;
+          return (
+          <div key={p.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW, opacity: ghost ? 0.75 : 1, ...(gc ? { backgroundColor: gc.bg, borderRadius: 8, borderBottom: `4px solid ${gc.edge}` } : {}) }}>
             <div style={{ display: "flex", position: "relative", width: 90, height: 120 }}>
               {img
                 // eslint-disable-next-line @next/next/no-img-element
@@ -206,6 +212,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
               {cancelled && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626", fontSize: 64, fontWeight: 700 }}>✕</div>}
               {!!moved && <div style={{ position: "absolute", left: 0, top: 0, width: 90, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 56, fontWeight: 700 }}>➡</div>}
               <div style={{ position: "absolute", top: -6, left: -6, width: 22, height: 22, borderRadius: 11, background: accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</div>
+              {!!grp && !!gc && <div style={{ position: "absolute", top: 20, left: -8, width: 24, height: 24, borderRadius: 7, background: gc.edge, color: "#fff", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{grp.letter}</div>}
               {!!ov && ov.days > 0 && <div style={{ position: "absolute", bottom: -6, right: -6, display: "flex", background: "#dc2626", color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>⚠ +{ov.days}</div>}
               {!!car && <div style={{ position: "absolute", top: -6, right: -6, display: "flex", background: car.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "2px 5px" }}>🚗{car.id}{f.carTrip === "2" ? "·2" : ""}</div>}
               {isRun && !!f.cambodia && <div style={{ position: "absolute", top: 18, right: -8, display: "flex", fontSize: 22, lineHeight: 1 }}>🐻</div>}
@@ -219,8 +226,19 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
             <div style={{ display: "flex", marginTop: 5, maxWidth: cardW }}><div style={pill(tag.bg, tag.fg, 11)}>{tag.t}</div></div>
             {f.note ? <div style={{ display: "flex", fontSize: 10, color: "#666", marginTop: 3 }}>📝 {f.note}</div> : null}
           </div>
-        ))}
+          );
+        })}
       </div>
+      {grouping.groups.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", rowGap: 8, columnGap: 8, marginTop: 12, padding: "0 6px" }}>
+          {grouping.groups.map((g) => { const c = groupColor(g); return (
+            <div key={g.key} style={{ display: "flex", alignItems: "center", backgroundColor: c.bg, color: c.fg, border: `2px solid ${c.edge}`, borderRadius: 999, padding: "2px 12px 2px 3px", fontSize: 13, fontWeight: 700 }}>
+              <div style={{ display: "flex", backgroundColor: c.edge, color: "#fff", borderRadius: 999, padding: "1px 9px", marginRight: 6 }}>{g.letter}</div>
+              <div style={{ display: "flex" }}>{`${g.label} · ${g.members.length} คน · เก็บรวม ${groupTotal(g).toLocaleString()}`}</div>
+            </div>
+          ); })}
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333" }}>
         <div style={{ display: "flex", flexWrap: "wrap", rowGap: 8, columnGap: 8, alignItems: "center" }}>

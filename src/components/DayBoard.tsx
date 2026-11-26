@@ -25,7 +25,7 @@ import {
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
 import RunPlanner from "@/components/RunPlanner";
-import { payGroups, unpaidOf, type PayGroup } from "@/lib/today/groups";
+import { groupColor, groupTotal, payGroups, unpaidOf, type PayGroup } from "@/lib/today/groups";
 import { Crown } from "@/lib/summary/crown";
 import { CARS, RUN_SLOTS, carById, carKey, tripTh } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
@@ -2142,6 +2142,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
   const runSlot = RUN_SLOTS.find((s) => s.id === (meta.slot || "morning"));
   const people = all.filter((p) => !p.cancelled && !p.movedTo);   // counted
   const shown = all;                                                // drawn (ghosts included)
+  const grouping = payGroups(all);                                  // customers who pay in one lump: tinted frame + letter
   const [dd, mm, yy] = meta.date.split("/");
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const thDays = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -2205,10 +2206,13 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
               : f.pay === "paid" ? { bg: "#d2f4dd", fg: "#14532d", t: `✅ ${who}จ่ายแล้ว` }
               : f.pay === "hold" ? { bg: "#7c3aed", fg: "#ffffff", t: `🔒 ${who}รอโอน · hold พาส` } : { bg: "#dbeafe", fg: "#1e3a8a", t: `🤝 ${who}ไม่เก็บ` };
             const ov = overstayInfo(f.arrivalDate, f.admittedUntil, f.visaType, meta.date, undefined, !isRun);
+            const grp = grouping.of.get(p.id);
+            const gc = grp ? groupColor(grp) : null;
             return (
-              <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1, minWidth: 0 }}>
+              <div key={p.id} style={{ textAlign: "center", position: "relative", opacity: ghost ? 0.75 : 1, minWidth: 0, ...(grp ? { background: gc!.bg, borderRadius: 6, boxShadow: `0 0 0 4px ${gc!.bg}, 0 0 0 6px ${gc!.edge}` } : {}) }}>
                 <div style={{ position: "relative", display: "inline-block", filter: ghost ? "grayscale(1)" : undefined }}>
                   <SummaryPhoto person={p} />
+                  {grp && <span style={{ position: "absolute", top: 20, left: -8, minWidth: 24, height: 24, padding: "0 4px", borderRadius: 7, background: gc!.edge, color: "#fff", fontSize: 14, fontWeight: 900, lineHeight: "24px", textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,.3)", zIndex: 1 }}>{grp.letter}</span>}
                   {/* VIP: a big crown worn on the head — centred over the top edge of the photo, under the corner badges */}
                   {f.vip && <span style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", lineHeight: 0, filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}><Crown w={64} /></span>}
                   {p.cancelled && (
@@ -2250,6 +2254,16 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
       </div>
 
       {/* footer */}
+      {grouping.groups.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, padding: "0 6px", position: "relative" }}>
+          {grouping.groups.map((g) => { const c = groupColor(g); return (
+            <span key={g.key} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: c.bg, color: c.fg, border: `2px solid ${c.edge}`, borderRadius: 999, padding: "2px 12px 2px 3px", fontSize: 13, fontWeight: 700 }}>
+              <span style={{ background: c.edge, color: "#fff", borderRadius: 999, padding: "1px 9px", fontWeight: 900 }}>{g.letter}</span>
+              {g.label} · {g.members.length} คน · เก็บรวม {groupTotal(g).toLocaleString()}
+            </span>
+          ); })}
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "0 6px", fontSize: 13, color: "#333", position: "relative" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={pill("#fff", accent, 13)}>👥 {people.length} คน</span>
