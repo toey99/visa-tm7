@@ -43,6 +43,7 @@ export type PersonFields = {
   phone: string;
   // bookkeeping for the day
   agent: string;
+  group?: string;               // people who pay together (factory group); "" = by agent + sub-agent + amount, "-" = never grouped
   subAgent: string;             // the main agent's own downstream agent / note — shown on their per-agent summary                // who sent the case
   pay: "collect" | "paid" | "nocollect" | "hold";   // hold = agent is waiting for the customer's transfer → keep the passport until the agent confirms
   amount: string;               // THB to collect at the counter

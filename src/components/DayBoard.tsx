@@ -25,6 +25,7 @@ import {
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
 import RunPlanner from "@/components/RunPlanner";
+import { payGroups, unpaidOf, type PayGroup } from "@/lib/today/groups";
 import { Crown } from "@/lib/summary/crown";
 import { CARS, RUN_SLOTS, carById, carKey, tripTh } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
@@ -1174,6 +1175,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
   const receivedSum = collect.reduce((s, p) => s + ((p.fields.paidHow === "cash" || p.fields.paidHow === "transfer") ? (Number(p.fields.paidAmount || p.fields.amount) || 0) : 0), 0);
   const pendingCount = collect.filter((p) => (p.fields.paidHow ?? "pending") === "pending").length;
   const waitingCount = collect.filter((p) => p.fields.paidHow === "waiting").length;
+  const pay = payGroups(people);   // customers who pay in one lump (factory groups)
 
   if (fieldMode) {
     const accent = OFFICES[meta.office].summaryAccent;
@@ -1216,11 +1218,41 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loaded && <div className="py-10 text-center text-slate-500">กำลังโหลด…</div>}
 
+        {/* groups that pay in one lump: one tap marks everyone still unpaid */}
+        {pay.groups.length > 0 && (
+          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {pay.groups.map((g) => {
+              const left = unpaidOf(g);
+              const leftSum = left.reduce((s, x) => s + (Number(x.fields.amount) || 0), 0);
+              const total = g.members.reduce((s, x) => s + (Number(x.fields.amount) || 0), 0);
+              return (
+                <div key={g.key} className={`rounded-2xl border-2 p-3 ${left.length ? "border-pink-300 bg-pink-50" : "border-emerald-300 bg-emerald-50"}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-lg bg-pink-500 px-2.5 py-1 text-sm font-extrabold text-white">กลุ่ม {g.letter}</span>
+                    <span className="font-bold text-slate-900">{g.label}</span>
+                    <span className="text-sm text-slate-600">{g.members.length} คน · รวม {total.toLocaleString()}</span>
+                    <span className={`ml-auto text-lg font-extrabold ${left.length ? "text-red-700" : "text-emerald-700"}`}>{left.length ? `ค้าง ${leftSum.toLocaleString()}` : "✅ ครบแล้ว"}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600">เลข {g.members.map((m) => String(m.order).padStart(2, "0")).join(" · ")}{left.length && left.length < g.members.length ? ` — ยังไม่จ่าย: ${left.map((m) => String(m.order).padStart(2, "0")).join(" · ")}` : ""}</div>
+                  {left.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <button type="button" onClick={() => left.forEach((m) => setPaidHow(m, "cash"))} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white">💵 รับเงินสดทั้งกลุ่ม ({left.length} คน)</button>
+                      <button type="button" onClick={() => left.forEach((m) => setPaidHow(m, "transfer"))} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white">📲 โอนทั้งกลุ่ม</button>
+                      <button type="button" onClick={() => left.forEach((m) => setPaidHow(m, "waiting"))} className={btnCls}>🕓 รอโอน</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {people.map((p) => {
             const f = p.fields;
             const amount = Number(f.amount) || 0;
             const ghost = !!p.movedTo;
+            const grp = pay.of.get(p.id);
             return (
               <div key={p.id} className={`relative flex gap-3 rounded-2xl border p-3 shadow-sm ${p.cancelled ? "border-red-200 bg-red-50/60 opacity-70" : p.arrived ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200 bg-white"} ${ghost ? "opacity-50" : ""}`}>
                 <div className="relative shrink-0">
@@ -1232,6 +1264,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                   <div className="text-xl leading-tight text-slate-900">{f.chineseName || "\u00a0"}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
                     {f.vip && <span className="rounded bg-yellow-300 px-2 py-0.5 font-extrabold text-yellow-900">👑 VIP +500</span>}
+                    {grp && <span className="rounded bg-pink-500 px-2 py-0.5 font-extrabold text-white">กลุ่ม {grp.letter}</span>}
                     {f.agent && <span className="rounded bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-900">🏢 {f.agent}</span>}
                     {isRun && <span className="rounded bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">{f.run === "RUN30" ? "🐰 run+30" : "run"}</span>}
                     {ghost && <span className="rounded bg-blue-50 px-2 py-0.5 font-semibold text-blue-900">➡ เลื่อนไป {p.movedTo}</span>}
@@ -1982,6 +2015,7 @@ function PersonCard({
 
         <F label="เอเจนซี่ / ผู้ส่ง"><AgentPicker value={f.agent} onChange={(v) => set("agent", v)} others={people.map((x) => x.fields.agent)} /></F>
         <F label="เอเจนซี่ย่อย (โน้ตของเอเจนซี่หลัก)"><input value={f.subAgent ?? ""} onChange={(e) => set("subAgent", e.target.value)} className={inputCls} placeholder="ที่เขาโน้ตมา เช่น 小王" /></F>
+        <F label="กลุ่มจ่ายรวม (ไม่ใส่ = จัดเองตามเอเจนซี่ย่อย)"><input value={f.group ?? ""} onChange={(e) => set("group", e.target.value)} className={inputCls} placeholder="เช่น โรงงาน A · ใส่ - ถ้าจ่ายแยก" /></F>
         <F label="การเงิน">
           <select value={f.pay} onChange={(e) => { const v = e.target.value as PersonFields["pay"]; if (v !== "collect") onChange({ ...p, fields: { ...p.fields, pay: v, paidHow: "pending", paidAmount: "" } }); else set("pay", v); }} className={inputCls}>
             <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="hold">🔒 รอโอน (hold พาสปอร์ต)</option><option value="nocollect">ไม่เก็บ</option>
@@ -2261,6 +2295,18 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
     .map((r) => ({ ...r, kind: kindOf(r.p.fields) }))
     .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.no - b.no);
   const collect = rows.filter((r) => r.p.fields.pay === "collect");
+  type Row = (typeof rows)[number];
+  // a pay group becomes ONE card; everyone else keeps a row of their own. Still-to-collect units first.
+  const grouping = payGroups(all);
+  const units: { group: PayGroup | null; rows: Row[] }[] = [];
+  for (const r of rows) {
+    const g = grouping.of.get(r.p.id) ?? null;
+    const u = g ? units.find((x) => x.group?.key === g.key) : undefined;
+    if (u) u.rows.push(r); else units.push({ group: g, rows: [r] });
+  }
+  for (const u of units) u.rows.sort((a, b) => a.no - b.no);
+  const rank = (u: { rows: Row[] }) => Math.min(...u.rows.map((r) => ORDER.indexOf(r.kind)));
+  units.sort((a, b) => rank(a) - rank(b) || a.rows[0].no - b.rows[0].no);
   const amt = (r: { p: Person }) => Number(r.p.fields.amount) || 0;
   const todo = collect.filter((r) => r.kind === "todo"), waiting = collect.filter((r) => r.kind === "waiting"), got = collect.filter((r) => r.kind === "got");
   const sum = (xs: { p: Person }[]) => xs.reduce((s, r) => s + amt(r), 0);
@@ -2271,6 +2317,48 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
     hold: { bg: "#f5d0fe", edge: "#c026d3", fg: "#86198f", label: "🔒 รอโอน · hold พาส" },
     got: { bg: "#d2f4dd", edge: "#22c55e", fg: "#166534", label: "" },
     agent: { bg: "#cfe9ff", edge: "#38bdf8", fg: "#0b3d6b", label: "🏢 จ่ายที่เอเจนซี่" },
+  };
+  // one card for a whole pay group: the lump to collect up top, a small tile per member underneath
+  const groupCard = (g: PayGroup, rs: Row[]) => {
+    const left = rs.filter((r) => r.kind === "todo" || r.kind === "waiting");
+    const leftSum = left.reduce((s, r) => s + (Number(r.p.fields.amount) || 0), 0);
+    const total = rs.reduce((s, r) => s + (Number(r.p.fields.amount) || 0), 0);
+    const amounts = [...new Set(rs.map((r) => Number(r.p.fields.amount) || 0))];
+    const allDone = left.length === 0;
+    const edge = allDone ? "#22c55e" : "#ec4899";
+    return (
+      <div key={g.key} style={{ background: allDone ? "#ecfdf3" : "#fff", border: `4px solid ${edge}`, borderRadius: 16, padding: "10px 12px 12px", opacity: allDone ? 0.85 : 1, boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: "none", background: edge, color: "#fff", borderRadius: 12, padding: "4px 12px", fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>กลุ่ม {g.letter}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 21, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, overflowWrap: "anywhere" }}>{g.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#475569" }}>{rs.length} คน{amounts.length === 1 ? ` × ${money(amounts[0])}` : ""} · เก็บรวบก้อนเดียว</div>
+          </div>
+          <div style={{ flex: "none", textAlign: "right" }}>
+            <div style={{ fontSize: 42, fontWeight: 900, color: allDone ? "#166534" : "#be123c", lineHeight: 1, fontVariantNumeric: "tabular-nums", textDecoration: allDone ? "line-through" : undefined }}>{money(allDone ? total : leftSum)}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: allDone ? "#166534" : "#be123c", marginTop: 4, whiteSpace: "nowrap" }}>{allDone ? "✅ รับครบแล้ว" : left.length === rs.length ? "💰 ต้องเก็บ" : `💰 เหลือ ${left.length}/${rs.length} คน`}</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginTop: 10 }}>
+          {rs.map(({ p, no, kind }) => {
+            const k = LOOK[kind];
+            const f = p.fields;
+            return (
+              <div key={p.id} style={{ position: "relative", background: k.bg, border: `2px solid ${k.edge}`, borderRadius: 10, padding: "6px 4px 5px", textAlign: "center", minWidth: 0 }}>
+                <div style={{ position: "absolute", top: -6, left: -6, width: 26, height: 26, borderRadius: "50%", background: o.summaryAccent, color: "#fff", fontSize: 13, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{no}</div>
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <SummaryPhoto person={p} w={60} h={80} />
+                  {f.vip && <span style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", lineHeight: 0 }}><Crown w={40} /></span>}
+                </div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, marginTop: 2, overflowWrap: "anywhere" }}>{f.chineseName || f.lastName || "—"}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: "#475569", lineHeight: 1.15, overflowWrap: "anywhere" }}>{[f.lastName, f.firstName].filter(Boolean).join(" ")}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: k.fg, marginTop: 2 }}>{kind === "got" ? (f.paidHow === "cash" ? "💵 รับแล้ว" : "📲 โอนแล้ว") : kind === "waiting" ? "🕓 รอโอน" : kind === "agent" ? "🏢 เอเจนซี่" : amounts.length > 1 ? money(Number(f.amount) || 0) : p.arrived ? "มาแล้ว" : "ยังไม่จ่าย"}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
   const tile = (bg: string, fg: string, label: string, big: string, sub: string) => (
     <div style={{ flex: 1, background: bg, color: fg, borderRadius: 14, padding: "10px 12px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
@@ -2286,12 +2374,12 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
         <div style={{ fontSize: 18, fontWeight: 700, opacity: 0.95, marginTop: 2 }}>{o.emoji} {isRun ? `VISA RUN · ${o.summaryTitle}` : o.summaryTitle} · {meta.date}</div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        {tile(todo.length ? "#fff3b0" : "#d2f4dd", todo.length ? "#be123c" : "#166534", "ยังไม่ได้เก็บ", todo.length ? money(sum(todo)) : "ครบแล้ว ✅", `${todo.length} คน`)}
+        {tile(todo.length ? "#fff3b0" : "#d2f4dd", todo.length ? "#be123c" : "#166534", "ยังไม่ได้เก็บ", todo.length ? money(sum(todo)) : "ครบแล้ว ✅", `${todo.length} คน${todo.length && grouping.groups.length ? ` · ${units.filter((u) => u.rows.some((r) => r.kind === "todo")).length} ก้อน` : ""}`)}
         {tile("#d2f4dd", "#166534", "รับแล้ว", money(gotSum), `${got.length}/${collect.length} คน`)}
         {waiting.length > 0 && tile("#ede9fe", "#5b21b6", "รอโอน", money(sum(waiting)), `${waiting.length} คน`)}
       </div>
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-        {rows.map(({ p, no, kind }) => {
+        {units.map((u) => u.group ? groupCard(u.group, u.rows) : ((({ p, no, kind }: Row) => {
           const f = p.fields;
           const k = LOOK[kind];
           const done = kind === "got";
@@ -2316,7 +2404,7 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
               </div>
             </div>
           );
-        })}
+        })(u.rows[0])))}
       </div>
       <div style={{ marginTop: 10, textAlign: "center", fontSize: 15, fontWeight: 700, color: "#475569" }}>แผนเก็บ {collect.length} คน รวม {money(sum(collect))} บาท · เลขตรงกับรูป Summary</div>
     </div>
