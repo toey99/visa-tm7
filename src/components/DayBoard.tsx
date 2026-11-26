@@ -25,7 +25,7 @@ import {
 import { daysStore, runStore, type PersonRef } from "@/lib/today/store";
 import RecoverPanel from "@/components/RecoverPanel";
 import RunPlanner from "@/components/RunPlanner";
-import { groupColor, groupTotal, payGroups, unpaidOf, type PayGroup } from "@/lib/today/groups";
+import { baseOf, extraOf, groupColor, groupExtra, groupTotal, payGroups, unpaidOf, type PayGroup } from "@/lib/today/groups";
 import { Crown } from "@/lib/summary/crown";
 import { CARS, RUN_SLOTS, carById, carKey, tripTh } from "@/lib/visarun/cars";
 import CarCard, { carCardLang, type CarCardLang } from "@/components/CarCard";
@@ -1231,6 +1231,7 @@ export default function DayBoard({ mode }: { mode: BoardMode }) {
                     <span className="rounded-lg bg-pink-500 px-2.5 py-1 text-sm font-extrabold text-white">กลุ่ม {g.letter}</span>
                     <span className="font-bold text-slate-900">{g.label}</span>
                     <span className="text-sm text-slate-600">{g.members.length} คน · รวม {total.toLocaleString()}</span>
+                    {g.members.filter((m) => extraOf(m.fields) > 0).map((m) => <span key={m.id} className="rounded-lg bg-amber-200 px-2 py-0.5 text-sm font-bold text-amber-900">➕ ฝากเก็บเพิ่ม {extraOf(m.fields).toLocaleString()}{m.fields.extraNote ? ` · ${m.fields.extraNote}` : ""}</span>)}
                     <span className={`ml-auto text-lg font-extrabold ${left.length ? "text-red-700" : "text-emerald-700"}`}>{left.length ? `ค้าง ${leftSum.toLocaleString()}` : "✅ ครบแล้ว"}</span>
                   </div>
                   <div className="mt-1 text-xs text-slate-600">เลข {g.members.map((m) => String(m.order).padStart(2, "0")).join(" · ")}{left.length && left.length < g.members.length ? ` — ยังไม่จ่าย: ${left.map((m) => String(m.order).padStart(2, "0")).join(" · ")}` : ""}</div>
@@ -1773,6 +1774,13 @@ function PersonCard({
   const f = p.fields;
   const isRun = mode === "run";
   const car = carById(f.car);
+  // counter money = service part + what the agent asked us to collect on top; `amount` keeps the sum so every total stays right
+  const setMoney = (baseRaw: string, extraRaw: string) => {
+    const base = baseRaw.replace(/[^\d]/g, ""), extra = extraRaw.replace(/[^\d]/g, "").replace(/^0+$/, "");
+    const amount = base || extra ? String((Number(base) || 0) + (Number(extra) || 0)) : "";
+    const got = p.fields.paidHow === "cash" || p.fields.paidHow === "transfer";
+    onChange({ ...p, fields: { ...p.fields, amount, extra, extraNote: extra ? p.fields.extraNote : "", paidAmount: got && p.fields.paidAmount === p.fields.amount ? amount : p.fields.paidAmount } });
+  };
   function set<K extends keyof PersonFields>(key: K, value: PersonFields[K]) {
     onChange({ ...p, fields: { ...p.fields, [key]: value } });
   }
@@ -2021,7 +2029,9 @@ function PersonCard({
             <option value="collect">เก็บเงิน</option><option value="paid">จ่ายแล้ว</option><option value="hold">🔒 รอโอน (hold พาสปอร์ต)</option><option value="nocollect">ไม่เก็บ</option>
           </select>
         </F>
-        <F label="เก็บหน้างาน (บาท)"><input value={f.amount} onChange={(e) => set("amount", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="4000" /></F>
+        <F label="เก็บหน้างาน (บาท)"><input value={f.amount ? String(baseOf(f)) : ""} onChange={(e) => setMoney(e.target.value, f.extra ?? "")} className={inputCls} placeholder="4000" /></F>
+        <F label="➕ ฝากเก็บเพิ่ม (บาท) — เอเจนซี่ฝากเก็บ"><input value={f.extra ?? ""} onChange={(e) => setMoney(f.amount ? String(baseOf(f)) : "", e.target.value)} className={inputCls} placeholder="เช่น 15000" /></F>
+        {extraOf(f) > 0 && <F label={`ฝากเก็บเพิ่มค่าอะไร · รวมต้องเก็บ ${Number(f.amount || 0).toLocaleString()}`} wide><input value={f.extraNote ?? ""} onChange={(e) => set("extraNote", e.target.value)} className={inputCls} placeholder="เช่น อาเต่าฝากเก็บเงินสดจาก 群主" /></F>}
         <F label="ราคาเอเจนซี่"><input value={f.agentPrice ?? ""} onChange={(e) => set("agentPrice", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="เรียกเก็บเอเจนซี่" /></F>
         <F label="ต้นทุนจริง"><input value={f.cost ?? ""} onChange={(e) => set("cost", e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="ค่าธรรมเนียม+ปรับ+VIP" /></F>
         <F label="รายการต้นทุน" wide><input value={f.costNote ?? ""} onChange={(e) => set("costNote", e.target.value)} className={inputCls} placeholder="เช่น ค่าธรรมเนียม 1900 + ค่าปรับ 1500 + หนังสือสถานทูต 500" /></F>
@@ -2259,7 +2269,7 @@ const SummarySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMet
           {grouping.groups.map((g) => { const c = groupColor(g); return (
             <span key={g.key} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: c.bg, color: c.fg, border: `2px solid ${c.edge}`, borderRadius: 999, padding: "2px 12px 2px 3px", fontSize: 13, fontWeight: 700 }}>
               <span style={{ background: c.edge, color: "#fff", borderRadius: 999, padding: "1px 9px", fontWeight: 900 }}>{g.letter}</span>
-              {g.label} · {g.members.length} คน · เก็บรวม {groupTotal(g).toLocaleString()}
+              {g.label} · {g.members.length} คน · เก็บรวม {groupTotal(g).toLocaleString()}{groupExtra(g) ? ` (รวมฝากเก็บเพิ่ม ${groupExtra(g).toLocaleString()})` : ""}
             </span>
           ); })}
         </div>
@@ -2337,7 +2347,8 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
     const left = rs.filter((r) => r.kind === "todo" || r.kind === "waiting");
     const leftSum = left.reduce((s, r) => s + (Number(r.p.fields.amount) || 0), 0);
     const total = rs.reduce((s, r) => s + (Number(r.p.fields.amount) || 0), 0);
-    const amounts = [...new Set(rs.map((r) => Number(r.p.fields.amount) || 0))];
+    const amounts = [...new Set(rs.map((r) => baseOf(r.p.fields)))];
+    const extras = rs.filter((r) => extraOf(r.p.fields) > 0);
     const allDone = left.length === 0;
     const edge = allDone ? "#22c55e" : "#ec4899";
     return (
@@ -2347,6 +2358,7 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 21, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, overflowWrap: "anywhere" }}>{g.label}</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#475569" }}>{rs.length} คน{amounts.length === 1 ? ` × ${money(amounts[0])}` : ""} · เก็บรวบก้อนเดียว</div>
+            {extras.map((r) => <div key={r.p.id} style={{ display: "inline-block", marginTop: 3, background: "#fde68a", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontSize: 16, fontWeight: 800, lineHeight: 1.3, overflowWrap: "anywhere" }}>➕ ฝากเก็บเพิ่ม {money(extraOf(r.p.fields))}{r.p.fields.extraNote ? ` · ${r.p.fields.extraNote}` : ""}</div>)}
           </div>
           <div style={{ flex: "none", textAlign: "right" }}>
             <div style={{ fontSize: 42, fontWeight: 900, color: allDone ? "#166534" : "#be123c", lineHeight: 1, fontVariantNumeric: "tabular-nums", textDecoration: allDone ? "line-through" : undefined }}>{money(allDone ? total : leftSum)}</div>
@@ -2366,7 +2378,7 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
                 </div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, marginTop: 2, overflowWrap: "anywhere" }}>{f.chineseName || f.lastName || "—"}</div>
                 <div style={{ fontSize: 10.5, fontWeight: 700, color: "#475569", lineHeight: 1.15, overflowWrap: "anywhere" }}>{[f.lastName, f.firstName].filter(Boolean).join(" ")}</div>
-                <div style={{ fontSize: 12, fontWeight: 800, color: k.fg, marginTop: 2 }}>{kind === "got" ? (f.paidHow === "cash" ? "💵 รับแล้ว" : "📲 โอนแล้ว") : kind === "waiting" ? "🕓 รอโอน" : kind === "agent" ? "🏢 เอเจนซี่" : amounts.length > 1 ? money(Number(f.amount) || 0) : p.arrived ? "มาแล้ว" : "ยังไม่จ่าย"}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: k.fg, marginTop: 2 }}>{kind === "got" ? (f.paidHow === "cash" ? "💵 รับแล้ว" : "📲 โอนแล้ว") : kind === "waiting" ? "🕓 รอโอน" : kind === "agent" ? "🏢 เอเจนซี่" : amounts.length > 1 ? money(baseOf(f)) : p.arrived ? "มาแล้ว" : "ยังไม่จ่าย"}</div>
               </div>
             );
           })}
@@ -2411,6 +2423,7 @@ const MoneySheet = forwardRef<HTMLDivElement, { people: Person[]; meta: DayMeta;
                 <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", lineHeight: 1.15, overflowWrap: "anywhere" }}>{[f.lastName, f.firstName].filter(Boolean).join(" ") || f.passportNo || "—"}</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: "#334155", lineHeight: 1.2 }}>{f.chineseName}</div>
                 {who && <div style={{ fontSize: 15, color: "#475569", marginTop: 1, overflowWrap: "anywhere" }}>{who}</div>}
+                {extraOf(f) > 0 && <div style={{ display: "inline-block", marginTop: 3, background: "#fde68a", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontSize: 15, fontWeight: 800, lineHeight: 1.3, overflowWrap: "anywhere" }}>{money(baseOf(f))} ➕ ฝากเก็บเพิ่ม {money(extraOf(f))}{f.extraNote ? ` · ${f.extraNote}` : ""}</div>}
               </div>
               <div style={{ flex: "none", textAlign: "right" }}>
                 {kind !== "hold" && kind !== "agent" && <div style={{ fontSize: 40, fontWeight: 900, color: k.fg, lineHeight: 1, fontVariantNumeric: "tabular-nums", textDecoration: done ? "line-through" : undefined }}>{shownAmt ? money(shownAmt) : "?"}</div>}

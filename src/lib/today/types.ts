@@ -46,7 +46,9 @@ export type PersonFields = {
   group?: string;               // people who pay together (factory group); "" = by agent + sub-agent + amount, "-" = never grouped
   subAgent: string;             // the main agent's own downstream agent / note — shown on their per-agent summary                // who sent the case
   pay: "collect" | "paid" | "nocollect" | "hold";   // hold = agent is waiting for the customer's transfer → keep the passport until the agent confirms
-  amount: string;               // THB to collect at the counter
+  amount: string;               // THB to collect at the counter (includes `extra`)
+  extra?: string;               // part of `amount` the agent asked us to collect on top of the service (cash held for the agent — no job behind it)
+  extraNote?: string;           // what that extra money is, in the agent's words
   paidHow: "pending" | "cash" | "transfer" | "waiting" | "agent" | "none";  // what actually happened at the counter ("waiting" = will transfer later, not received yet)
   paidAmount: string;           // THB actually received by us (cash/transfer)
   agentPrice: string;           // THB to invoice the agent for this person

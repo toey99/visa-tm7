@@ -22,6 +22,10 @@ export const GROUP_COLORS = [
 export const groupColor = (g: { index: number }) => GROUP_COLORS[g.index % GROUP_COLORS.length];
 
 const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+/** Money the agent asked us to collect on top of the service — already inside `amount`. */
+export const extraOf = (fields: Fields | undefined): number => { const f = (fields ?? {}) as Record<string, unknown>; return Math.max(0, Math.min(Number(f.extra) || 0, Number(f.amount) || 0)); };
+/** The service part of what a person pays at the counter (amount without the agent's extra). */
+export const baseOf = (fields: Fields | undefined): number => (Number(((fields ?? {}) as Record<string, unknown>).amount) || 0) - extraOf(fields);
 export function payGroupKey(fields: Fields | undefined): string {
   const f = (fields ?? {}) as Record<string, unknown>;
   if (f.pay !== "collect") return "";
@@ -29,7 +33,7 @@ export function payGroupKey(fields: Fields | undefined): string {
   if (g === "-") return "";
   if (g) return `g:${g.toLowerCase()}`;
   const sub = s(f.subAgent);
-  return sub ? `a:${s(f.agent).toLowerCase()}|${sub.toLowerCase()}|${Number(f.amount) || 0}` : "";
+  return sub ? `a:${s(f.agent).toLowerCase()}|${sub.toLowerCase()}|${baseOf(f)}` : "";
 }
 
 const letterOf = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `${String.fromCharCode(65 + (i % 26))}${Math.floor(i / 26)}`);
@@ -60,4 +64,6 @@ export function payGroups<T extends Rec = Person>(people: T[]): { groups: PayGro
 /** Members of a group whose money is still to come in (not yet cash / transfer / paid at the agency). */
 /** What a group still owes / owes in all (THB). */
 export const groupTotal = <T extends Rec>(g: PayGroup<T>) => g.members.reduce((t, m) => t + (Number((m.fields as Record<string, unknown> | undefined)?.amount) || 0), 0);
+/** The agent's extra money inside a group's total. */
+export const groupExtra = <T extends Rec>(g: PayGroup<T>) => g.members.reduce((t, m) => t + extraOf(m.fields), 0);
 export const unpaidOf = (g: PayGroup) => g.members.filter((p) => { const h = p.fields.paidHow ?? "pending"; return h === "pending" || h === "waiting"; });

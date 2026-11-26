@@ -77,6 +77,12 @@ function paidDirect(f: Record<string, unknown>): number {
   return num(f.paidAmount) || num(f.amount);
 }
 
+// the agent's "collect this too" money inside what the customer paid us (only once it has really come in)
+function extraPart(f: Record<string, unknown>): { extra?: number; extraNote?: string } {
+  const got = paidDirect(f), extra = Math.min(num(f.extra), got);
+  return extra > 0 ? { extra, extraNote: str(f.extraNote) || undefined } : {};
+}
+
 const nameLF = (f: Record<string, unknown>) => [str(f.lastName), str(f.firstName)].filter(Boolean).join(" ").trim();
 function personName(f: Record<string, unknown>): string {
   const en = [str(f.firstName), str(f.lastName)].filter(Boolean).join(" ").trim();
@@ -115,7 +121,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       if (f.vip && prices.chargeVip) items.push({ label: "VIP", amount: prices.vip });
       items.push(...overstayItems(f, day, prices, true));
       const flags = [f.vip ? "👑" : "", f.overstay ? "🐢" : ""].filter(Boolean).join("");
-      charges.push({ id: p.id, src: "ext", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
+      charges.push({ id: p.id, src: "ext", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), ...extraPart(f), flags });
     }
   }));
 
@@ -140,7 +146,7 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
       items.push(...overstayItems(f, day, prices, false));
       if (num(f.ticket) > 0 && !ticketsFromSlips) items.push({ label: "✈ ค่าตั๋ว (สำรองจ่าย)", amount: num(f.ticket) });   // flight ticket we paid up front — passed on at cost
       const flags = [f.run === "RUN30" ? "🐰" : "", f.cambodia ? "🐻" : "", f.overstay ? "🐢" : "", f.vip ? "👑" : ""].filter(Boolean).join("");
-      charges.push({ id: p.id, src: "run", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), flags });
+      charges.push({ id: p.id, src: "run", office, name: personName(f), cn: str(f.chineseName) || undefined, lf: nameLF(f) || undefined, passport: str(f.passportNo), items, amount: items.reduce((s, i) => s + i.amount, 0), paidDirect: paidDirect(f), ...extraPart(f), flags });
     }
   }));
 

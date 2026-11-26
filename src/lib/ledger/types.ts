@@ -117,6 +117,8 @@ export type DayEdits = {
 };
 
 export type ChargeLine = {
+  extra?: number;             // part of paidDirect the agent asked us to collect on top (no job behind it)
+  extraNote?: string;
   id: string;                 // person id / case id
   src: "ext" | "run" | "d90" | "adv";   // adv = money we paid on the agent's behalf (a ticket slip from the two-way slip room)
   office: string;             // OfficeId or "" for d90
@@ -246,6 +248,7 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
       recvParts.push(f(sum));
     }
   }
+  for (const ch of d.charges) if (ch.extra && ch.paidDirect) L.push(`↳ รวมฝากเก็บเพิ่ม ${f(ch.extra)} (${ch.name}${ch.extraNote ? ` · ${ch.extraNote}` : ""})`);
   const slips = d.credits.filter((c) => c.kind === "slip");
   if (slips.length) { const sum = slips.reduce((s, c) => s + c.amount, 0); L.push("เงินโอน✅"); L.push(slips.length > 1 ? `${slips.map((c) => f(c.amount)).join("+")} = ${f(sum)}` : f(sum)); recvParts.push(f(sum)); }
   const plus = d.adjustments.filter((a) => a.amount > 0);

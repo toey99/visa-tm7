@@ -10,7 +10,7 @@
 // Chinese names come from a Noto Sans SC subset fetched for exactly the
 // characters on the sheet, emoji are drawn as Twemoji by next/og.
 import { Crown } from "@/lib/summary/crown";
-import { groupColor, groupTotal, payGroups } from "@/lib/today/groups";
+import { groupColor, groupExtra, groupTotal, payGroups } from "@/lib/today/groups";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { CSSProperties } from "react";
@@ -234,7 +234,7 @@ async function draw(target: SummaryTarget, dayKey: string, agent: string, plain:
           {grouping.groups.map((g) => { const c = groupColor(g); return (
             <div key={g.key} style={{ display: "flex", alignItems: "center", backgroundColor: c.bg, color: c.fg, border: `2px solid ${c.edge}`, borderRadius: 999, padding: "2px 12px 2px 3px", fontSize: 13, fontWeight: 700 }}>
               <div style={{ display: "flex", backgroundColor: c.edge, color: "#fff", borderRadius: 999, padding: "1px 9px", marginRight: 6 }}>{g.letter}</div>
-              <div style={{ display: "flex" }}>{`${g.label} · ${g.members.length} คน · เก็บรวม ${groupTotal(g).toLocaleString()}`}</div>
+              <div style={{ display: "flex" }}>{`${g.label} · ${g.members.length} คน · เก็บรวม ${groupTotal(g).toLocaleString()}${groupExtra(g) ? ` (รวมฝากเก็บเพิ่ม ${groupExtra(g).toLocaleString()})` : ""}`}</div>
             </div>
           ); })}
         </div>
