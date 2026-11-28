@@ -8,9 +8,9 @@
 // transfer-slip room and the 90-day inbox. Boards are purged after a week, so
 // days older than yesterday are frozen automatically the first time they are
 // read — the running balance never depends on a board that has disappeared.
-import { blobGetJson, blobPut } from "@/lib/blob";
+import { blobGetJson, blobPut, mapLimit } from "@/lib/blob";
 import { boardFolder, loadManifest, readRecords, type PersonRec } from "@/lib/day-server";
-import { peekItems } from "@/lib/d90/store";
+import { peekItemsShared } from "@/lib/d90/store";
 import { bkkDay, buildCases } from "@/lib/d90/types";
 import { OFFICE_IDS, type OfficeId } from "@/lib/offices";
 import { listSlips } from "@/lib/slips/store";
@@ -109,6 +109,13 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
     try { ticketsFromSlips = Object.values((await loadGroups()).groups).some((g) => g.status === "allowed" && g.target?.ns === "slips" && g.target.office === slipBook); } catch { /* treat as not linked */ }
   }
 
+  // The 90-day inbox, the long-stay jobs and the slip room do not depend on the boards: start
+  // them now so they load while the boards do (one after another a live day took ~3 s).
+  const quiet = <T,>(p: Promise<T>) => { p.catch(() => {}); return p; };   // awaited further down; never an unhandled rejection
+  const d90P = prices.chargeD90 ? quiet(peekItemsShared()) : null;
+  const jobsP = quiet(jobsInRange(day, day));
+  const slipsP = slipBook ? quiet(listSlips(slipBook, day)) : null;
+
   // extension boards
   await Promise.all(OFFICE_IDS.map(async (office) => {
     if (office === "CHIANG_SAEN") return;
@@ -152,9 +159,9 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
 
   // 90-day reports FINISHED that day — a case counts on the day its result slip
   // came back and was matched to the passport (not the day the passport arrived)
-  if (prices.chargeD90) {
+  if (d90P) {
     try {
-      const board = buildCases(await peekItems());
+      const board = buildCases(await d90P);
       for (const c of board.cases.filter((c) => c.slip && bkkDay(c.slip.ts) === day)) {
         charges.push({ id: c.passport.id, src: "d90", office: "", name: c.passport.name, passport: c.passport.passportNo, items: [{ label: "90 วัน (สำเร็จ)", amount: prices.d90 }], amount: prices.d90, paidDirect: 0, flags: "" });
       }
@@ -163,13 +170,13 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
 
   // long-stay visa jobs filed that day for this agent (priced per case on /jobs)
   try {
-    for (const j of (await jobsInRange(day, day)).filter((j) => j.status !== "ยกเลิก" && isAgent({ agent: j.agent }, agent))) {
+    for (const j of (await jobsP).filter((j) => j.status !== "ยกเลิก" && isAgent({ agent: j.agent }, agent))) {
       charges.push({ id: `job-${j.id}`, src: "ext", office: "", name: j.customer, cn: j.cn || undefined, lf: j.customer || undefined, passport: j.passportNo ?? "", items: [{ label: [j.type !== "อื่น ๆ" ? j.type : "", j.note ?? ""].filter(Boolean).join(" · ") || j.type, amount: j.sale }], amount: j.sale, paidDirect: j.paid === "paid" ? 0 : 0, flags: "🗂" });
     }
   } catch { /* no jobs file yet */ }
 
   // transfers in (slip room, that round)
-  const slips = slipBook ? (await listSlips(slipBook, day)).filter(counted).sort((a, b) => a.ts - b.ts) : [];
+  const slips = slipsP ? (await slipsP).filter(counted).sort((a, b) => a.ts - b.ts) : [];
   for (const s of slips) {
     if (s.out) charges.push({ id: `slip-${s.id}`, src: "adv", office: "", name: `สลิปจ่ายค่าตั๋ว ${bkkTime(s.ts)}${s.note ? ` · ${s.note}` : ""}`, passport: "", items: [{ label: "✈ ค่าตั๋ว (สำรองจ่าย)", amount: s.amount }], amount: s.amount, paidDirect: 0, flags: "✈" });
     else credits.push({ id: s.id, kind: "slip", label: [s.sender, s.ref].filter(Boolean).join(" · ") || "สลิปโอน", amount: s.amount, time: bkkTime(s.ts) });
@@ -202,8 +209,12 @@ export async function ledgerRange(book: LedgerBook, to: string, cfg?: LedgerConf
   const freezeBefore = addDays(bkkToday(), -1);   // < yesterday → freeze
   const out: DayLedger[] = [];
   let carry = config.opening.amount;
-  // walk day by day; snapshots make old days free, live days hit the boards
-  for (let day = start; day <= to; day = addDays(day, 1)) {
+  const dayList: string[] = [];
+  for (let day = start; day <= to && dayList.length <= 400; day = addDays(day, 1)) dayList.push(day);   // safety — a year of days at most
+  // Each day is its own file and one read takes ~0.4 s, so read them side by side (a month one by
+  // one was 8–10 s). Snapshots make old days free; live days hit the boards. Only the running
+  // balance needs the days in order, and that is plain arithmetic afterwards.
+  const loaded = await mapLimit(dayList, 8, async (day) => {
     const edits = await loadDayEdits(book, day);
     let comp = edits.closedAt && edits.snapshot ? edits.snapshot : null;
     if (!comp) {
@@ -214,10 +225,12 @@ export async function ledgerRange(book: LedgerBook, to: string, cfg?: LedgerConf
         await saveDayEdits(book, day, edits);
       }
     }
+    return { comp, edits };
+  });
+  for (const { comp, edits } of loaded) {
     const d = withEdits(comp, edits, carry);
     out.push(d);
     carry = d.carryOut;
-    if (out.length > 400) break;   // safety — a year of days at most
   }
   return { config, days: out };
 }

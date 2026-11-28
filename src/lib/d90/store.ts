@@ -44,6 +44,17 @@ export async function peekItems(): Promise<D90Item[]> {
   return [...idx.items, ...fresh].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
 }
 
+// For reports that only read (ledger, stats): one listing + read is ~2.5 s, and a single page load
+// asks for it once per live day and per book — share one answer for a few seconds.
+let peekMemo: { at: number; p: Promise<D90Item[]> } | null = null;
+export function peekItemsShared(ttlMs = 8000): Promise<D90Item[]> {
+  if (peekMemo && Date.now() - peekMemo.at < ttlMs) return peekMemo.p;
+  const p = peekItems();
+  peekMemo = { at: Date.now(), p };
+  p.catch(() => { if (peekMemo?.p === p) peekMemo = null; });   // a failed read is not remembered
+  return p;
+}
+
 async function readAll(): Promise<{ idx: Index; fresh: D90Item[]; folded: string[]; gone: string[] }> {
   const idx = (await readJson<Index>(INDEX)) ?? { items: [] };
   const inbox = (await blobList(INBOX)).filter((b) => b.pathname.endsWith(".json"));

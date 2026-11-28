@@ -7,9 +7,9 @@
 //   stats/YYYY-MM-DD.json   { day, rows, d90, builtAt, final }
 // Money is NOT stored — sale and cost are priced at read time from
 // pricing/config.json, so a corrected price re-prices history too.
-import { blobGetJson, blobPut } from "@/lib/blob";
+import { blobGetJson, blobPut, mapLimit } from "@/lib/blob";
 import { boardFolder, loadManifest, readRecords, type PersonRec } from "@/lib/day-server";
-import { peekItems } from "@/lib/d90/store";
+import { peekItemsShared } from "@/lib/d90/store";
 import { bkkDay, buildCases } from "@/lib/d90/types";
 import { OFFICE_IDS, type OfficeId } from "@/lib/offices";
 import { overstayInfo, type PersonFields } from "@/lib/today/types";
@@ -82,7 +82,7 @@ export async function buildDayStats(day: string): Promise<DayStats> {
     ...OFFICE_IDS.map((o) => boardRows("run", day, o)),
   ]);
   let d90 = 0;
-  try { d90 = buildCases(await peekItems()).cases.filter((c) => c.slip && bkkDay(c.slip.ts) === day).length; } catch { /* inbox unavailable */ }
+  try { d90 = buildCases(await peekItemsShared()).cases.filter((c) => c.slip && bkkDay(c.slip.ts) === day).length; } catch { /* inbox unavailable */ }
   return { day, rows: parts.flat(), d90, builtAt: new Date().toISOString(), final: day < bkkToday() };
 }
 
@@ -99,18 +99,17 @@ export async function snapshotDay(day: string, force = false): Promise<DayStats>
 
 /** Stats for a range: stored snapshots where final, live otherwise (today always live). */
 export async function statsRange(from: string, to: string): Promise<DayStats[]> {
-  const out: DayStats[] = [];
   const today = bkkToday();
-  for (let d = from; d <= to; d = addDays(d, 1)) {
-    if (d > today) break;
+  const dayList: string[] = [];
+  for (let d = from; d <= to && d <= today && dayList.length <= 400; d = addDays(d, 1)) dayList.push(d);
+  // one small file per day, ~0.4 s a read → side by side instead of one after another
+  return mapLimit(dayList, 8, async (d) => {
     const have = await loadDayStats(d);
-    if (have && (have.final || d < today)) { out.push(have); continue; }
-    if (d === today) { out.push(await buildDayStats(d)); continue; }
+    if (have && (have.final || d < today)) return have;
+    if (d === today) return buildDayStats(d);
     // a past day never snapshotted: boards may still exist (7-day window) → build and store
-    out.push(await snapshotDay(d));
-    if (out.length > 400) break;
-  }
-  return out;
+    return snapshotDay(d);
+  });
 }
 
 // ---------- pricing a row ----------

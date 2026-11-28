@@ -166,7 +166,7 @@ export default function D90Page() {
       </div>
 
       {error && <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</p>}
-      {status && <p className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">{status}</p>}
+      {status && <p className="fixed bottom-20 left-1/2 z-40 sm:bottom-5 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">{status}</p>}
 
       {/* the officer's list of passport numbers → TM.30 through the bot → one merged PDF to send back */}
       {data && <D90Tm30Panel cases={board.cases} onError={setError} />}

@@ -169,7 +169,7 @@ export default function SlipsPage() {
       </div>
 
       {error && <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</p>}
-      {status && <p className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">{status}</p>}
+      {status && <p className="fixed bottom-20 left-1/2 z-40 sm:bottom-5 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">{status}</p>}
 
       {data && !items.length && <p className="mt-6 text-center text-sm text-slate-500">ยังไม่มีสลิปในรอบนี้ — forward สลิปเข้ากลุ่ม LINE ห้องสลิปได้เลย</p>}
 

@@ -101,6 +101,15 @@ export function blobFetchUrl(url: string, consistent = false): Promise<Response>
   return fetch(u, { headers: { authorization: `Bearer ${token()}` }, cache: "no-store" });
 }
 
+/** Run `fn` over `items` with at most `limit` in flight (the store rate-limits reads per second), keeping the order. */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => { for (let i = next++; i < items.length; i = next++) out[i] = await fn(items[i], i); };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return out;
+}
+
 export async function blobGetJson<T>(pathname: string): Promise<T | null> {
   const r = await blobGetByPath(pathname, true); // JSON indexes are overwritten → always read the latest
   if (!r || !r.ok) return null;
