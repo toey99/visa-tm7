@@ -35,6 +35,7 @@ type Body = {
   book?: string;
   day?: string;
   adjustments?: Adjustment[];
+  overrides?: Record<string, { amount: number; note?: string }>;   // hand-corrected charge lines of the day (the whole set)
   note?: string;
   close?: boolean;
   reopen?: boolean;
@@ -68,9 +69,9 @@ export async function POST(req: NextRequest) {
     }
 
     const day = safeDay(body.day);
-    if (day && (body.adjustments || typeof body.note === "string" || body.close || body.reopen || body.restore)) {
+    if (day && (body.adjustments || body.overrides || typeof body.note === "string" || body.close || body.reopen || body.restore)) {
       try {
-        await updateDay(book, day, { adjustments: body.adjustments, note: body.note, close: body.close, reopen: body.reopen, force: body.force, restore: body.restore }, cfg.prices);
+        await updateDay(book, day, { adjustments: body.adjustments, overrides: body.overrides, note: body.note, close: body.close, reopen: body.reopen, force: body.force, restore: body.restore }, cfg.prices);
       } catch (e) {
         if (e instanceof ReopenNeedsConfirm) return NextResponse.json({ error: "reopen-changes-figures", needConfirm: { was: e.was, now: e.now } }, { status: 409 });
         throw e;

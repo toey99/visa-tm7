@@ -19,7 +19,7 @@ import { SLIP_BOOKS, bkkTime, counted } from "@/lib/slips/types";
 import { loadConfig as loadGroups } from "@/lib/d90/store";
 import { overstayInfo } from "@/lib/today/types";
 import { carKey } from "@/lib/visarun/cars";
-import {
+import { applyOverrides, type ChargeOverride,
   addDays, bkkToday, defaultPrices, LEDGER_BOOKS, type Adjustment, type ChargeLine, type CreditLine, type DayComputed, type DayEdits,
   type DayLedger, type LedgerBook, type LedgerConfig, type Prices,
 } from "./types";
@@ -46,7 +46,7 @@ export async function saveLedgerConfig(book: LedgerBook, c: LedgerConfig): Promi
 }
 export async function loadDayEdits(book: LedgerBook, day: string): Promise<DayEdits> {
   const e = await blobGetJson<DayEdits>(dayPath(book, day));
-  return { adjustments: e?.adjustments ?? [], note: e?.note ?? "", closedAt: e?.closedAt, snapshot: e?.snapshot, backup: e?.backup };
+  return { adjustments: e?.adjustments ?? [], note: e?.note ?? "", closedAt: e?.closedAt, snapshot: e?.snapshot, backup: e?.backup, overrides: e?.overrides };
 }
 export async function saveDayEdits(book: LedgerBook, day: string, e: DayEdits): Promise<void> {
   await blobPut(dayPath(book, day), JSON.stringify(e), "application/json");
@@ -193,7 +193,8 @@ export async function computeDay(book: LedgerBook, day: string, prices: Prices):
   };
 }
 
-const withEdits = (c: DayComputed, e: DayEdits, carryIn: number): DayLedger => {
+const withEdits = (raw: DayComputed, e: DayEdits, carryIn: number): DayLedger => {
+  const c = applyOverrides(raw, e.overrides);
   const adjustTotal = e.adjustments.reduce((s, a) => s + (Number.isFinite(a.amount) ? a.amount : 0), 0);
   return { ...c, carryIn, adjustments: e.adjustments, adjustTotal, carryOut: Math.round((carryIn + c.creditTotal + adjustTotal - c.chargeTotal) * 100) / 100, note: e.note, closedAt: e.closedAt, backupAt: e.backup ? (e.backup.closedAt ?? "?") : undefined };
 };
@@ -240,10 +241,18 @@ export class ReopenNeedsConfirm extends Error {
   constructor(public was: { charge: number; credit: number }, public now: { charge: number; credit: number }) { super("reopen needs confirm"); }
 }
 
-export async function updateDay(book: LedgerBook, day: string, patch: { adjustments?: Adjustment[]; note?: string; close?: boolean; reopen?: boolean; force?: boolean; restore?: boolean }, prices: Prices): Promise<DayEdits> {
+export async function updateDay(book: LedgerBook, day: string, patch: { adjustments?: Adjustment[]; note?: string; close?: boolean; reopen?: boolean; force?: boolean; restore?: boolean; overrides?: Record<string, ChargeOverride> }, prices: Prices): Promise<DayEdits> {
   const e = await loadDayEdits(book, day);
   if (patch.adjustments) e.adjustments = patch.adjustments.filter((a) => a && typeof a.id === "string").map((a) => ({ id: a.id.slice(0, 40), label: String(a.label ?? "").slice(0, 120), amount: Number.isFinite(Number(a.amount)) ? Number(a.amount) : 0 }));
   if (typeof patch.note === "string") e.note = patch.note.slice(0, 2000);
+  if (patch.overrides && typeof patch.overrides === "object") {
+    const ov: Record<string, ChargeOverride> = {};
+    for (const [k, v] of Object.entries(patch.overrides).slice(0, 300)) {
+      const amount = Number(v?.amount);
+      if (Number.isFinite(amount) && amount >= 0) ov[k.slice(0, 80)] = { amount, note: String(v?.note ?? "").slice(0, 80) };
+    }
+    e.overrides = ov;
+  }
   if (patch.reopen && e.snapshot) {
     // A locked day keeps its own figures; reopening re-reads the boards, and for an old day those
     // may be gone (weekly clean-up) — its work and counter cash would silently drop out. So look

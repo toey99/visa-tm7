@@ -12,7 +12,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import ClosingNote from "@/components/ClosingNote";
 import { buildSimpleXlsx, captureNode, downloadBlob, jpegPreview } from "@/lib/today/clientTools";
-import {
+import { chargeKey,
   addDays, bkkToday, buildStatement, closingText, dayShort, dayTh, isLedgerBook, LEDGER_BOOKS, money, PRICE_LABELS, signed, STATEMENT_TEXT, statementTable,
   type Adjustment, type DayLedger, type LedgerBook, type LedgerConfig, type Prices, type Statement,
 } from "@/lib/ledger/types";
@@ -44,6 +44,9 @@ export default function LedgerPage() {
   const [adjs, setAdjs] = useState<Adjustment[]>([]);
   const [newLabel, setNewLabel] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  const [editKey, setEditKey] = useState("");          // the charge line being corrected
+  const [editAmount, setEditAmount] = useState("");
+  const [editNote, setEditNote] = useState("");
   const noteRef = useRef<HTMLDivElement>(null);
 
   const d = useMemo(() => data?.days.find((x) => x.day === day) ?? null, [data, day]);
@@ -96,6 +99,16 @@ export default function LedgerPage() {
     const next = [...adjs, { id: Date.now().toString(36), label: newLabel.trim(), amount }];
     setAdjs(next); setNewLabel(""); setNewAmount("");
     await saveEdits({ adjustments: next });
+  }
+  // Correct one charge line by hand. The whole set of the day's corrections is sent each time,
+  // rebuilt from the lines on screen (a corrected line carries `was`).
+  async function saveOverride(key: string, amount: number | null, note = "") {
+    if (!d) return;
+    const all: Record<string, { amount: number; note?: string }> = {};
+    for (const c of d.charges) if (c.was !== undefined) all[chargeKey(c)] = { amount: c.amount, note: c.editNote };
+    if (amount === null) delete all[key]; else all[key] = { amount, note };
+    setEditKey("");
+    await saveEdits({ overrides: all });
   }
   async function removeAdj(id: string) { const next = adjs.filter((a) => a.id !== id); setAdjs(next); await saveEdits({ adjustments: next }); }
   async function copyText() {
@@ -217,6 +230,18 @@ export default function LedgerPage() {
                 key={`${c.src}-${c.id}`}
                 left={<span><span className="mr-1 rounded bg-slate-100 px-1 text-[11px] text-slate-600">{SRC_LABEL[c.src]}{c.office ? ` ${OFFICE_SHORT[c.office] ?? c.office}` : ""}</span>{isStatement && c.cn ? `${c.cn} ` : ""}{c.name} {c.flags}<span className="block text-xs text-slate-400">{c.passport} · {c.items.map((i) => `${i.label} ${money(i.amount)}`).join(" + ")}</span></span>}
                 right={money(c.amount)}
+                below={editKey === chargeKey(c) ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-1 rounded-lg bg-amber-50 p-1.5">
+                    <span className="text-xs text-slate-500">ยอดที่คิดได้ {money(c.was ?? c.amount)} → แก้เป็น</span>
+                    <input className="inp w-24" inputMode="numeric" autoFocus value={editAmount} onChange={(e) => setEditAmount(e.target.value)} placeholder="ยอดใหม่" />
+                    <input className="inp min-w-0 flex-1" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="เหตุผล (ขึ้นในใบสรุป) เช่น ส่วนลด" />
+                    <button className="btn" onClick={() => { const n = Number(editAmount.replace(/[^\d.]/g, "")); if (editAmount.trim() !== "" && Number.isFinite(n)) void saveOverride(chargeKey(c), n, editNote.trim()); }}>บันทึก</button>
+                    {c.was !== undefined && <button className="text-xs text-rose-500 underline" onClick={() => void saveOverride(chargeKey(c), null)}>คืนยอดเดิม {money(c.was)}</button>}
+                    <button className="text-xs text-slate-400 underline" onClick={() => setEditKey("")}>ยกเลิก</button>
+                  </div>
+                ) : (
+                  <button className="text-xs text-sky-600 underline" onClick={() => { setEditKey(chargeKey(c)); setEditAmount(String(c.amount)); setEditNote(c.editNote ?? ""); }}>{c.was !== undefined ? `✏️ แก้แล้ว (เดิม ${money(c.was)}) · แก้อีก` : "แก้ยอด"}</button>
+                )}
               />
             ))}
           </Card>
@@ -402,8 +427,8 @@ function Card({ title, right, children }: { title: string; right?: string; child
     </section>
   );
 }
-function Row({ left, right }: { left: React.ReactNode; right: string }) {
-  return <div className="flex items-start justify-between gap-2 border-t border-slate-100 py-1.5 text-sm first:border-t-0"><div className="min-w-0 flex-1">{left}</div><div className="shrink-0 tabular-nums">{right}</div></div>;
+function Row({ left, right, below }: { left: React.ReactNode; right: string; below?: React.ReactNode }) {
+  return <div className="flex items-start justify-between gap-2 border-t border-slate-100 py-1.5 text-sm first:border-t-0"><div className="min-w-0 flex-1">{left}{below}</div><div className="shrink-0 tabular-nums">{right}</div></div>;
 }
 
 function ConfigPanel({ cfg, groups, onSave }: { cfg: LedgerConfig; groups: { id: string; name: string }[]; onSave: (c: { prices: Partial<Prices>; opening: { day: string; amount: number }; lineGroupId: string }) => Promise<unknown> }) {

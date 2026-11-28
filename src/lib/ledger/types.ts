@@ -114,9 +114,31 @@ export type DayEdits = {
   // the frozen figures as they stood before the day was last reopened — a reopened old day is
   // re-read from boards that the weekly clean-up may already have emptied, so the lock can be put back
   backup?: { snapshot: DayComputed; closedAt?: string };
+  // hand-corrected amounts for single charge lines, by `chargeKey` — kept apart from the computed
+  // figures, so they survive locking, reopening and a recompute from the boards
+  overrides?: Record<string, ChargeOverride>;
 };
+export type ChargeOverride = { amount: number; note?: string };
+export const chargeKey = (c: { src: string; id: string }) => `${c.src}:${c.id}`;
+export const EDIT_MARK = "✏️";
+
+/** The computed day with the hand-corrected lines applied: the line keeps its items and gains one "✏️ …" item for the difference. */
+export function applyOverrides(c: DayComputed, ov: Record<string, ChargeOverride> | undefined): DayComputed {
+  if (!ov || !Object.keys(ov).length) return c;
+  let diffTotal = 0;
+  const charges = c.charges.map((ch) => {
+    const o = ov[chargeKey(ch)];
+    if (!o || !Number.isFinite(o.amount) || o.amount === ch.amount) return ch;
+    const diff = o.amount - ch.amount;
+    diffTotal += diff;
+    return { ...ch, was: ch.amount, editNote: o.note || "", amount: o.amount, items: [...ch.items, { label: `${EDIT_MARK} ${o.note || "แก้ราคา"}`, amount: diff }] };
+  });
+  return diffTotal || charges.some((ch, i) => ch !== c.charges[i]) ? { ...c, charges, chargeTotal: c.chargeTotal + diffTotal } : c;
+}
 
 export type ChargeLine = {
+  was?: number;               // the computed amount, when this line was corrected by hand
+  editNote?: string;
   extra?: number;             // part of paidDirect the agent asked us to collect on top (no job behind it)
   extraNote?: string;
   id: string;                 // person id / case id
@@ -200,7 +222,7 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
   }
 
   const d90 = d.charges.filter((c) => c.src === "d90");
-  if (d90.length) { const sum = d90.reduce((s, c) => s + c.amount, 0); L.push(""); L.push(`รายงานตัว 90 วัน ${d90.length} ใบ`); L.push(`${d90[0].amount}*${d90.length} = ${f(sum)}`); payParts.push(f(sum)); }
+  if (d90.length) { const sum = d90.reduce((s, c) => s + c.amount, 0); L.push(""); L.push(`รายงานตัว 90 วัน ${d90.length} ใบ`); L.push(d90.every((c) => c.amount === d90[0].amount) ? `${d90[0].amount}*${d90.length} = ${f(sum)}` : `${d90.map((c) => f(c.amount)).join("+")} = ${f(sum)}`); payParts.push(f(sum)); }
 
   const run = d.charges.filter((c) => c.src === "run");
   if (run.length) {
@@ -220,7 +242,7 @@ export function closingText(book: LedgerBook, d: DayLedger): string {
       const over = c.items.filter((i) => i.label.startsWith("overstay") || i.label.startsWith("ค่าปรับ")).reduce((s, i) => s + i.amount, 0);
       if (over) { L.push(`${c.name} ค่าover ${f(over)}`); parts.push(f(over)); }
       // toppings (DTV, 💧 wet passport, ⏰ off-hours VIP): one line per person
-      for (const it of c.items.slice(1).filter((i) => i.label.startsWith("DTV") || i.label.startsWith("💧") || i.label.startsWith("⏰") || i.label.startsWith("✈"))) { L.push(`${c.name} ${it.label} ${f(it.amount)}`); parts.push(f(it.amount)); }
+      for (const it of c.items.slice(1).filter((i) => i.label.startsWith("DTV") || i.label.startsWith("💧") || i.label.startsWith("⏰") || i.label.startsWith("✈") || i.label.startsWith(EDIT_MARK))) { L.push(`${c.name} ${it.label} ${f(it.amount)}`); parts.push(f(it.amount)); }
     }
     const sum = run.reduce((s, c) => s + c.amount, 0);
     L.push(parts.length > 1 ? `รวม ${parts.join("+")} = ${f(sum)}` : `รวม ${f(sum)}`); payParts.push(f(sum));
