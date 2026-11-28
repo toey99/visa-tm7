@@ -32,6 +32,7 @@ export const SECTIONS: Section[] = [
     { href: "/dashboard", label: "📊 Dashboard" },
   ] },
   { id: "tools", icon: "🧰", label: "เครื่องมือ", on: "bg-amber-400 text-white", soft: "bg-amber-50", hover: "hover:bg-amber-50", text: "text-amber-600", pages: [
+    { href: "/links", label: "🔗 ลิงก์ส่งลูกค้า" },
     { href: "/expiry", label: "⏰ ใกล้หมดอายุ" },
     { href: "/overstay", label: "เช็ค Overstay" },
   ] },
