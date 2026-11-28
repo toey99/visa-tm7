@@ -8,7 +8,7 @@
 // transfer-slip room and the 90-day inbox. Boards are purged after a week, so
 // days older than yesterday are frozen automatically the first time they are
 // read — the running balance never depends on a board that has disappeared.
-import { blobGetJson, blobPut, mapLimit } from "@/lib/blob";
+import { blobGetJson, blobGetJsonMany, blobPut, mapLimit } from "@/lib/blob";
 import { boardFolder, loadManifest, readRecords, type PersonRec } from "@/lib/day-server";
 import { peekItemsShared } from "@/lib/d90/store";
 import { bkkDay, buildCases } from "@/lib/d90/types";
@@ -47,7 +47,9 @@ export async function saveLedgerConfig(book: LedgerBook, c: LedgerConfig): Promi
   await blobPut(cfgPath(book), JSON.stringify({ ...c, updatedAt: new Date().toISOString() }), "application/json");
 }
 export async function loadDayEdits(book: LedgerBook, day: string): Promise<DayEdits> {
-  const e = await blobGetJson<DayEdits>(dayPath(book, day));
+  return normEdits(await blobGetJson<DayEdits>(dayPath(book, day)));
+}
+function normEdits(e: DayEdits | null | undefined): DayEdits {
   return { adjustments: e?.adjustments ?? [], note: e?.note ?? "", closedAt: e?.closedAt, snapshot: e?.snapshot, backup: e?.backup, overrides: e?.overrides };
 }
 export async function saveDayEdits(book: LedgerBook, day: string, e: DayEdits): Promise<void> {
@@ -217,8 +219,9 @@ export async function ledgerRange(book: LedgerBook, to: string, cfg?: LedgerConf
   // Each day is its own file and one read takes ~0.4 s, so read them side by side (a month one by
   // one was 8–10 s). Snapshots make old days free; live days hit the boards. Only the running
   // balance needs the days in order, and that is plain arithmetic afterwards.
+  const many = await blobGetJsonMany<DayEdits>(`${root(book)}days/`);   // database: the whole book in one query
   const loaded = await mapLimit(dayList, 8, async (day) => {
-    const edits = await loadDayEdits(book, day);
+    const edits = many ? normEdits(many.get(dayPath(book, day))) : await loadDayEdits(book, day);
     let comp = edits.closedAt && edits.snapshot ? edits.snapshot : null;
     if (!comp) {
       comp = await computeDay(book, day, config.prices);

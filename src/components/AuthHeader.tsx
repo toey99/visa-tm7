@@ -38,6 +38,8 @@ export const SECTIONS: Section[] = [
   ] },
 ];
 
+// set on the trial deployment only, so nobody mistakes it for the site in daily use
+const SITE_LABEL = process.env.NEXT_PUBLIC_SITE_LABEL ?? "";
 const isAt = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 
 export default function AuthHeader() {
@@ -53,6 +55,7 @@ export default function AuthHeader() {
         {/* row 1: sections (desktop) + who is signed in */}
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2 sm:px-6">
           <a href="/today" className="shrink-0 rounded-xl bg-slate-900 px-2.5 py-1 text-sm font-extrabold text-white">TM7</a>
+          {SITE_LABEL && <span className="shrink-0 rounded-full bg-amber-300 px-2 py-0.5 text-xs font-extrabold text-amber-900">{SITE_LABEL}</span>}
           <nav className="hidden flex-1 items-center gap-1 sm:flex" aria-label="หมวดงาน">
             {SECTIONS.map((s) => (
               <a key={s.id} href={s.pages[0].href} aria-current={current?.id === s.id ? "true" : undefined}

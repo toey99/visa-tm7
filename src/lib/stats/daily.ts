@@ -7,7 +7,7 @@
 //   stats/YYYY-MM-DD.json   { day, rows, d90, builtAt, final }
 // Money is NOT stored — sale and cost are priced at read time from
 // pricing/config.json, so a corrected price re-prices history too.
-import { blobGetJson, blobPut, mapLimit } from "@/lib/blob";
+import { blobGetJsonMany, blobGetJson, blobPut, mapLimit } from "@/lib/blob";
 import { boardFolder, loadManifest, readRecords, type PersonRec } from "@/lib/day-server";
 import { peekItemsShared } from "@/lib/d90/store";
 import { bkkDay, buildCases } from "@/lib/d90/types";
@@ -103,8 +103,13 @@ export async function statsRange(from: string, to: string): Promise<DayStats[]> 
   const dayList: string[] = [];
   for (let d = from; d <= to && d <= today && dayList.length <= 400; d = addDays(d, 1)) dayList.push(d);
   // one small file per day, ~0.4 s a read → side by side instead of one after another
+  // database: one query per month in the range instead of one read per day
+  const months = [...new Set(dayList.map((d) => d.slice(0, 7)))];
+  const many = new Map<string, DayStats>();
+  let bulk = false;
+  for (const m of months) { const got = await blobGetJsonMany<DayStats>(`stats/${m}`); if (!got) break; bulk = true; for (const [k, v] of got) many.set(k, v); }
   return mapLimit(dayList, 8, async (d) => {
-    const have = await loadDayStats(d);
+    const have = bulk ? many.get(statsPath(d)) ?? null : await loadDayStats(d);
     if (have && (have.final || d < today)) return have;
     if (d === today) return buildDayStats(d);
     // a past day never snapshotted: boards may still exist (7-day window) → build and store

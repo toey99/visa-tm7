@@ -10,6 +10,12 @@
 //   days/DDMMYYYY/<personId>/<fileId>.<ext>  — uploaded documents and generated outputs
 //   bills/YYYY/<billId>.json                 — bill register (kept 1 year, not purged weekly)
 
+//
+// New system: when SUPABASE_URL + SUPABASE_SECRET_KEY are set, every function here is served by
+// store-supabase.ts instead (JSON → Postgres rows, files → Supabase Storage). Same paths, same
+// contract — nothing above this file knows which store it is talking to.
+import { sbDelete, sbFetchUrl, sbGet, sbGetJsonMany, sbList, sbPut, supabaseOn } from "./store-supabase";
+
 const API = "https://blob.vercel-storage.com";
 
 function token(): string {
@@ -21,6 +27,7 @@ function token(): string {
 export type BlobInfo = { url: string; pathname: string; size: number; uploadedAt: string };
 
 export async function blobPut(pathname: string, body: Blob | ArrayBuffer | string, contentType: string): Promise<BlobInfo> {
+  if (supabaseOn()) return sbPut(pathname, body, contentType);
   const r = await fetch(`${API}/${pathname.split("/").map(encodeURIComponent).join("/")}`, {
     method: "PUT",
     headers: {
@@ -41,6 +48,7 @@ export async function blobPut(pathname: string, body: Blob | ArrayBuffer | strin
 }
 
 export async function blobList(prefix: string): Promise<BlobInfo[]> {
+  if (supabaseOn()) return sbList(prefix);
   const out: BlobInfo[] = [];
   let cursor: string | undefined;
   do {
@@ -58,6 +66,7 @@ export async function blobList(prefix: string): Promise<BlobInfo[]> {
 }
 
 export async function blobDelete(urls: string[]): Promise<void> {
+  if (supabaseOn()) return sbDelete(urls);
   for (let i = 0; i < urls.length; i += 100) {
     const r = await fetch(`${API}/delete`, {
       method: "POST",
@@ -80,6 +89,7 @@ function learnBase(url: string, pathname: string) {
 
 /** Fetch a blob's bytes by pathname. consistent=true bypasses the CDN (for files that get overwritten, e.g. index.json). */
 export async function blobGetByPath(pathname: string, consistent = false): Promise<Response | null> {
+  if (supabaseOn()) return sbGet(pathname);
   if (baseUrl) {
     const r = await blobFetchUrl(`${baseUrl}${pathname.split("/").map(encodeURIComponent).join("/")}`, consistent);
     if (r.ok) return r;
@@ -96,6 +106,7 @@ export async function blobGetByPath(pathname: string, consistent = false): Promi
 
 /** Fetch a blob by its store URL. consistent=true adds Vercel Blob's `cache=0` (latest write, bypasses CDN). */
 export function blobFetchUrl(url: string, consistent = false): Promise<Response> {
+  if (supabaseOn()) return sbFetchUrl(url);
   const u = new URL(url);
   if (consistent) u.searchParams.set("cache", "0");
   return fetch(u, { headers: { authorization: `Bearer ${token()}` }, cache: "no-store" });
@@ -116,9 +127,19 @@ export async function blobGetJson<T>(pathname: string): Promise<T | null> {
   return (await r.json()) as T;
 }
 
+/**
+ * Every JSON document under `prefix`, keyed by path. On Supabase this is ONE query — use it wherever
+ * a page needs a run of small files (ledger days, daily stats). Returns null on the Blob store,
+ * where the caller keeps reading file by file.
+ */
+export async function blobGetJsonMany<T>(prefix: string): Promise<Map<string, T> | null> {
+  return supabaseOn() ? sbGetJsonMany<T>(prefix) : null;
+}
+
 /** Delete blobs by pathname without a list() when the store's base URL is known (del() itself is free). */
 export async function blobDeleteByPath(pathnames: string[]): Promise<void> {
   if (!pathnames.length) return;
+  if (supabaseOn()) return sbDelete(pathnames);
   if (baseUrl) {
     await blobDelete(pathnames.map((p) => `${baseUrl}${p.split("/").map(encodeURIComponent).join("/")}`));
     return;
