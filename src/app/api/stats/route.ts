@@ -7,6 +7,8 @@ import { addDays, bkkToday, loadPricing, savePricing, snapshotDay, statsRange, s
 import { withDefaults, type Pricing } from "@/lib/stats/pricing";
 import { jobsInRange } from "@/lib/jobs/store";
 import { extrasInRange } from "@/lib/extras/store";
+import { loadCorrections } from "@/lib/ledger/server";
+import { LEDGER_BOOKS, type LedgerBook } from "@/lib/ledger/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -41,7 +43,22 @@ export async function GET(req: NextRequest) {
       const ag = (d.byAgent[x.agent || "ลูกค้าตรง"] ??= { people: 0, sale: 0, cost: 0 });
       ag.people += x.people; ag.sale += x.sale; ag.cost += x.cost;
     }
-    return NextResponse.json({ pricing, days, extras, from, to }, { headers: { "Cache-Control": "no-store" } });
+    // charge lines corrected by hand in an agent's ledger (a discount, a special price): the sale to that agent moves with them
+    const corrections: { day: string; agent: string; diff: number; n: number }[] = [];
+    const corr = await loadCorrections().catch(() => ({}) as Awaited<ReturnType<typeof loadCorrections>>);
+    for (const book of Object.keys(corr) as LedgerBook[]) {
+      const agent = LEDGER_BOOKS[book]?.agent;
+      if (!agent) continue;
+      for (const [day, c] of Object.entries(corr[book] ?? {})) {
+        const d = days.find((y) => y.day === day);
+        if (!d || !c.diff) continue;
+        d.sale += c.diff; d.profit = d.sale - d.cost;
+        const ag = (d.byAgent[agent] ??= { people: 0, sale: 0, cost: 0 });
+        ag.sale += c.diff;
+        corrections.push({ day, agent, diff: c.diff, n: c.n });
+      }
+    }
+    return NextResponse.json({ pricing, days, extras, corrections, from, to }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "stats failed" }, { status: 500 });
   }

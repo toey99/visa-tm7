@@ -104,9 +104,10 @@ export default function LedgerPage() {
   // rebuilt from the lines on screen (a corrected line carries `was`).
   async function saveOverride(key: string, amount: number | null, note = "") {
     if (!d) return;
-    const all: Record<string, { amount: number; note?: string }> = {};
-    for (const c of d.charges) if (c.was !== undefined) all[chargeKey(c)] = { amount: c.amount, note: c.editNote };
-    if (amount === null) delete all[key]; else all[key] = { amount, note };
+    const all: Record<string, { amount: number; note?: string; was?: number }> = {};
+    for (const c of d.charges) if (c.was !== undefined) all[chargeKey(c)] = { amount: c.amount, note: c.editNote, was: c.was };
+    const line = d.charges.find((c) => chargeKey(c) === key);
+    if (amount === null) delete all[key]; else all[key] = { amount, note, was: line ? line.was ?? line.amount : undefined };
     setEditKey("");
     await saveEdits({ overrides: all });
   }

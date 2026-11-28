@@ -118,7 +118,9 @@ export type DayEdits = {
   // figures, so they survive locking, reopening and a recompute from the boards
   overrides?: Record<string, ChargeOverride>;
 };
-export type ChargeOverride = { amount: number; note?: string };
+export type ChargeOverride = { amount: number; note?: string; was?: number };   // `was`: what the line computed to when it was corrected (for the dashboard's difference)
+/** Per book and day, how much the hand-corrected lines moved the day's charges (negative = discount given). */
+export type Corrections = Partial<Record<LedgerBook, Record<string, { diff: number; n: number }>>>;
 export const chargeKey = (c: { src: string; id: string }) => `${c.src}:${c.id}`;
 export const EDIT_MARK = "✏️";
 

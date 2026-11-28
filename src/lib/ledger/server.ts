@@ -19,7 +19,7 @@ import { SLIP_BOOKS, bkkTime, counted } from "@/lib/slips/types";
 import { loadConfig as loadGroups } from "@/lib/d90/store";
 import { overstayInfo } from "@/lib/today/types";
 import { carKey } from "@/lib/visarun/cars";
-import { applyOverrides, type ChargeOverride,
+import { applyOverrides, type ChargeOverride, type Corrections,
   addDays, bkkToday, defaultPrices, LEDGER_BOOKS, type Adjustment, type ChargeLine, type CreditLine, type DayComputed, type DayEdits,
   type DayLedger, type LedgerBook, type LedgerConfig, type Prices,
 } from "./types";
@@ -28,6 +28,8 @@ import { applyOverrides, type ChargeOverride,
 const OPENING: Partial<Record<LedgerBook, { day: string; amount: number }>> = { ARTAO: { day: "2026-11-15", amount: 162607.8 }, UU: { day: "2026-11-25", amount: 0 }, NUNA: { day: "2026-11-25", amount: 0 } };
 const root = (book: LedgerBook) => `ledger/${book}/`;
 const cfgPath = (book: LedgerBook) => `${root(book)}config.json`;
+const CORRECTIONS = "ledger/corrections.json";
+export async function loadCorrections(): Promise<Corrections> { return (await blobGetJson<Corrections>(CORRECTIONS)) ?? {}; }
 const dayPath = (book: LedgerBook, day: string) => `${root(book)}days/${day}.json`;
 export const safeDay = (d: unknown) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
 const toKey = (day: string) => `${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(0, 4)}`;   // YYYY-MM-DD → DDMMYYYY (board folder)
@@ -249,9 +251,18 @@ export async function updateDay(book: LedgerBook, day: string, patch: { adjustme
     const ov: Record<string, ChargeOverride> = {};
     for (const [k, v] of Object.entries(patch.overrides).slice(0, 300)) {
       const amount = Number(v?.amount);
-      if (Number.isFinite(amount) && amount >= 0) ov[k.slice(0, 80)] = { amount, note: String(v?.note ?? "").slice(0, 80) };
+      const was = Number(v?.was);
+      if (Number.isFinite(amount) && amount >= 0) ov[k.slice(0, 80)] = { amount, note: String(v?.note ?? "").slice(0, 80), ...(Number.isFinite(was) ? { was } : {}) };
     }
     e.overrides = ov;
+    // one small file for the dashboard: it would otherwise have to open every day of every book
+    try {
+      const all = await loadCorrections();
+      const lines = Object.values(ov).filter((o) => o.was !== undefined && o.amount !== o.was);
+      const days = { ...(all[book] ?? {}) };
+      if (lines.length) days[day] = { diff: lines.reduce((s, o) => s + o.amount - (o.was ?? o.amount), 0), n: lines.length }; else delete days[day];
+      await blobPut(CORRECTIONS, JSON.stringify({ ...all, [book]: days }), "application/json");
+    } catch (err) { console.warn("[ledger] corrections index not updated", err); }
   }
   if (patch.reopen && e.snapshot) {
     // A locked day keeps its own figures; reopening re-reads the boards, and for an old day those
