@@ -82,12 +82,56 @@ export function createDayStore(ns: DayNamespace) {
     const ext = (path.split(".").pop() ?? "").toLowerCase();
     return ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : fallback;
   }
-  async function downloadBlob(path: string): Promise<Blob | null> {
+  // ---- files kept on this device ------------------------------------------
+  // A busy day is ~100 MB of passport pages and photos, and every open of the board used to pull
+  // all of it again. Downloaded files are now kept in the browser's Cache Storage and reused:
+  //   • a document (doc-<id>) never changes once uploaded → kept as is;
+  //   • the four outputs written to a fixed name (tm7 / ai-photo / photo-white / collect) are kept
+  //     per version of the person's record (`ver` = its server updatedAt), so a regenerated one is fetched again.
+  // `ver` null = do not use the device copy. Anything going wrong here just falls back to the network.
+  const FILE_CACHE = "tm7-files-v1";
+  const cacheUrl = (path: string, ver: string) => `/__files/${path.split("/").map(encodeURIComponent).join("/")}${ver ? `?v=${encodeURIComponent(ver)}` : ""}`;
+  async function fileCache(): Promise<Cache | null> {
+    try { return typeof caches === "undefined" ? null : await caches.open(FILE_CACHE); } catch { return null; }
+  }
+  async function cacheGet(path: string, ver: string): Promise<Blob | null> {
+    try {
+      const hit = await (await fileCache())?.match(cacheUrl(path, ver));
+      if (!hit) return null;
+      const b = await hit.blob();
+      return b.size ? b : null;
+    } catch { return null; }
+  }
+  async function cachePut(path: string, ver: string, blob: Blob): Promise<void> {
+    try {
+      const c = await fileCache();
+      if (!c || !blob.size) return;
+      if (ver) await c.delete(cacheUrl(path, ""), { ignoreSearch: true });   // older versions of the same file
+      await c.put(cacheUrl(path, ver), new Response(blob, { headers: { "content-type": blob.type || "application/octet-stream" } }));
+    } catch { /* storage full or unavailable — the file is simply fetched again next time */ }
+  }
+  /** Forget files of boards older than 8 days (the server clears those boards weekly). */
+  async function pruneFileCache(): Promise<void> {
+    try {
+      const c = await fileCache();
+      if (!c) return;
+      const limit = Date.now() - 8 * 86400000;
+      for (const req of await c.keys()) {
+        const m = /\/__files\/[^/]+\/(\d{2})(\d{2})(\d{4})\//.exec(new URL(req.url).pathname);
+        if (m && Date.UTC(+m[3], +m[2] - 1, +m[1]) < limit) await c.delete(req);
+      }
+    } catch { /* nothing to prune */ }
+  }
+
+  async function downloadBlob(path: string, ver: string | null = null): Promise<Blob | null> {
+    if (ver !== null) { const kept = await cacheGet(path, ver); if (kept) return kept; }
     const r = await fetch(`/api/day/file?path=${encodeURIComponent(path)}`);
     if (!r.ok) return null;
     const raw = await r.blob();
     const type = raw.type && raw.type !== "application/octet-stream" ? raw.type : mimeOf(path, "image/jpeg");
-    return raw.type === type ? raw : new Blob([raw], { type });
+    const blob = raw.type === type ? raw : new Blob([raw], { type });
+    if (ver !== null) void cachePut(path, ver, blob);
+    return blob;
   }
 
   // Paths already uploaded, keyed by object identity (a Blob is re-uploaded only if it's a new object).
@@ -135,18 +179,19 @@ export function createDayStore(ns: DayNamespace) {
     inFlight++;
     try { return await fn(); } finally { inFlight--; waiters.shift()?.(); }
   }
-  async function downloadBlobRetry(path: string): Promise<Blob | null> {
+  async function downloadBlobRetry(path: string, ver: string | null = null): Promise<Blob | null> {
+    if (ver !== null) { const kept = await cacheGet(path, ver); if (kept) return kept; }   // on this device already: no download slot needed
     return withSlot(async () => {
-      const b = await downloadBlob(path);
+      const b = await downloadBlob(path, ver);
       if (b) return b;
       await new Promise((r) => setTimeout(r, 700));
-      return downloadBlob(path);
+      return downloadBlob(path, ver);
     });
   }
 
   async function fromRef(r: PersonRef, onOne?: () => void): Promise<Person> {
     const files = await Promise.all(r.files.map(async (f) => {
-      const blob = f.path ? await downloadBlobRetry(f.path) : null;
+      const blob = f.path ? await downloadBlobRetry(f.path, /\/doc-[^/]+$/.test(f.path) ? "" : null) : null;   // a document never changes under its id
       onOne?.();
       const { path, ...rest } = f;
       const b = blob ?? new Blob([], { type: rest.mime });
@@ -156,7 +201,7 @@ export function createDayStore(ns: DayNamespace) {
     }));
     const pick = async (path?: string) => {
       if (!path) return undefined;
-      const b = await downloadBlobRetry(path);
+      const b = await downloadBlobRetry(path, r.updatedAt || null);   // fixed file name → keyed by the record's version
       onOne?.();
       if (b) uploaded.set(b, path);
       return b ?? undefined;
@@ -228,6 +273,7 @@ export function createDayStore(ns: DayNamespace) {
       for (const ref of refs) bases.set(ref.id, stripBlobs(ref));
       metaCache = metaDirty ? metaCache : idx.meta ?? null;
       metaAt = idx.metaAt ?? "";
+      void pruneFileCache();
       return { people: [...peopleCache.values()].sort((a, b) => a.order - b.order), meta: metaCache };
     } catch (e) {
       if (token !== loadToken) return { people: [], meta: null, stale: true };

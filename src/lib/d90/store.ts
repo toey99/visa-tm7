@@ -56,8 +56,10 @@ export function peekItemsShared(ttlMs = 8000): Promise<D90Item[]> {
 }
 
 async function readAll(): Promise<{ idx: Index; fresh: D90Item[]; folded: string[]; gone: string[] }> {
-  const idx = (await readJson<Index>(INDEX)) ?? { items: [] };
-  const inbox = (await blobList(INBOX)).filter((b) => b.pathname.endsWith(".json"));
+  // the index and the inbox listing do not depend on each other → fetch both at once
+  const [idxRead, listed0] = await Promise.all([readJson<Index>(INDEX), blobList(INBOX)]);
+  const idx = idxRead ?? { items: [] };
+  const inbox = listed0.filter((b) => b.pathname.endsWith(".json"));
   const tomb = new Set(idx.gone ?? []);
   const have = new Set([...idx.items.map((i) => i.id), ...tomb]);
   const fresh: D90Item[] = [];
